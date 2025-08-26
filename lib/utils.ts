@@ -1,7 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { SplitsClient } from "@0xsplits/splits-sdk";
-import { ethers } from "ethers";
+// import { SplitsClient } from "@0xsplits/splits-sdk"; // Removed package
+// import { ethers } from "ethers"; // Removed package
 import type { TeamMember } from "@/types/project";
 import { createPublicClient, http, formatUnits, isAddress } from "viem";
 import { base } from "viem/chains";

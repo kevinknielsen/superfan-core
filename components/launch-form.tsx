@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Music, ImageIcon, Save } from "lucide-react";
 import TeamSplitsForm from "./team-splits-form";
-import FinancingForm from "./financing-form";
+// import FinancingForm from "./financing-form"; // Moved to legacy
 import ReviewProject from "./review-project";
 import { usePrivy } from "@/lib/auth-context";
 import { useWallets } from "@privy-io/react-auth";

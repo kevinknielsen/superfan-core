@@ -9,12 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@0xsplits/splits-sdk": "^5.1.0",
     "@emotion/is-prop-valid": "latest",
     "@farcaster/frame-sdk": "^0.0.64",
     "@hookform/resolvers": "^3.9.1",
-    "@moonpay/moonpay-js": "^0.7.0",
-    "@moonpay/moonpay-react": "^1.10.0",
     "@privy-io/react-auth": "^2.13.2",
     "@privy-io/server-auth": "^1.26.1",
     "@radix-ui/react-accordion": "1.2.2",
@@ -55,7 +52,6 @@
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
-    "ethers": "^5.8.0",
     "framer-motion": "latest",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, LogOut, User, Folders, Plus } from "lucide-react";
+import { ArrowLeft, LogOut, User, Star, Crown } from "lucide-react";
 import { usePrivy } from "@/lib/auth-context";
 import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { useFarcasterAuthAction } from "@/lib/farcaster-auth";
-import { ManagerBetaWarning } from "./ManagerBetaWarning";
+import { useFeatureFlag } from "@/config/featureFlags";
 import { useState } from "react";
 import Logo from "./logo";
 
@@ -21,7 +21,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   const { logout, user } = usePrivy();
   const { isInWalletApp } = useFarcaster();
   const { requireAuth } = useFarcasterAuthAction();
-  const [showBetaWarning, setShowBetaWarning] = useState(false);
+  const enableMembership = useFeatureFlag('enableMembership');
 
   const handleLogout = async () => {
     try {
@@ -34,24 +34,12 @@ export default function Header({ showBackButton = false }: HeaderProps) {
     }
   };
 
-  const handleNewProject = () => {
-    if (isMainApp()) {
-      // Show beta warning modal instead of redirecting immediately
-      setShowBetaWarning(true);
-    } else {
-      // Direct navigation for manager app
-      router.push("/launch");
-    }
+  const handleMembershipClick = () => {
+    requireAuth("profile", () => router.push("/membership"));
   };
 
-  const handleYourProjects = () => {
-    if (isMainApp()) {
-      // Show beta warning modal instead of redirecting immediately
-      setShowBetaWarning(true);
-    } else {
-      // Direct navigation for manager app
-      router.push("/your-projects");
-    }
+  const handleAccountClick = () => {
+    requireAuth("profile", () => router.push("/account"));
   };
 
   return (
@@ -79,21 +67,21 @@ export default function Header({ showBackButton = false }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* New Project button - only show on manager app */}
-            {!showBackButton && isManagerApp() && (
+            {/* Membership button - show when membership is enabled */}
+            {!showBackButton && enableMembership && (
               <button
-                onClick={handleNewProject}
-                className="btn-primary hidden sm:flex items-center gap-2"
+                onClick={handleMembershipClick}
+                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white text-sm font-medium transition-all duration-200"
               >
-                <Plus className="h-4 w-4" />
-                New Project
+                <Crown className="h-4 w-4" />
+                Membership
               </button>
             )}
 
-            {/* Your Projects - redirect to manager if on main app */}
-            <button onClick={handleYourProjects}>
+            {/* Account button */}
+            <button onClick={handleAccountClick}>
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
-                <Plus className="h-4 w-4" />
+                <Star className="h-4 w-4" />
               </div>
             </button>
 
@@ -117,12 +105,6 @@ export default function Header({ showBackButton = false }: HeaderProps) {
           </div>
         </div>
       </motion.header>
-
-      {/* Beta Warning Modal */}
-      <ManagerBetaWarning
-        isOpen={showBetaWarning}
-        onOpenChange={setShowBetaWarning}
-      />
     </>
   );
 }

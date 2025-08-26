@@ -7,7 +7,7 @@ import { usePrivy } from "@/lib/auth-context";
 import { ChartContainer } from "@/components/ui/chart";
 import * as RechartsPrimitive from "recharts";
 import { Loader2 } from "lucide-react";
-import { useFinancing } from "@/hooks/use-financing";
+// import { useFinancing } from "@/hooks/use-financing"; // Moved to legacy
 import { useProject } from "@/hooks/use-projects";
 import { useTeamMembers } from "@/hooks/use-team-members";
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { MANAGER_ROUTES } from '@/lib/feature-flags';
+import { isRouteEnabled, isApiRouteEnabled, getLegacyRouteRedirect } from '@/config/featureFlags';
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -60,6 +61,32 @@ export function middleware(request: NextRequest) {
   // Skip other redirects for bots on main app
   if (isBotOrCrawler) {
     return NextResponse.next();
+  }
+  
+  // Feature flag guards - block disabled routes
+  if (pathname.startsWith('/api/')) {
+    // Check API route flags
+    if (!isApiRouteEnabled(pathname)) {
+      return NextResponse.json(
+        { error: 'This feature is temporarily disabled' },
+        { status: 404 }
+      );
+    }
+  } else {
+    // Check page route flags
+    if (!isRouteEnabled(pathname)) {
+      const redirectPath = getLegacyRouteRedirect(pathname);
+      if (redirectPath) {
+        const url = request.nextUrl.clone();
+        url.pathname = redirectPath;
+        return NextResponse.redirect(url);
+      }
+      
+      // No redirect available, show 404
+      const url = request.nextUrl.clone();
+      url.pathname = '/';
+      return NextResponse.redirect(url);
+    }
   }
   
   // If this is a manager route but we're on main app, redirect to manager

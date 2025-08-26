@@ -11,7 +11,7 @@ import { AudioPlayerProvider } from "@/lib/audio-player-context";
 import { isManagerApp } from "@/lib/feature-flags";
 
 import { useProjects } from "@/hooks/use-projects";
-import { useFundedProjects } from "@/hooks/use-financing";
+// import { useFundedProjects } from "@/hooks/use-financing"; // Moved to legacy
 
 // Helper to extract wallet address from user.wallet
 function getWalletAddress(user: any): string {

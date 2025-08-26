@@ -1,8 +1,7 @@
-# Superfan - Music Collaboration Platform
+# Superfan Core (Canonical App)
 
-## Overview
-
-Superfan is a next-generation music collaboration and funding platform that connects artists with fans and investors. The platform enables artists to launch music projects, secure funding, and distribute revenue shares to collaborators and backers.
+Primary web app for Superfan. Preserves Privy auth + embedded wallets. 
+Current focus: membership + member pass + optional house accounts.
 
 ## Tech Stack
 

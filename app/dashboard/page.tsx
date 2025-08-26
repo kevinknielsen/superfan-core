@@ -13,7 +13,7 @@ import { useFarcaster } from "@/lib/farcaster-context";
 import { AudioPlayerProvider } from "@/lib/audio-player-context";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import ProjectDetailsModal from "@/components/project-details-modal";
-import TradeModal from "@/components/trade-modal";
+
 import { useProjects } from "@/hooks/use-projects";
 import { useProject } from "@/hooks/use-projects";
 import { Project } from "../api/projects/route";
@@ -125,7 +125,7 @@ export default function Dashboard() {
   const searchParams = useSearchParams();
   const modalProjectId = searchParams.get("projectId");
   const [modalOpen, setModalOpen] = useState(false);
-  const [tradeModalOpen, setTradeModalOpen] = useState(false);
+
   const router = useRouter();
   const pathname = usePathname();
   const [showBetaWarning, setShowBetaWarning] = useState(false);
@@ -185,10 +185,7 @@ export default function Dashboard() {
     setModalOpen(true);
   };
 
-  // Handler to open trade modal from details modal
-  const handleOpenTradeModal = () => {
-    setTradeModalOpen(true);
-  };
+
 
   return (
     <>
@@ -373,17 +370,10 @@ export default function Dashboard() {
             router.replace(newUrl.pathname + newUrl.search);
           }}
           variant="browse"
-          onBuy={handleOpenTradeModal}
+          onBuy={undefined}
         />
       )}
-      
-      {modalProject && (
-        <TradeModal
-          project={modalProject}
-          isOpen={tradeModalOpen}
-          onClose={() => setTradeModalOpen(false)}
-        />
-      )}
+
 
       <ManagerBetaWarning
         isOpen={showBetaWarning}

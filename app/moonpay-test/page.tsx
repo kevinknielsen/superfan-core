@@ -3,10 +3,12 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 
-const MoonPayBuyWidget = dynamic(
-  () => import("@moonpay/moonpay-react").then((mod) => mod.MoonPayBuyWidget),
-  { ssr: false },
-);
+// MoonPay widget disabled - package removed
+// const MoonPayBuyWidget = dynamic(
+//   () => import("@moonpay/moonpay-react").then((mod) => mod.MoonPayBuyWidget),
+//   { ssr: false },
+// );
+const MoonPayBuyWidget = () => <div>MoonPay widget disabled</div>;
 
 export default function MoonPayTestPage() {
   const [visible, setVisible] = useState(false);

@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { Users, Play, Pause, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ProjectDetailsModal from "./project-details-modal";
-import FundModal from "./fund-modal";
+// import FundModal from "./fund-modal"; // Moved to legacy
 import { useAudioPlayerContext } from "@/lib/audio-player-context";
 import {
   getSharedFundingProgressUSD,
@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation";
 import { Project } from "@/app/api/projects/route";
 import FarcasterShare from "./farcaster-share";
 import { useMetalHolder } from "@/hooks/use-metal-holder";
-import { usePresale } from "@/hooks/use-presale";
+// import { usePresale } from "@/hooks/use-presale"; // Moved to legacy
 
 interface ProjectCardProps {
   project: Project;

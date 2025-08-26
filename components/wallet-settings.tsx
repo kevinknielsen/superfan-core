@@ -9,7 +9,7 @@ import { useMetalHolder } from "@/hooks/use-metal-holder";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { isManagerApp } from "@/lib/feature-flags";
 import { useProjects } from "@/hooks/use-projects";
-import { useUserPresales } from "@/hooks/use-presale";
+// import { useUserPresales } from "@/hooks/use-presale"; // Moved to legacy
 import { useFarcaster } from "@/lib/farcaster-context";
 import { useBalance } from "wagmi";
 import { Address } from "viem";
