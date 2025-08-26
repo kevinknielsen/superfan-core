@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 20% 7%;
+    --foreground: 0 0% 100%;
+
+    --card: 220 33% 9%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 220 33% 9%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 291 64% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 291 64% 20%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 53%;
+    --muted-foreground: 0 0% 81%;
+
+    --accent: 291 84% 11%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 342 68% 53%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 5% 20%;
+    --input: 240 5% 20%;
+    --ring: 291 64% 42%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-inter;
+    background-image:
+      radial-gradient(
+        circle at 100% 0%,
+        rgba(156, 38, 176, 0.05) 0%,
+        transparent 25%
+      ),
+      radial-gradient(
+        circle at 0% 100%,
+        rgba(156, 38, 176, 0.05) 0%,
+        transparent 30%
+      );
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  h1 {
+    @apply text-3xl font-bold md:text-4xl text-white;
+    letter-spacing: -0.025em;
+  }
+  h2 {
+    @apply text-2xl font-bold text-white;
+    letter-spacing: -0.025em;
+  }
+  .text-sm {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  .font-medium {
+    font-weight: 500;
+  }
+  .text-gray-400 {
+    --tw-text-opacity: 1;
+    color: rgb(156 163 175 / var(--tw-text-opacity));
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-4 py-2 font-medium transition-all;
+    box-shadow: 0 0 10px rgba(156, 38, 176, 0.2);
+  }
+
+  .btn-ghost {
+    @apply bg-transparent text-foreground border border-secondary hover:bg-accent rounded-md px-4 py-2 font-medium transition-all;
+  }
+
+  .card {
+    @apply bg-card rounded-md p-6 transition-all;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(156, 38, 176, 0.05);
+  }
+
+  .stat-card {
+    @apply bg-[#0F141E] rounded-md p-5 transition-all;
+    border: 1px solid rgba(30, 30, 50, 0.5);
+  }
+
+  .input-field {
+    @apply bg-background border border-border rounded-md px-4 py-3 text-foreground placeholder:text-muted focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all;
+  }
+
+  /* Subtle animations */
+  .subtle-pulse {
+    animation: subtle-pulse 3s infinite;
+  }
+
+  @keyframes subtle-pulse {
+    0% {
+      opacity: 0.8;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.8;
+    }
+  }
+
+  .subtle-float {
+    animation: subtle-float 6s ease-in-out infinite;
+  }
+
+  @keyframes subtle-float {
+    0% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+    100% {
+      transform: translateY(0px);
+    }
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 4px;
+    background: linear-gradient(90deg, #9c26b0, #d13f6a);
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  /* Status badges */
+  .status-badge {
+    @apply inline-flex items-center justify-center px-2.5 py-0.5 text-xs font-medium rounded-full;
+  }
+
+  .status-active {
+    @apply bg-primary/20 text-primary;
+  }
+
+  .status-executed {
+    @apply bg-green-500/20 text-green-500;
+  }
+
+  .status-failed {
+    @apply bg-red-500/20 text-red-500;
+  }
+}

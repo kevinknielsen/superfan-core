@@ -1,0 +1,38 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjEwOTkxNjQsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgwMjgwOTI0YWVkNzI1Y2RhMTE2OGEwMkEyNDBkQTlGOTIwNEYzODFiIn0",
+    "payload": "eyJkb21haW4iOiJhcHAuc3VwZXJmYW4ub25lIn0",
+    "signature": "MHgyZjYzYmM0ZTk5YmZjNDMxYWU2NzkzYWI0YzFjNDFhNjA2NGI3MjEyYzdmNDAwYjdmZDkyMjg1YTJlZjczNTFmNDllZTZjMjc5YmYwYTMyMzE3NjI2ZGQ3YjVkZWJlM2VlNzM1MDE1M2RjOGE0ZDI3OTVmZjNjYWU1ZTk4YmU0ODFj"
+  },
+  "frame": {
+    "version": "next",
+    "name": "Superfan",
+    "iconUrl": "https://i.ibb.co/6cQPpxBV/Logo.png",
+    "homeUrl": "https://app.superfan.one",
+    "imageUrl": "https://i.ibb.co/WNC9fnPn/cover.png",
+    "buttonTitle": "Launch App",
+    "splashImageUrl": "https://app.superfan.one/splash-new.png",
+    "splashBackgroundColor": "#0E0E14",
+    "webhookUrl": "https://app.superfan.one/api/farcaster/webhook",
+    "subtitle": "Fund the Future of Music",
+    "description": "A launchpad and OS for artists to fund, manage, and release music with their team.",
+    "screenshotUrls": [
+      "https://i.ibb.co/8gGCN32P/EMBED.png",
+      "https://i.postimg.cc/yNrmrTmd/image.png", 
+      "https://i.postimg.cc/NjsRsnbF/image.png"
+    ],
+    "primaryCategory": "music",
+    "tags": [
+      "music",
+      "funding", 
+      "artists",
+      "projects",
+      "finance"
+    ],
+    "heroImageUrl": "https://i.ibb.co/WNC9fnPn/cover.png",
+    "tagline": "Fund the Future of Music",
+    "ogTitle": "Superfan - Fund Music Projects",
+    "ogDescription": "Discover and fund innovative music projects. Connect with artists and back the next big release.",
+    "ogImageUrl": "https://i.ibb.co/8gGCN32P/EMBED.png"
+  }
+} 
