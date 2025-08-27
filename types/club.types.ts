@@ -15,6 +15,7 @@ export interface Club {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  unlocks?: Unlock[]; // Optional array of unlocks for this club
 }
 
 export interface ClubMembership {
