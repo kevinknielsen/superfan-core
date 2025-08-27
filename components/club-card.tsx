@@ -45,6 +45,38 @@ const STATUS_BG_COLORS = {
   superfan: "bg-yellow-500/20",
 };
 
+// Premium card configurations based on membership status
+const CARD_CONFIGS = {
+  cadet: {
+    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
+    accent: "#374151",
+    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
+    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
+    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
+  },
+  resident: {
+    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
+    accent: "#374151",
+    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
+    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
+    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
+  },
+  headliner: {
+    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
+    accent: "#374151",
+    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
+    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
+    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
+  },
+  superfan: {
+    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
+    accent: "#374151",
+    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
+    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
+    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
+  },
+};
+
 export default function ClubCard({
   club,
   index,
@@ -53,7 +85,54 @@ export default function ClubCard({
   const { user, isAuthenticated } = useUnifiedAuth();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [autoAnimate, setAutoAnimate] = useState(false);
+
+  // Mobile detection
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const router = useRouter();
+
+  // Mobile auto-animation effect
+  useEffect(() => {
+    if (isMobile) {
+      // Auto-cycle shimmer effect every 3-5 seconds for mobile
+      const interval = setInterval(() => {
+        setAutoAnimate(true);
+        setTimeout(() => setAutoAnimate(false), 2000);
+      }, 3000 + Math.random() * 2000); // Randomize timing to avoid sync
+
+      return () => clearInterval(interval);
+    }
+  }, [isMobile]);
+
+  // Intersection observer for scroll-triggered animations on mobile
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            // Trigger animation when card comes into view
+            setAutoAnimate(true);
+            setTimeout(() => setAutoAnimate(false), 1500);
+          }
+        });
+      },
+      { threshold: 0.3, rootMargin: '-50px' }
+    );
+
+    const cardElement = document.getElementById(`club-card-${club.id}`);
+    if (cardElement) {
+      observer.observe(cardElement);
+    }
+
+    return () => {
+      if (cardElement) {
+        observer.unobserve(cardElement);
+      }
+    };
+  }, [club.id, isMobile]);
   const { toast } = useToast();
 
   // Get club images for enhanced display
@@ -92,6 +171,7 @@ export default function ClubCard({
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
   const statusBgColor = STATUS_BG_COLORS[currentStatus];
+  const cardConfig = CARD_CONFIGS[currentStatus];
 
   // Generate waveform data for visual consistency (static for clubs)
   const waveformData = useMemo(() => {
@@ -157,59 +237,121 @@ export default function ClubCard({
   return (
     <>
       <motion.div
-        className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-[#0F141E] to-[#0A0E16] border border-gray-800/50 transition-all duration-300 cursor-pointer group ${
+        id={`club-card-${club.id}`}
+        className={`relative overflow-hidden rounded-[20px] cursor-pointer group ${
           !membership ? "opacity-90" : ""
         }`}
         style={{
+          background: cardConfig.gradient,
           boxShadow: `
-            0 4px 6px -1px rgba(0, 0, 0, 0.3),
-            0 2px 4px -1px rgba(0, 0, 0, 0.2),
-            inset 0 1px 0 rgba(255, 255, 255, 0.05)
-          `
-        }}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: index * 0.05, duration: 0.4 }}
-        whileHover={{
-          y: -8,
-          rotateX: 2,
-          rotateY: 2,
-          boxShadow: `
-            0 20px 25px -5px rgba(0, 0, 0, 0.4),
-            0 10px 10px -5px rgba(0, 0, 0, 0.3),
+            0 8px 25px -8px ${cardConfig.accent}40,
+            0 0 0 1px rgba(255, 255, 255, 0.1),
             inset 0 1px 0 rgba(255, 255, 255, 0.1)
           `,
-          background: "linear-gradient(135deg, #131822, #0E1218)"
+        }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ 
+          opacity: 1, 
+          y: autoAnimate && isMobile ? -6 : 0,
+          rotateX: autoAnimate && isMobile ? 1.5 : 0,
+          rotateY: autoAnimate && isMobile ? 1.5 : 0,
+        }}
+        transition={{ delay: index * 0.05, duration: 0.4 }}
+        whileHover={{
+          y: -12,
+          rotateX: 3,
+          rotateY: 3,
+          boxShadow: `
+            0 25px 50px -12px ${cardConfig.accent}60,
+            ${cardConfig.glow},
+            0 0 0 1px rgba(255, 255, 255, 0.2),
+            inset 0 2px 0 rgba(255, 255, 255, 0.15)
+          `,
         }}
         whileTap={{ scale: 0.98 }}
+        onHoverStart={() => setIsHovered(true)}
+        onHoverEnd={() => setIsHovered(false)}
         onClick={() => setShowDetails(true)}
       >
-        {/* Top-right status badge or plus icon */}
-        {membership ? (
-          <span className={`absolute top-3 right-3 ${statusBgColor} border border-current/30 text-xs px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium flex items-center gap-1 ${statusColor}`}>
-            <StatusIcon className="h-3 w-3" />
-            {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
-          </span>
-        ) : (
-          <button
-            onClick={handleJoinClub}
-            disabled={joinClubMutation.isPending || !isAuthenticated}
-            className="absolute top-3 right-3 h-8 w-8 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center shadow z-30 transition-colors disabled:opacity-50"
-            aria-label={
-              !isAuthenticated
-                ? "Sign in required to add memberships"
-                : "Add membership"
-            }
-          >
-            {joinClubMutation.isPending ? (
-              <Spinner size="sm" color="white" />
-            ) : (
-              <Plus className="h-4 w-4 text-white" />
-            )}
-          </button>
+        {/* Background Pattern */}
+        <div 
+          className="absolute inset-0 opacity-60"
+          style={{ background: cardConfig.pattern }}
+        />
+
+        {/* Holographic Shimmer */}
+        <motion.div
+          className="absolute inset-0 opacity-0"
+          style={{
+            background: cardConfig.shimmer,
+            backgroundSize: "200% 200%",
+          }}
+          animate={{
+            opacity: (isHovered || autoAnimate) ? 0.8 : 0,
+            backgroundPosition: (isHovered || autoAnimate) ? ["0% 0%", "100% 100%"] : "0% 0%",
+          }}
+          transition={{
+            duration: 2,
+            repeat: (isHovered || autoAnimate) ? Infinity : 0,
+            ease: "linear"
+          }}
+        />
+
+        {/* Floating Particles on Hover or Auto-Animate */}
+        {(isHovered || autoAnimate) && (
+          <div className="absolute inset-0 pointer-events-none">
+            {[...Array(6)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute w-1 h-1 rounded-full bg-white opacity-60"
+                initial={{
+                  x: Math.random() * 300,
+                  y: Math.random() * 200,
+                  scale: 0,
+                }}
+                animate={{
+                  y: [null, Math.random() * 200],
+                  x: [null, Math.random() * 300],
+                  scale: [0, 1, 0],
+                  opacity: [0, 0.8, 0],
+                }}
+                transition={{
+                  duration: 2 + Math.random() * 2,
+                  repeat: Infinity,
+                  delay: Math.random() * 2,
+                }}
+              />
+            ))}
+          </div>
         )}
 
-        <div className="p-4 relative z-10">
+        {/* Card Content */}
+        <div className="relative z-20 p-6">
+          {/* Top-right status badge or plus icon */}
+          {membership ? (
+            <span className={`absolute top-3 right-3 ${statusBgColor} border border-current/30 text-xs px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium flex items-center gap-1 ${statusColor}`}>
+              <StatusIcon className="h-3 w-3" />
+              {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
+            </span>
+          ) : (
+            <button
+              onClick={handleJoinClub}
+              disabled={joinClubMutation.isPending || !isAuthenticated}
+              className="absolute top-3 right-3 h-8 w-8 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center shadow z-30 transition-colors disabled:opacity-50"
+              aria-label={
+                !isAuthenticated
+                  ? "Sign in required to add memberships"
+                  : "Add membership"
+              }
+            >
+              {joinClubMutation.isPending ? (
+                <Spinner size="sm" color="white" />
+              ) : (
+                <Plus className="h-4 w-4 text-white" />
+              )}
+            </button>
+          )}
+
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
               <div className="relative mr-3 h-12 w-12 overflow-hidden rounded-full bg-primary/20 flex items-center justify-center">
