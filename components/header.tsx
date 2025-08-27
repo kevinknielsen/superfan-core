@@ -9,7 +9,7 @@ import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { useFarcasterAuthAction } from "@/lib/farcaster-auth";
 import { useFeatureFlag } from "@/config/featureFlags";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Logo from "./logo";
 import QRScanner from "./qr-scanner";
 
@@ -24,6 +24,11 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   const { requireAuth } = useFarcasterAuthAction();
   const enableMembership = useFeatureFlag('enableMembership');
   const [showQRScanner, setShowQRScanner] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -92,8 +97,8 @@ export default function Header({ showBackButton = false }: HeaderProps) {
               </button>
             )}
 
-            {/* QR Scanner button */}
-            {!showBackButton && (
+            {/* QR Scanner button - only show on client */}
+            {!showBackButton && isClient && (
               <button 
                 onClick={handleQRScanClick}
                 title="Scan QR Code"
@@ -137,11 +142,13 @@ export default function Header({ showBackButton = false }: HeaderProps) {
         </div>
       </motion.header>
 
-      {/* QR Scanner Modal */}
-      <QRScanner
-        isOpen={showQRScanner}
-        onClose={() => setShowQRScanner(false)}
-      />
+      {/* QR Scanner Modal - only render on client */}
+      {isClient && (
+        <QRScanner
+          isOpen={showQRScanner}
+          onClose={() => setShowQRScanner(false)}
+        />
+      )}
     </>
   );
 }

@@ -19,6 +19,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   const [error, setError] = useState<string | null>(null);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -28,18 +29,26 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   // Dynamic import for qr-scanner (browser-only)
   const [QrScannerLib, setQrScannerLib] = useState<any>(null);
 
+  // Ensure client-side rendering
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      import('qr-scanner').then((QrScanner) => {
-        // Handle both CommonJS and ES module exports
-        const Scanner = QrScanner.default || QrScanner;
-        setQrScannerLib(Scanner);
-      }).catch((error) => {
-        console.error('Failed to load QR scanner:', error);
-        setError('QR scanner not available on this device');
-      });
-    }
+    setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (isClient && typeof window !== 'undefined') {
+      // Only load QR scanner when actually needed
+      if (isOpen) {
+        import('qr-scanner').then((QrScanner) => {
+          // Handle both CommonJS and ES module exports
+          const Scanner = QrScanner.default || QrScanner;
+          setQrScannerLib(Scanner);
+        }).catch((error) => {
+          console.error('Failed to load QR scanner:', error);
+          setError('QR scanner not available on this device');
+        });
+      }
+    }
+  }, [isClient, isOpen]);
 
   // Start camera when scanner opens
   useEffect(() => {
@@ -201,6 +210,9 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
     }
   };
 
+  // Don't render during SSR to prevent hydration mismatches
+  if (!isClient) return null;
+  
   if (!isOpen) return null;
 
   return (
