@@ -6,6 +6,7 @@ import { usePrivy } from '@/lib/auth-context';
 import { useAccount } from 'wagmi';
 import { useMetalHolder } from '@/hooks/use-metal-holder';
 import { useUserMembership } from '@/hooks/use-membership';
+import { useUserSync } from '@/hooks/use-user-sync';
 
 interface UnifiedAuthContextType {
   isAuthenticated: boolean;
@@ -44,6 +45,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   // Admin status state
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
+  
+  // User sync state
+  const [hasTriedSync, setHasTriedSync] = useState(false);
+  const userSyncMutation = useUserSync();
 
   // Determine authentication state based on context
   // In Wallet App context (Farcaster/Coinbase), we check for user
@@ -61,6 +66,34 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   
   const hasActiveMembership = membership?.status === 'active';
   const membershipFeatures = membership?.plan?.features || [];
+
+  // Sync user to Supabase when authenticated via Privy (not needed for Farcaster users)
+  useEffect(() => {
+    if (!privyAuthenticated || !privyUser || hasTriedSync || isInWalletApp) {
+      return;
+    }
+
+    console.log('[UnifiedAuth] Syncing Privy user to Supabase:', privyUser.id);
+    setHasTriedSync(true);
+
+    // Extract user data from Privy
+    const walletAddr = (() => {
+      if (typeof privyUser.wallet === 'string') return privyUser.wallet;
+      if (typeof privyUser.wallet === 'object' && privyUser.wallet?.address) return privyUser.wallet.address;
+      return null;
+    })();
+
+    userSyncMutation.mutate({
+      email: privyUser.email?.address || null,
+      name: privyUser.google?.name || privyUser.twitter?.name || null,
+      walletAddress: walletAddr,
+    });
+  }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp, userSyncMutation]);
+
+  // Reset sync state when user changes
+  useEffect(() => {
+    setHasTriedSync(false);
+  }, [privyUser?.id]);
 
   // Fetch admin status when user is authenticated
   useEffect(() => {

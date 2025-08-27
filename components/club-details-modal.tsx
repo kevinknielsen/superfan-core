@@ -28,6 +28,7 @@ import { useQuickTapIn } from "@/hooks/use-tap-ins";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
+import UnlockRedemption from "./unlock-redemption";
 
 interface ClubDetailsModalProps {
   club: Club;
@@ -463,70 +464,25 @@ export default function ClubDetailsModal({
               </div>
             </div>
 
-            {/* Unlocks Grid (replaces collaborator splits) */}
-            {(availableUnlocks.length > 0 || lockedUnlocks.length > 0) && (
+            {/* Unlocks Section */}
+            {membership && (
               <div className="mb-6">
-                <h3 className="mb-3 text-lg font-semibold">Unlocks</h3>
-                
-                {/* Available Unlocks */}
-                {availableUnlocks.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium text-green-400 mb-2">Available</h4>
-                    <div className="space-y-2">
-                      {availableUnlocks.map((unlock) => {
-                        const UnlockIcon = UNLOCK_ICONS[unlock.type];
-                        return (
-                          <div
-                            key={unlock.id}
-                            className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 p-3"
-                          >
-                            <div className="rounded-full bg-green-500/20 p-2">
-                              <UnlockIcon className="h-4 w-4 text-green-400" />
-                            </div>
-                            <div className="flex-1">
-                              <h5 className="font-medium text-white text-sm">{unlock.title}</h5>
-                              <p className="text-xs text-gray-400">{unlock.description}</p>
-                            </div>
-                            {unlock.stock && (
-                              <Badge variant="outline" className="text-xs">
-                                {unlock.stock} left
-                              </Badge>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Locked Unlocks */}
-                {lockedUnlocks.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-400 mb-2">Locked</h4>
-                    <div className="space-y-2">
-                      {lockedUnlocks.map((unlock) => {
-                        const UnlockIcon = UNLOCK_ICONS[unlock.type];
-                        return (
-                          <div
-                            key={unlock.id}
-                            className="flex items-center gap-3 rounded-lg border border-gray-700 bg-gray-800/50 p-3 opacity-60"
-                          >
-                            <div className="rounded-full bg-gray-700 p-2">
-                              <UnlockIcon className="h-4 w-4 text-gray-500" />
-                            </div>
-                            <div className="flex-1">
-                              <h5 className="font-medium text-gray-300 text-sm">{unlock.title}</h5>
-                              <p className="text-xs text-gray-500">{unlock.description}</p>
-                            </div>
-                            <Badge variant="outline" className="text-xs text-gray-500">
-                              {unlock.min_status} required
-                            </Badge>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                <h3 className="mb-3 text-lg font-semibold flex items-center gap-2">
+                  <Gift className="h-5 w-5 text-primary" />
+                  Available Perks
+                </h3>
+                <UnlockRedemption
+                  clubId={club.id}
+                  userStatus={currentStatus}
+                  userPoints={currentPoints}
+                  onRedemption={() => {
+                    // Optionally refresh user data after redemption
+                    toast({
+                      title: "Perk Redeemed! 🎉",
+                      description: "Check your email or club announcements for details",
+                    });
+                  }}
+                />
               </div>
             )}
 

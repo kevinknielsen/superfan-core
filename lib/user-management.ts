@@ -35,10 +35,10 @@ export async function getOrCreateUser(params: CreateUserParams): Promise<User> {
 
   if (existingUser) {
     // Update user info if needed (email, name might have changed)
-    const updates: UpdateUserParams = {};
+    const updates: any = {};
     if (email && email !== existingUser.email) updates.email = email;
     if (name && name !== existingUser.name) updates.name = name;
-    if (walletAddress && walletAddress !== existingUser.wallet_address) updates.walletAddress = walletAddress;
+    if (walletAddress && walletAddress !== (existingUser as any).wallet_address) updates.wallet_address = walletAddress;
 
     if (Object.keys(updates).length > 0) {
       const { data: updatedUser, error: updateError } = await supabase
