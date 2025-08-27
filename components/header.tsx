@@ -78,17 +78,22 @@ export default function Header({ showBackButton = false }: HeaderProps) {
               </button>
             )}
 
-            {/* Account button */}
-            <button onClick={handleAccountClick}>
+            {/* Account Settings button */}
+            <button 
+              onClick={handleAccountClick}
+              title="Account Settings"
+            >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
                 <Star className="h-4 w-4" />
               </div>
             </button>
 
+            {/* Profile & Wallet button */}
             <button
               onClick={() =>
-                requireAuth("profile", () => router.push("/profile?tab=wallet"))
+                requireAuth("profile", () => router.push("/profile"))
               }
+              title="Profile & Wallet"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
                 <User className="h-4 w-4" />

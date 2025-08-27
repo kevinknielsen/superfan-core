@@ -6,12 +6,15 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { User, Mail, AtSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useUnifiedAuth } from "@/lib/unified-auth-context";
 
 interface ProfileSettingsProps {
-  user: { email?: string; wallet?: string } | null;
+  user?: { email?: string; wallet?: string } | null;
 }
 
-export default function ProfileSettings({ user }: ProfileSettingsProps) {
+export default function ProfileSettings({ user: propUser }: ProfileSettingsProps) {
+  const { user: authUser } = useUnifiedAuth();
+  const user = propUser || authUser;
   const { toast } = useToast();
   const [formData, setFormData] = useState({
     name: "",

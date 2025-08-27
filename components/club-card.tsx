@@ -4,7 +4,7 @@ import type React from "react";
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Users, MapPin, Star, Crown, Trophy, Shield } from "lucide-react";
+import { Users, Play, Pause, MapPin, Star, Crown, Trophy, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
@@ -70,7 +70,7 @@ export default function ClubCard({
   const nextStatus = getNextStatus(currentStatus);
   const pointsToNext = getPointsToNext(currentPoints, currentStatus);
   
-  // Progress calculation for status bar
+  // Progress calculation for status bar (matches funding progress calculation)
   const statusProgress = useMemo(() => {
     if (!nextStatus) return 100; // Already at max status
     
@@ -86,6 +86,15 @@ export default function ClubCard({
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
   const statusBgColor = STATUS_BG_COLORS[currentStatus];
+
+  // Generate waveform data for visual consistency (static for clubs)
+  const waveformData = useMemo(() => {
+    // Generate consistent waveform heights based on club name
+    const seed = club.name.charCodeAt(0);
+    return Array(40)
+      .fill(0)
+      .map((_, i) => Math.abs(Math.sin(seed + i * 0.5)) * 100);
+  }, [club.name]);
 
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -122,18 +131,20 @@ export default function ClubCard({
   return (
     <>
       <motion.div
-        className="relative overflow-hidden rounded-xl bg-[#0F141E] transition-all hover:bg-[#131822] shadow-lg shadow-black/20 hover:shadow-black/40 hover:translate-y-[-4px] cursor-pointer"
+        className={`relative overflow-hidden rounded-xl bg-[#0F141E] transition-all hover:bg-[#131822] shadow-lg shadow-black/20 hover:shadow-black/40 hover:translate-y-[-4px] cursor-pointer ${
+          !membership ? "opacity-90" : ""
+        }`}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.05, duration: 0.4 }}
         onClick={() => setShowDetails(true)}
       >
-        {/* Status Badge */}
+        {/* Top-right status badge (matches project card badges) */}
         {membership && (
-          <div className={`absolute top-3 right-3 ${statusBgColor} border border-current/30 text-xs px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium flex items-center gap-1 ${statusColor}`}>
+          <span className={`absolute top-3 right-3 ${statusBgColor} border border-current/30 text-xs px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium flex items-center gap-1 ${statusColor}`}>
             <StatusIcon className="h-3 w-3" />
             {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
-          </div>
+          </span>
         )}
 
         <div className="p-4">
@@ -142,7 +153,7 @@ export default function ClubCard({
               <div className="relative mr-3 h-12 w-12 overflow-hidden rounded-full bg-primary/20 flex items-center justify-center">
                 {club.image_url ? (
                   <img
-                    src={club.image_url}
+                    src={club.image_url || "/placeholder.svg"}
                     alt={club.name}
                     className="h-full w-full object-cover"
                   />
@@ -155,10 +166,10 @@ export default function ClubCard({
 
               <div>
                 <h3 className="font-medium text-white">{club.name}</h3>
-                <div className="text-sm text-muted-foreground flex items-center">
+                <div className="text-sm text-muted-foreground">
                   {club.city && (
                     <>
-                      <MapPin className="h-3 w-3 mr-1" />
+                      <MapPin className="h-3 w-3 mr-1 inline" />
                       {club.city}
                     </>
                   )}
@@ -167,76 +178,90 @@ export default function ClubCard({
             </div>
           </div>
 
-          {/* Club Description */}
-          <div className="mb-4">
-            <p className="text-sm text-gray-300 line-clamp-2">
-              {club.description || "Join this exclusive club for music experiences"}
-            </p>
+          {/* Integrated Waveform Visualization (matches project card) */}
+          <div className="relative mb-6 mt-2 group">
+            {/* Status indicator overlay (replaces play button) */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 bg-primary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              <StatusIcon className="h-4 w-4 text-white" />
+            </div>
+
+            {/* Waveform Visualization */}
+            <div className="flex items-end justify-between h-12 gap-[2px] overflow-hidden">
+              {waveformData.map((height, i) => {
+                // Calculate if this bar should be highlighted based on status progress
+                const isActive = (i / waveformData.length) * 100 <= statusProgress;
+
+                return (
+                  <div
+                    key={i}
+                    className={`w-full rounded-sm transition-all duration-200 ${
+                      isActive
+                        ? currentStatus === 'superfan' ? 'bg-yellow-500' : 'bg-primary'
+                        : "bg-gray-700 group-hover:bg-gray-600"
+                    }`}
+                    style={{
+                      height: `${Math.max(15, height)}%`,
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Track Label (adapted for club) */}
+            <div className="flex justify-between mt-1">
+              <span className="text-xs text-muted-foreground">Club Vibe</span>
+              <span className="text-xs text-muted-foreground">
+                {membership ? `${currentStatus} status` : "Join to unlock"}
+              </span>
+            </div>
           </div>
 
-          {/* Membership Status & Progress */}
-          {membership ? (
-            <div className="mt-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-white font-medium">
-                  Status Progress
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {currentPoints} points
-                </span>
-              </div>
-              
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-                <motion.div
-                  className={`h-full ${
-                    currentStatus === 'superfan' 
-                      ? 'bg-yellow-500' 
-                      : 'bg-primary'
-                  }`}
-                  style={{ width: `${statusProgress}%` }}
-                  animate={{ width: `${statusProgress}%` }}
-                  transition={{ duration: 1, delay: 0.2 }}
-                />
-              </div>
-              
-              <div className="mt-2 flex justify-between text-xs">
-                <span className="text-white">
-                  {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
-                </span>
-                <span className="text-muted-foreground">
-                  {nextStatus ? (
-                    `${pointsToNext} to ${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}`
-                  ) : (
-                    "Max Status!"
-                  )}
-                </span>
-              </div>
+          {/* Status Progress (replaces funding progress) */}
+          <div className="mt-4">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
+              <motion.div
+                className={`h-full ${
+                  currentStatus === 'superfan' 
+                    ? 'bg-yellow-500' 
+                    : 'bg-primary'
+                }`}
+                style={{
+                  width: membership ? `${statusProgress}%` : "0%",
+                }}
+                animate={{
+                  width: membership ? `${statusProgress}%` : "0%",
+                }}
+                transition={{ duration: 1, delay: 0.2 }}
+              />
             </div>
-          ) : (
-            <div className="mt-4">
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-                <div className="h-full w-0 bg-gray-600" />
-              </div>
-              <div className="mt-2 flex justify-between text-xs">
-                <span className="text-muted-foreground">Not a member</span>
-                <span className="text-muted-foreground">Join to earn points</span>
-              </div>
+            <div className="mt-2 flex justify-between text-xs">
+              <span className="text-white">
+                {membership 
+                  ? `${currentPoints.toLocaleString()} points (${Math.round(statusProgress)}%)`
+                  : "--"
+                }
+              </span>
+              <span className="text-muted-foreground">
+                {membership && nextStatus 
+                  ? `${pointsToNext} to ${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}`
+                  : membership 
+                    ? "Max Status!" 
+                    : "Join to start"
+                }
+              </span>
             </div>
-          )}
 
-          {/* Quick Stats */}
-          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center">
+            <div className="mt-1 flex items-center text-xs text-muted-foreground">
               <Users className="h-3 w-3 mr-1" />
-              <span>Active Community</span>
-            </div>
-            <div className="flex items-center">
-              <Shield className="h-3 w-3 mr-1" />
-              <span>Verified</span>
+              {membership ? (
+                <span>{currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} member</span>
+              ) : (
+                <span>-- members</span>
+              )}
             </div>
           </div>
 
-          {/* Action Button */}
+          {/* Action Button (matches project card structure) */}
           <div className="mt-4" onClick={(e) => e.stopPropagation()}>
             {membership ? (
               <button
@@ -250,7 +275,12 @@ export default function ClubCard({
               <button
                 onClick={handleJoinClub}
                 disabled={joinClubMutation.isPending || !isAuthenticated}
-                className="w-full flex items-center justify-center rounded-lg bg-green-600 px-4 py-2 font-medium text-white shadow-lg shadow-green-600/20 transition-all hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50"
+                aria-label={
+                  !isAuthenticated
+                    ? "Sign in required to join clubs"
+                    : undefined
+                }
               >
                 {joinClubMutation.isPending ? (
                   <Spinner size="sm" className="mr-2" />
