@@ -26,6 +26,8 @@
 - ✅ Built Unlocks grid showing available perks with status requirements
 - ✅ Implemented Tap-in system for point earning
 - ✅ Working Pass view with membership credential and status display
+- ✅ Fixed navigation: Star→Account Settings, User→Profile/Wallet, added /account page
+- ✅ Polished ClubCard and ClubDetailsModal to match original ProjectCard styling exactly
 
 **Next:** Phase 4 - QR/NFC Tap-ins & Advanced Features
 
