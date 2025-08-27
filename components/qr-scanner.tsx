@@ -305,21 +305,42 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       const hostname = url.hostname.replace('www.', '');
       
       if (trustedDomains.includes(hostname) && url.pathname === '/tap') {
-        // It's a tap-in QR code
-        console.log("Navigating to external tap-in URL:", url.toString());
+        // It's a tap-in QR code - check if it's same origin
+        const currentHost = window.location.hostname;
+        const isLocalDev = currentHost === 'localhost' || currentHost === '127.0.0.1';
+        const isSameOrigin = hostname === currentHost || 
+          (isLocalDev && (hostname === 'localhost' || hostname === '127.0.0.1'));
+        
+        console.log("QR URL analysis:", {
+          qrHostname: hostname,
+          currentHost,
+          isLocalDev,
+          isSameOrigin,
+          urlString: url.toString()
+        });
+        
         stopCamera();
         onClose();
         
-        // Navigate to the tap-in URL safely with error handling
         setTimeout(() => {
           try {
-            window.location.href = url.toString();
+            if (isSameOrigin || isLocalDev) {
+              // Use router.push for same-origin or local development
+              const pathWithParams = url.pathname + url.search;
+              console.log("Using router.push for same-origin:", pathWithParams);
+              router.push(pathWithParams);
+            } else {
+              // Use window.location for external domains
+              console.log("Using window.location for external domain:", url.toString());
+              window.location.href = url.toString();
+            }
+            
             toast({
               title: "QR Code detected! 📱",
               description: "Processing your tap-in...",
             });
           } catch (navError) {
-            console.error("External navigation error:", navError);
+            console.error("Navigation error:", navError);
             toast({
               title: "Navigation failed",
               description: "Please try again",
