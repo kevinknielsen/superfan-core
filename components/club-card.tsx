@@ -274,9 +274,9 @@ export default function ClubCard({
 
             {/* Track Label (adapted for club) */}
             <div className="flex justify-between mt-1">
-              <span className="text-xs text-muted-foreground">Club Vibe</span>
+              <span className="text-xs text-muted-foreground">Rookie</span>
               <span className="text-xs text-muted-foreground">
-                {membership ? `${currentStatus} status` : "Add membership to unlock"}
+                {membership ? `${currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}` : "Add membership to unlock"}
               </span>
             </div>
           </div>
@@ -319,7 +319,7 @@ export default function ClubCard({
             <div className="mt-1 flex items-center text-xs text-muted-foreground">
               <Users className="h-3 w-3 mr-1" />
               {membership ? (
-                <span>{currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} member</span>
+                <span>{currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} tier</span>
               ) : (
                 <span>-- members</span>
               )}

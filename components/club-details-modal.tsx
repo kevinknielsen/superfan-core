@@ -15,7 +15,6 @@ import {
   MapPin,
   Gift,
   Sparkles,
-  QrCode,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -24,7 +23,6 @@ import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, Unlock, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
-import { useQuickTapIn } from "@/hooks/use-tap-ins";
 import { ClubMediaDisplay } from "@/components/club-media-display";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
@@ -387,14 +385,7 @@ export default function ClubDetailsModal({
                       {currentPoints} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleTapIn('link')}
-                    disabled={tapLoading}
-                    className="flex items-center space-x-1 rounded-lg bg-primary/20 px-3 py-2 text-sm text-primary hover:bg-primary/30 transition-colors disabled:opacity-50"
-                  >
-                    <QrCode className="h-4 w-4" />
-                    <span>Tap In (+10)</span>
-                  </button>
+
                 </div>
               </div>
             ) : (
@@ -517,16 +508,7 @@ export default function ClubDetailsModal({
             )}
 
             {/* Action button (matches project modal) */}
-            {membership ? (
-              <button
-                onClick={() => handleTapIn('link')}
-                disabled={tapLoading}
-                className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                <QrCode className="h-5 w-5" />
-                {tapLoading ? "Recording..." : "Tap In for Points"}
-              </button>
-            ) : (
+            {!membership && (
               <button
                 onClick={handleJoinClub}
                 disabled={joinClubMutation.isPending || !isAuthenticated}
