@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useUserClubMembership, useJoinClub } from "@/hooks/use-clubs";
+import { useClubImages } from "@/hooks/use-club-media";
 import Spinner from "./ui/spinner";
 
 interface ClubCardProps {
@@ -52,6 +53,9 @@ export default function ClubCard({
   const [showDetails, setShowDetails] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+
+  // Get club images for enhanced display
+  const { data: images, primaryImage } = useClubImages(club.id);
 
   // Get user's membership for this club
   const { data: fetchedMembership } = useUserClubMembership(
@@ -102,7 +106,7 @@ export default function ClubCard({
     if (!isAuthenticated || !user?.id) {
       toast({
         title: "Sign in required",
-        description: "Please sign in to join clubs",
+        description: "Please sign in to add memberships",
         variant: "destructive",
       });
       return;
@@ -115,13 +119,13 @@ export default function ClubCard({
       });
       
       toast({
-        title: "Welcome to the club!",
+        title: "Membership added!",
         description: `You've successfully joined ${club.name}`,
       });
     } catch (error) {
       console.error('Error joining club:', error);
       toast({
-        title: "Failed to join club",
+        title: "Failed to add membership",
         description: "Please try again later",
         variant: "destructive",
       });
@@ -151,10 +155,10 @@ export default function ClubCard({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
               <div className="relative mr-3 h-12 w-12 overflow-hidden rounded-full bg-primary/20 flex items-center justify-center">
-                {club.image_url ? (
+                {primaryImage || club.image_url ? (
                   <img
-                    src={club.image_url || "/placeholder.svg"}
-                    alt={club.name}
+                    src={primaryImage?.file_path || club.image_url || "/placeholder.svg"}
+                    alt={primaryImage?.alt_text || club.name}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -211,7 +215,7 @@ export default function ClubCard({
             <div className="flex justify-between mt-1">
               <span className="text-xs text-muted-foreground">Club Vibe</span>
               <span className="text-xs text-muted-foreground">
-                {membership ? `${currentStatus} status` : "Join to unlock"}
+                {membership ? `${currentStatus} status` : "Add membership to unlock"}
               </span>
             </div>
           </div>
@@ -246,7 +250,7 @@ export default function ClubCard({
                   ? `${pointsToNext} to ${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}`
                   : membership 
                     ? "Max Status!" 
-                    : "Join to start"
+                    : "Add membership to start"
                 }
               </span>
             </div>
@@ -278,7 +282,7 @@ export default function ClubCard({
                 className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50"
                 aria-label={
                   !isAuthenticated
-                    ? "Sign in required to join clubs"
+                    ? "Sign in required to add memberships"
                     : undefined
                 }
               >
@@ -287,7 +291,7 @@ export default function ClubCard({
                 ) : (
                   <Users className="h-4 w-4 mr-1" />
                 )}
-                {joinClubMutation.isPending ? "Joining..." : "Join Club"}
+                {joinClubMutation.isPending ? "Adding..." : "Add Membership"}
               </button>
             )}
           </div>

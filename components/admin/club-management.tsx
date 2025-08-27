@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useClubs } from "@/hooks/use-clubs";
+import { ClubMediaManager } from "@/components/club-media-manager";
 import type { Club } from "@/types/club.types";
 
 interface ClubManagementProps {
@@ -68,11 +69,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
   };
 
   const handleViewClub = (club: Club) => {
-    // TODO: Navigate to club details view
-    toast({
-      title: "Coming Soon",
-      description: "Club details view will be available soon",
-    });
+    setSelectedClub(club);
   };
 
   const handleToggleActive = async (club: Club) => {
@@ -111,6 +108,76 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
             </CardContent>
           </Card>
         ))}
+      </div>
+    );
+  }
+
+  // If a club is selected, show detailed view
+  if (selectedClub) {
+    return (
+      <div className="space-y-6">
+        {/* Back Button & Header */}
+        <div className="flex items-center gap-4">
+          <Button 
+            variant="outline" 
+            onClick={() => setSelectedClub(null)}
+            className="flex items-center gap-2"
+          >
+            ← Back to Clubs
+          </Button>
+          <div>
+            <h2 className="text-2xl font-bold">{selectedClub.name}</h2>
+            <p className="text-muted-foreground">{selectedClub.description}</p>
+          </div>
+        </div>
+
+        {/* Club Details & Media Manager */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Club Info */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Club Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Name</label>
+                <p className="text-lg">{selectedClub.name}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Description</label>
+                <p className="text-muted-foreground">{selectedClub.description || 'No description'}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Location</label>
+                <p className="flex items-center gap-1">
+                  <MapPin className="h-4 w-4" />
+                  {selectedClub.city || 'No location set'}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Status</label>
+                <Badge variant={selectedClub.is_active ? "default" : "secondary"}>
+                  {selectedClub.is_active ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Members</label>
+                <p className="flex items-center gap-1">
+                  <Users className="h-4 w-4" />
+                  {selectedClub.member_count || 0} members
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Media Manager */}
+          <div>
+            <ClubMediaManager clubId={selectedClub.id} isAdmin={true} />
+          </div>
+        </div>
       </div>
     );
   }

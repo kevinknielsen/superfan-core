@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Gift, 
@@ -30,14 +30,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import confetti from "canvas-confetti";
+import { getAccessToken } from "@privy-io/react-auth";
 
 interface Unlock {
   id: string;
   club_id: string;
   title: string;
   description: string;
-  unlock_type: string;
-  required_status: string;
+  type: string;
+  min_status: string;
   is_active: boolean;
   metadata?: {
     redemption_instructions?: string;
@@ -90,7 +91,18 @@ export default function UnlockRedemption({
 
   const loadUnlocks = async () => {
     try {
-      const response = await fetch(`/api/unlocks?club_id=${clubId}`);
+      // Get auth token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`/api/unlocks?club_id=${clubId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setUnlocks(data);
@@ -103,7 +115,7 @@ export default function UnlockRedemption({
   };
 
   const isUnlockAvailable = (unlock: Unlock) => {
-    const requiredPoints = STATUS_POINTS[unlock.required_status] || 0;
+    const requiredPoints = STATUS_POINTS[unlock.min_status] || 0;
     return userPoints >= requiredPoints;
   };
 
@@ -117,7 +129,7 @@ export default function UnlockRedemption({
     if (!isUnlockAvailable(unlock)) {
       toast({
         title: "Unlock Not Available",
-        description: `You need ${unlock.required_status} status to access this perk`,
+        description: `You need ${unlock.min_status} status to access this perk`,
         variant: "destructive",
       });
       return;
@@ -126,9 +138,18 @@ export default function UnlockRedemption({
     setIsRedeeming(true);
 
     try {
+      // Get auth token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
       const response = await fetch('/api/unlocks/redeem', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           unlock_id: unlock.id,
           club_id: clubId
@@ -214,10 +235,10 @@ export default function UnlockRedemption({
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {unlocks.map((unlock, index) => {
-          const IconComponent = getUnlockIcon(unlock.unlock_type);
-          const StatusIconComponent = getStatusIcon(unlock.required_status);
+          const IconComponent = getUnlockIcon(unlock.type);
+          const StatusIconComponent = getStatusIcon(unlock.min_status);
           const isAvailable = isUnlockAvailable(unlock);
-          const progress = getStatusProgress(unlock.required_status);
+          const progress = getStatusProgress(unlock.min_status);
 
           return (
             <motion.div
@@ -254,11 +275,11 @@ export default function UnlockRedemption({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="flex items-center gap-1">
-                        <StatusIconComponent className={`h-3 w-3 ${getStatusColor(unlock.required_status)}`} />
-                        Requires {unlock.required_status}
+                        <StatusIconComponent className={`h-3 w-3 ${getStatusColor(unlock.min_status)}`} />
+                        Requires {unlock.min_status}
                       </span>
                       <span className="text-muted-foreground">
-                        {STATUS_POINTS[unlock.required_status]}+ pts
+                        {STATUS_POINTS[unlock.min_status]}+ pts
                       </span>
                     </div>
                     
@@ -271,7 +292,7 @@ export default function UnlockRedemption({
                           />
                         </div>
                         <div className="text-xs text-muted-foreground text-center">
-                          {userPoints} / {STATUS_POINTS[unlock.required_status]} points
+                          {userPoints} / {STATUS_POINTS[unlock.min_status]} points
                         </div>
                       </div>
                     )}
@@ -299,7 +320,7 @@ export default function UnlockRedemption({
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                {React.createElement(getUnlockIcon(selectedUnlock.unlock_type), { 
+                {React.createElement(getUnlockIcon(selectedUnlock.type), { 
                   className: "h-5 w-5 text-primary" 
                 })}
                 {selectedUnlock.title}

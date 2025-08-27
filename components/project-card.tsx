@@ -53,15 +53,14 @@ export default function ProjectCard({
   const displayTargetRaise =
     typeof targetRaise === "number" && !isNaN(targetRaise) ? targetRaise : null;
 
-  const {
-    data: presaleData,
-    isLoading: presaleLoading,
-    error: presaleError,
-  } = usePresale(project?.presale_id);
+  // Legacy presale functionality removed for Club platform
+  const presaleData = null;
+  const presaleLoading = false;
+  const presaleError = null;
 
-  const backersCount = presaleData?.participants.length ?? null;
-  const backersLoading = presaleLoading;
-  const backersError = presaleError;
+  const backersCount = null;
+  const backersLoading = false;
+  const backersError = null;
 
   // Calculate funding progress from presale data
   const fundingProgress = presaleData?.targetUsdcAmount

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { createConfig, http, WagmiProvider, useConnect, useAccount } from 'wagmi';
 import { base } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -46,38 +46,75 @@ interface FarcasterWagmiProviderProps {
 
 // Auto-connect component that runs inside WagmiProvider
 function AutoConnectWallet() {
-  const { isInWalletApp, isSDKLoaded } = useFarcaster();
+  const farcasterContext = useFarcaster();
   const { connect, connectors } = useConnect();
   const { isConnected } = useAccount();
   
+  // Defensive null checks
+  const isInWalletApp = farcasterContext?.isInWalletApp ?? false;
+  const isSDKLoaded = farcasterContext?.isSDKLoaded ?? false;
+  
   useEffect(() => {
-    // Only auto-connect if we're in a wallet app, SDK is loaded, and not already connected
-    if (isInWalletApp && isSDKLoaded && !isConnected && connectors.length > 0) {
-      const frameConnector = connectors.find(c => c.id === 'farcaster');
-      if (frameConnector) {
-        console.log('🔗 [AutoConnect] Connecting Farcaster wallet...');
-        connect({ connector: frameConnector });
+    // Add timeout to ensure we're not in a render cycle
+    const timer = setTimeout(() => {
+      // Only auto-connect if we're in a wallet app, SDK is loaded, and not already connected
+      if (isInWalletApp && isSDKLoaded && !isConnected && connectors.length > 0) {
+        const frameConnector = connectors.find(c => c.id === 'farcaster');
+        if (frameConnector) {
+          console.log('🔗 [AutoConnect] Connecting Farcaster wallet...');
+          connect({ connector: frameConnector });
+        }
       }
-    }
+    }, 0);
+    
+    return () => clearTimeout(timer);
   }, [isInWalletApp, isSDKLoaded, isConnected, connectors, connect]);
   
   return null;
 }
 
 export function FarcasterWagmiProvider({ children }: FarcasterWagmiProviderProps) {
-  const { isInWalletApp, isSDKLoaded } = useFarcaster();
+  const farcasterContext = useFarcaster();
   
-  // Always provide Wagmi, but with different configs based on context
-  const config = isInWalletApp && isSDKLoaded 
-    ? getFarcasterWagmiConfig() 
-    : getWebWagmiConfig();
-    
-  console.log('🔧 [FarcasterWagmiProvider] Config selection:', {
-    isInWalletApp,
-    isSDKLoaded,
-    usingFarcasterConfig: isInWalletApp && isSDKLoaded,
-    connectorsCount: config.connectors.length
-  });
+  // Defensive null checks and stable values
+  const isInWalletApp = farcasterContext?.isInWalletApp ?? false;
+  const isSDKLoaded = farcasterContext?.isSDKLoaded ?? false;
+  
+  // Add a mounting state to prevent early renders
+  const [isMounted, setIsMounted] = React.useState(false);
+  
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+  
+  // Memoize the config to prevent unnecessary re-renders
+  const config = useMemo(() => {
+    const shouldUseFarcaster = isInWalletApp && isSDKLoaded;
+    return shouldUseFarcaster 
+      ? getFarcasterWagmiConfig() 
+      : getWebWagmiConfig();
+  }, [isInWalletApp, isSDKLoaded]);
+
+  // Log config selection (outside useMemo to avoid side effects)
+  useEffect(() => {
+    console.log('🔧 [FarcasterWagmiProvider] Config selection:', {
+      isInWalletApp,
+      isSDKLoaded,
+      usingFarcasterConfig: isInWalletApp && isSDKLoaded,
+      connectorsCount: config.connectors.length
+    });
+  }, [isInWalletApp, isSDKLoaded, config]);
+
+  // Provide a basic Wagmi context during mounting to prevent hook errors
+  if (!isMounted) {
+    return (
+      <WagmiProvider config={getWebWagmiConfig()}>
+        <QueryClientProvider client={wagmiQueryClient}>
+          {children}
+        </QueryClientProvider>
+      </WagmiProvider>
+    );
+  }
 
   return (
     <WagmiProvider config={config}>

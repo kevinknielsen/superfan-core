@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useUnifiedAuth } from '@/lib/unified-auth-context';
+import { getAccessToken } from "@privy-io/react-auth";
 
 export interface TapIn {
   id: string;
@@ -39,12 +40,23 @@ export function useTapIns(clubId: string | null, limit: number = 10) {
     queryFn: async (): Promise<TapIn[]> => {
       if (!clubId) return [];
 
+      // Get auth token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
       const params = new URLSearchParams({
         club_id: clubId,
         limit: limit.toString(),
       });
 
-      const response = await fetch(`/api/tap-in?${params}`);
+      const response = await fetch(`/api/tap-in?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      
       if (!response.ok) {
         throw new Error('Failed to fetch tap-ins');
       }
@@ -62,10 +74,17 @@ export function useTapIn() {
 
   return useMutation({
     mutationFn: async (tapInData: TapInRequest): Promise<TapInResponse> => {
+      // Get auth token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
       const response = await fetch('/api/tap-in', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify(tapInData),
       });

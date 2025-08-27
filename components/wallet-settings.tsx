@@ -9,7 +9,7 @@ import { useMetalHolder } from "@/hooks/use-metal-holder";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { isManagerApp } from "@/lib/feature-flags";
 import { useProjects } from "@/hooks/use-projects";
-// import { useUserPresales } from "@/hooks/use-presale"; // Moved to legacy
+// useUserPresales removed - part of legacy funding system
 import { useFarcaster } from "@/lib/farcaster-context";
 import { useBalance } from "wagmi";
 import { Address } from "viem";
@@ -61,7 +61,7 @@ export default function WalletSettings() {
     balanceSource: isInWalletApp ? "connected wallet" : "metal holder"
   });
 
-  const { data: participatedPresales } = useUserPresales();
+  // Removed presales - part of legacy funding system
 
   const handleCopy = () => {
     if (walletAddress) {
@@ -222,49 +222,7 @@ export default function WalletSettings() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h3 className="mb-4 text-lg font-medium">Your Funded Projects</h3>
-        {participatedPresales && participatedPresales.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {participatedPresales.map((presale) => (
-              <div
-                key={presale.name}
-                className="bg-background/50 p-4 rounded-lg flex flex-col items-center"
-              >
-                <img
-                  src={presale.tokenInfo.imageUrl}
-                  className="h-16 w-16 bg-gray-200 rounded-full mb-4 flex items-center justify-center"
-                />
-                <h4 className="text-lg font-medium mb-2">
-                  {presale.tokenInfo.name}
-                </h4>
-                <p className="text-sm text-muted-foreground mb-2">
-                  ${presale.tokenInfo.symbol}
-                </p>
-                <p className="text-base font-semibold">
-                  {Number(presale.userUsdcAmount).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  USDC
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center">
-            <div className="bg-background/50 h-16 w-16 rounded-full flex items-center justify-center mb-4">
-              <Link2 className="h-8 w-8 text-muted-foreground" />
-            </div>
-
-            <h4 className="text-lg font-medium mb-2">No funded projects yet</h4>
-            <p className="text-center text-muted-foreground mb-6 max-w-md">
-              You haven't funded any music projects yet. Start by funding a
-              project to see it here.
-            </p>
-          </div>
-        )}
-      </div>
+      {/* Legacy funding projects section removed for Club platform */}
 
       {/* Claims Section - only show on manager app */}
       {isManagerApp() && (

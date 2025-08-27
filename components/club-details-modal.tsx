@@ -25,6 +25,7 @@ import type { Club, ClubMembership, Unlock, ClubStatus } from "@/types/club.type
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { useQuickTapIn } from "@/hooks/use-tap-ins";
+import { ClubMediaDisplay } from "@/components/club-media-display";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
@@ -59,15 +60,15 @@ const UNLOCK_ICONS = {
   allocation: Crown,
 };
 
-// Helper function to render club images (matches project modal)
+// Helper function to render club media (supports images and videos)
 function renderClubImages(club: Club) {
-  const image = club.image_url || "/placeholder.svg?height=400&width=600&query=music club";
-  
   return (
-    <img
-      src={image}
-      alt={club.name}
-      className="h-full w-full object-cover object-center"
+    <ClubMediaDisplay
+      clubId={club.id}
+      className="h-full w-full"
+      showControls={true}
+      autoPlay={false}
+      fallbackImage="/placeholder.svg?height=400&width=600&query=music club"
     />
   );
 }
@@ -128,7 +129,7 @@ export default function ClubDetailsModal({
     if (!isAuthenticated || !user?.id) {
       toast({
         title: "Sign in required",
-        description: "Please sign in to join clubs",
+        description: "Please sign in to add memberships",
         variant: "destructive",
       });
       return;
@@ -141,13 +142,13 @@ export default function ClubDetailsModal({
       });
       
       toast({
-        title: "Welcome to the club!",
+        title: "Membership added!",
         description: `You've successfully joined ${club.name}`,
       });
     } catch (error) {
       console.error('Error joining club:', error);
       toast({
-        title: "Failed to join club",
+        title: "Failed to add membership",
         description: "Please try again later",
         variant: "destructive",
       });
@@ -168,7 +169,7 @@ export default function ClubDetailsModal({
 
     if (!membership) {
       toast({
-        title: "Join the club first",
+        title: "Add membership first",
         description: "You need to be a member to earn points",
         variant: "destructive",
       });
@@ -367,7 +368,7 @@ export default function ClubDetailsModal({
               <h3 className="mb-2 text-lg font-semibold">About</h3>
               <p className="text-gray-300">
                 {club.description ||
-                  "Join this exclusive club for unique music experiences and perks."}
+                  "Add membership to this exclusive club for unique music experiences and perks."}
               </p>
             </div>
 
@@ -388,7 +389,7 @@ export default function ClubDetailsModal({
                   </div>
                   <button
                     onClick={() => handleTapIn('link')}
-                    disabled={tapInMutation.isPending}
+                    disabled={tapLoading}
                     className="flex items-center space-x-1 rounded-lg bg-primary/20 px-3 py-2 text-sm text-primary hover:bg-primary/30 transition-colors disabled:opacity-50"
                   >
                     <QrCode className="h-4 w-4" />
@@ -398,9 +399,9 @@ export default function ClubDetailsModal({
               </div>
             ) : (
               <div className="mb-6 rounded-xl border border-gray-800 p-4 text-center">
-                <h4 className="font-medium mb-2">Join the Club</h4>
+                <h4 className="font-medium mb-2">Add Membership</h4>
                 <p className="text-sm text-gray-400 mb-3">
-                  Become a member to earn points, unlock perks, and join the community.
+                  Become a member to earn points, unlock perks, and access the community.
                 </p>
                 <button
                   onClick={handleJoinClub}
@@ -412,7 +413,7 @@ export default function ClubDetailsModal({
                   ) : (
                     <Users className="h-4 w-4" />
                   )}
-                  <span>{joinClubMutation.isPending ? "Joining..." : "Join Club"}</span>
+                  <span>{joinClubMutation.isPending ? "Adding..." : "Add Membership"}</span>
                 </button>
               </div>
             )}
@@ -532,11 +533,11 @@ export default function ClubDetailsModal({
                 className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label={
                   !isAuthenticated
-                    ? "Sign in required to join clubs"
+                    ? "Sign in required to add memberships"
                     : undefined
                 }
               >
-                {joinClubMutation.isPending ? "Joining Club..." : "Join Club"}
+                {joinClubMutation.isPending ? "Adding Membership..." : "Add Membership"}
               </button>
             )}
           </div>

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('club_id', clubId)
       .eq('is_active', true)
-      .order('required_status', { ascending: true })
+      .order('min_status', { ascending: true })
       .order('created_at', { ascending: false });
 
     if (error) {

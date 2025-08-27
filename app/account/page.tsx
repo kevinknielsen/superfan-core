@@ -123,9 +123,9 @@ export default function AccountPage() {
                 
                 <div className="flex items-center justify-between p-4 rounded-lg bg-gray-800/50">
                   <div>
-                    <h4 className="font-medium">Auto-Join New Clubs</h4>
+                    <h4 className="font-medium">Auto-Add Memberships</h4>
                     <p className="text-sm text-muted-foreground">
-                      Automatically join clubs from artists you follow
+                      Automatically add memberships to clubs from artists you follow
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import QRCodeLib from "qrcode";
+import { getAccessToken } from "@privy-io/react-auth";
 
 interface QRPayloadData {
   club_id: string;
@@ -77,10 +78,17 @@ export default function QRGenerator({ clubId, clubName, onGenerated }: QRGenerat
         }
       };
 
+      // Get auth token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
       const response = await fetch('/api/qr/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify(qrPayload),
       });

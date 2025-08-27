@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, LogOut, User, Star, Crown, QrCode } from "lucide-react";
+import { ArrowLeft, LogOut, User, Star, QrCode } from "lucide-react";
 import { usePrivy } from "@/lib/auth-context";
 import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFarcaster } from "@/lib/farcaster-context";
@@ -47,15 +47,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
     }
   };
 
-  const handleMembershipClick = () => {
-    requireAuth("profile", () => router.push("/membership"));
-  };
-
-  const handleAccountClick = () => {
-    requireAuth("profile", () => router.push("/account"));
-  };
-
-  const handleQRScanClick = () => {
+  const handleCheckInClick = () => {
     requireAuth("scan", () => {
       // Check if we're in a browser environment that supports QR scanning
       if (typeof window !== 'undefined' && navigator.mediaDevices) {
@@ -65,6 +57,10 @@ export default function Header({ showBackButton = false }: HeaderProps) {
         console.log('QR scanning not available in this environment');
       }
     });
+  };
+
+  const handleAccountClick = () => {
+    requireAuth("profile", () => router.push("/account"));
   };
 
   return (
@@ -92,26 +88,14 @@ export default function Header({ showBackButton = false }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Membership button - show when membership is enabled */}
+            {/* Check In button - show when membership is enabled */}
             {!showBackButton && enableMembership && (
               <button
-                onClick={handleMembershipClick}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white text-sm font-medium transition-all duration-200"
+                onClick={handleCheckInClick}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white text-sm font-medium transition-all duration-200"
               >
-                <Crown className="h-4 w-4" />
-                Membership
-              </button>
-            )}
-
-            {/* QR Scanner button - only show on client */}
-            {!showBackButton && isClient && (
-              <button 
-                onClick={handleQRScanClick}
-                title="Scan QR Code"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
-                  <QrCode className="h-4 w-4" />
-                </div>
+                <QrCode className="h-4 w-4" />
+                <span className="hidden sm:inline">Check In</span>
               </button>
             )}
 

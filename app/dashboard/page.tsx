@@ -186,7 +186,7 @@ export default function Dashboard() {
                         No club memberships yet
                       </h2>
                       <p className="mb-6 text-muted-foreground">
-                        Join your first club to start earning points and unlocking perks
+                        Add your first membership to start earning points and unlocking perks
                       </p>
                     </div>
                   </div>
