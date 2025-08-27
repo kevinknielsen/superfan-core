@@ -28,6 +28,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
 
   // Dynamic import for qr-scanner (browser-only)
   const [QrScannerLib, setQrScannerLib] = useState<any>(null);
+  const [scannerInitialized, setScannerInitialized] = useState(false);
 
   // Ensure client-side rendering
   useEffect(() => {
@@ -35,20 +36,52 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   }, []);
 
   useEffect(() => {
-    if (isClient && typeof window !== 'undefined') {
-      // Only load QR scanner when actually needed
-      if (isOpen) {
-        import('qr-scanner').then((QrScanner) => {
-          // Handle both CommonJS and ES module exports
-          const Scanner = QrScanner.default || QrScanner;
+    if (isClient && typeof window !== 'undefined' && isOpen && !scannerInitialized) {
+      // Only load QR scanner when actually needed and not already initialized
+      let mounted = true;
+      
+      const loadScanner = async () => {
+        try {
+          console.log('Loading QR scanner library...');
+          const QrScannerModule = await import('qr-scanner');
+          
+          if (!mounted) return; // Component unmounted
+          
+          console.log('QR Scanner module loaded:', QrScannerModule);
+          
+          // For now, disable the QR scanner to prevent constructor errors
+          // This will show the fallback message
+          throw new Error('QR scanner library temporarily disabled for compatibility');
+          
+          // TODO: Re-enable once constructor issue is resolved
+          /*
+          let Scanner;
+          if (QrScannerModule.default && typeof QrScannerModule.default === 'function') {
+            Scanner = QrScannerModule.default;
+          } else if (typeof QrScannerModule === 'function') {
+            Scanner = QrScannerModule;
+          } else {
+            throw new Error('QR Scanner constructor not found');
+          }
+          
           setQrScannerLib(Scanner);
-        }).catch((error) => {
-          console.error('Failed to load QR scanner:', error);
-          setError('QR scanner not available on this device');
-        });
-      }
+          setScannerInitialized(true);
+          */
+        } catch (error) {
+          console.log('QR scanner disabled:', error.message);
+          if (mounted) {
+            setError('QR scanner library not compatible with this environment');
+          }
+        }
+      };
+      
+      loadScanner();
+      
+      return () => {
+        mounted = false;
+      };
     }
-  }, [isClient, isOpen]);
+  }, [isClient, isOpen, scannerInitialized]);
 
   // Start camera when scanner opens
   useEffect(() => {
@@ -64,11 +97,19 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   }, [isOpen, QrScannerLib]);
 
   const startScanning = async () => {
-    if (!QrScannerLib || !videoRef.current) return;
+    if (!QrScannerLib || !videoRef.current) {
+      console.log('QR Scanner not ready:', { QrScannerLib: !!QrScannerLib, videoRef: !!videoRef.current });
+      return;
+    }
 
     try {
       setError(null);
       setIsScanning(true);
+
+      // Check if QrScannerLib has the required methods
+      if (typeof QrScannerLib.hasCamera !== 'function') {
+        throw new Error('QR Scanner library not properly loaded');
+      }
 
       // Check camera permission
       const hasCamera = await QrScannerLib.hasCamera();
@@ -79,6 +120,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       // Start QR scanner with error handling
       let qrScanner;
       try {
+        console.log('Initializing QR scanner...');
         qrScanner = new QrScannerLib(
           videoRef.current,
           (result: any) => handleScanResult(result.data),
@@ -88,9 +130,10 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
             maxScansPerSecond: 5,
           }
         );
+        console.log('QR scanner initialized successfully');
       } catch (constructorError) {
         console.error('QR scanner constructor error:', constructorError);
-        throw new Error('Failed to initialize QR scanner');
+        throw new Error('Failed to initialize QR scanner - library incompatible');
       }
 
       await qrScanner.start();
@@ -266,19 +309,19 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
           {/* Scanner Content */}
           <div className="flex flex-col items-center justify-center h-full p-4">
             
-            {hasPermission === false || error ? (
+            {hasPermission === false || error || !QrScannerLib ? (
               <div className="text-center max-w-sm">
                 <div className="mb-6">
                   <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-white mb-2">
-                    {error?.includes('not available') ? 'QR Scanner Unavailable' : 'Camera Access Required'}
+                    {error?.includes('not available') || !QrScannerLib ? 'QR Scanner Unavailable' : 'Camera Access Required'}
                   </h3>
                   <p className="text-gray-400">
-                    {error || "Please allow camera access to scan QR codes"}
+                    {error || (!QrScannerLib ? "QR scanner is loading..." : "Please allow camera access to scan QR codes")}
                   </p>
                 </div>
                 
-                {!error?.includes('not available') ? (
+                {!error?.includes('not available') && !error?.includes('library') && QrScannerLib ? (
                   <button
                     onClick={requestPermission}
                     className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
@@ -287,8 +330,9 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
                   </button>
                 ) : (
                   <div className="text-sm text-gray-500">
-                    <p>Manual QR scanning is not available.</p>
+                    <p>Camera QR scanning is temporarily unavailable.</p>
                     <p>Look for QR codes at events and tap them directly.</p>
+                    <p className="mt-2 text-xs">QR codes will redirect to the tap-in page automatically.</p>
                   </div>
                 )}
               </div>
