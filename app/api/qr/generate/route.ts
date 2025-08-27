@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       qr_url: fullQrUrl,
       tap_url: qrUrl,
       metadata: qrData.metadata || {},
-      description: qrData.metadata?.description || null
+      description: (qrData.metadata as any)?.description || null
     };
 
     console.log("[QR Generate API] Attempting to save QR with data:", {
@@ -131,7 +131,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const clubId = searchParams.get('club_id');
-  const limit = parseInt(searchParams.get('limit') || '50');
+  const limitParam = searchParams.get('limit') || '50';
+  const limit = Math.min(Math.max(parseInt(limitParam) || 50, 1), 100);
 
   if (!clubId) {
     return NextResponse.json({ error: "club_id is required" }, { status: 400 });

@@ -39,11 +39,25 @@ CREATE INDEX IF NOT EXISTS idx_qr_codes_created_at ON public.qr_codes(created_at
 -- RLS (Row Level Security) policies
 ALTER TABLE public.qr_codes ENABLE ROW LEVEL SECURITY;
 
--- Users can manage QR codes they created
+-- Allow authenticated users to insert QR codes
+CREATE POLICY "Authenticated users can insert QR codes" ON public.qr_codes
+    FOR INSERT WITH CHECK (auth.jwt() ->> 'sub' IS NOT NULL);
+
+-- Users can read and manage QR codes they created
 CREATE POLICY "Users can manage their QR codes" ON public.qr_codes
-    FOR ALL USING (
-        created_by = auth.jwt() ->> 'sub'
+    FOR SELECT USING (
+        created_by = auth.jwt() ->> 'sub' OR 
+        auth.jwt() ->> 'sub' IS NOT NULL
     );
+
+-- Users can update their own QR codes
+CREATE POLICY "Users can update their QR codes" ON public.qr_codes
+    FOR UPDATE USING (created_by = auth.jwt() ->> 'sub')
+    WITH CHECK (created_by = auth.jwt() ->> 'sub');
+
+-- Users can delete their own QR codes  
+CREATE POLICY "Users can delete their QR codes" ON public.qr_codes
+    FOR DELETE USING (created_by = auth.jwt() ->> 'sub');
 
 -- QR codes are readable by anyone (for scanning)
 CREATE POLICY "QR codes are publicly readable" ON public.qr_codes
