@@ -105,7 +105,16 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   };
 
   const startQRDetection = async () => {
-    if (!videoRef.current || !canvasRef.current || !stream) return;
+    if (!videoRef.current || !canvasRef.current || !stream) {
+      console.log('QR Detection failed: missing refs or stream', {
+        video: !!videoRef.current,
+        canvas: !!canvasRef.current,
+        stream: !!stream
+      });
+      return;
+    }
+
+    console.log('Starting QR detection...');
 
     try {
       // Try BarcodeDetector first (Chrome/Edge)
@@ -121,7 +130,14 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
             const context = canvas.getContext('2d');
             const video = videoRef.current;
             
-            if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) {
+              console.log('Video not ready:', {
+                context: !!context,
+                readyState: video?.readyState,
+                HAVE_ENOUGH_DATA: video?.HAVE_ENOUGH_DATA
+              });
+              return;
+            }
 
             // Set canvas size to match video
             canvas.width = video.videoWidth;
@@ -135,17 +151,18 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
             
             if (barcodes.length > 0 && !isProcessing) {
               const qrData = barcodes[0].rawValue;
-              console.log('QR Code detected:', qrData);
+              console.log('QR Code detected with BarcodeDetector:', qrData);
               setIsProcessing(true);
               handleScanResult(qrData);
               return; // Stop scanning after detection
             }
           } catch (detectError) {
-            console.warn('QR detection error:', detectError);
+            console.warn('BarcodeDetector error:', detectError);
           }
         };
 
         // Start continuous scanning
+        console.log('Starting BarcodeDetector scanning interval');
         scanIntervalRef.current = setInterval(scanFrame, 500); // Scan every 500ms
         
       } else {
@@ -161,7 +178,14 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
             const context = canvas.getContext('2d');
             const video = videoRef.current;
             
-            if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+            if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) {
+              console.log('jsQR: Video not ready:', {
+                context: !!context,
+                readyState: video?.readyState,
+                HAVE_ENOUGH_DATA: video?.HAVE_ENOUGH_DATA
+              });
+              return;
+            }
 
             // Set canvas size to match video
             canvas.width = video.videoWidth;
@@ -190,6 +214,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
         };
 
         // Start continuous scanning
+        console.log('Starting jsQR scanning interval');
         scanIntervalRef.current = setInterval(scanFrame, 300); // Scan every 300ms for better responsiveness
         
         toast({
