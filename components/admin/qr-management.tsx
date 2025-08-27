@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { QrCode, Plus, Download, Copy, Eye, Calendar, MapPin } from "lucide-react";
+import { QrCode, Plus, Download, Copy, Eye, Calendar, MapPin, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useClubs } from "@/hooks/use-clubs";
 import QRGenerator from "@/components/qr-generator";
 import type { Club } from "@/types/club.types";
+import { getAccessToken } from "@privy-io/react-auth";
 
 interface QRCode {
   qr_id: string;
@@ -33,6 +34,7 @@ export default function QRManagement() {
   const [selectedClub, setSelectedClub] = useState<string>("");
   const [generatedQRs, setGeneratedQRs] = useState<QRCode[]>([]);
   const [isGeneratingQR, setIsGeneratingQR] = useState(false);
+  const [isLoadingQRs, setIsLoadingQRs] = useState(false);
   
   // Load clubs for selection
   const { data: clubs = [], isLoading: clubsLoading } = useClubs();
@@ -45,16 +47,53 @@ export default function QRManagement() {
     }
   }, [activeClubs, selectedClub]);
 
+  // Load QR codes when club changes
+  useEffect(() => {
+    if (selectedClub) {
+      loadQRCodes();
+    }
+  }, [selectedClub]);
+
+  const loadQRCodes = async () => {
+    if (!selectedClub) return;
+
+    setIsLoadingQRs(true);
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      const response = await fetch(`/api/qr/generate?club_id=${selectedClub}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load QR codes');
+      }
+
+      const data = await response.json();
+      setGeneratedQRs(data.qr_codes || []);
+      
+    } catch (error) {
+      console.error('Error loading QR codes:', error);
+      toast({
+        title: "Failed to load QR codes",
+        description: "Please try refreshing the page",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingQRs(false);
+    }
+  };
+
   const handleQRGenerated = (qrData: any) => {
+    // Refresh the QR codes list from database
+    loadQRCodes();
+    
     const selectedClubData = activeClubs.find(c => c.id === selectedClub);
-    
-    const newQR: QRCode = {
-      ...qrData,
-      club_name: selectedClubData?.name || 'Unknown Club'
-    };
-    
-    setGeneratedQRs(prev => [newQR, ...prev]);
-    
     toast({
       title: "QR Code Generated! 📱",
       description: `New QR code created for ${selectedClubData?.name}`,
@@ -191,14 +230,43 @@ export default function QRManagement() {
       </Card>
 
       {/* Generated QR Codes History */}
-      {generatedQRs.length > 0 && (
+      {(generatedQRs.length > 0 || isLoadingQRs) && (
         <Card>
           <CardHeader>
-            <CardTitle>Recent QR Codes</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Recent QR Codes</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadQRCodes}
+                disabled={isLoadingQRs}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingQRs ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {generatedQRs.map((qr, index) => (
+            {isLoadingQRs ? (
+              <div className="space-y-4">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="border rounded-lg p-4 animate-pulse">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="h-4 bg-muted rounded w-1/4 mb-2"></div>
+                        <div className="h-3 bg-muted rounded w-1/2"></div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="h-8 w-20 bg-muted rounded"></div>
+                        <div className="h-8 w-20 bg-muted rounded"></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {generatedQRs.map((qr, index) => (
                 <motion.div
                   key={qr.qr_id}
                   className="border rounded-lg p-4"
@@ -261,9 +329,10 @@ export default function QRManagement() {
                       </Button>
                     </div>
                   </div>
-                </motion.div>
-              ))}
-            </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

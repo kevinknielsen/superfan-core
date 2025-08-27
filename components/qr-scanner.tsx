@@ -108,8 +108,9 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
     if (!videoRef.current || !canvasRef.current || !stream) return;
 
     try {
-      // Check if BarcodeDetector is supported
+      // Try BarcodeDetector first (Chrome/Edge)
       if ('BarcodeDetector' in window) {
+        console.log('Using BarcodeDetector API');
         const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
         
         const scanFrame = async () => {
@@ -148,15 +149,62 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
         scanIntervalRef.current = setInterval(scanFrame, 500); // Scan every 500ms
         
       } else {
-        console.warn('BarcodeDetector not supported, manual QR detection only');
+        // Fallback to jsQR for Safari/Firefox and other browsers
+        console.log('BarcodeDetector not supported, using jsQR fallback');
+        const jsQR = (await import('jsqr')).default;
+        
+        const scanFrame = async () => {
+          if (!videoRef.current || !canvasRef.current || !stream) return;
+          
+          try {
+            const canvas = canvasRef.current;
+            const context = canvas.getContext('2d');
+            const video = videoRef.current;
+            
+            if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+            // Set canvas size to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw current video frame to canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Get image data for jsQR
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Detect QR codes using jsQR
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: "dontInvert",
+            });
+            
+            if (code && !isProcessing) {
+              console.log('QR Code detected with jsQR:', code.data);
+              setIsProcessing(true);
+              handleScanResult(code.data);
+              return; // Stop scanning after detection
+            }
+          } catch (detectError) {
+            console.warn('jsQR detection error:', detectError);
+          }
+        };
+
+        // Start continuous scanning
+        scanIntervalRef.current = setInterval(scanFrame, 300); // Scan every 300ms for better responsiveness
+        
         toast({
-          title: "Limited QR Detection",
-          description: "Automatic scanning not available. Look for clickable QR codes.",
+          title: "QR Scanner Active",
+          description: "Position QR code within the frame to scan",
           variant: "default",
         });
       }
     } catch (error) {
       console.error('Failed to start QR detection:', error);
+      toast({
+        title: "Scanner Error",
+        description: "Unable to start QR detection. Try refreshing the page.",
+        variant: "destructive",
+      });
     }
   };
 
