@@ -49,24 +49,33 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
           
           console.log('QR Scanner module loaded:', QrScannerModule);
           
-          // For now, disable the QR scanner to prevent constructor errors
-          // This will show the fallback message
-          throw new Error('QR scanner library temporarily disabled for compatibility');
-          
-          // TODO: Re-enable once constructor issue is resolved
-          /*
+          // Handle different export patterns safely
           let Scanner;
           if (QrScannerModule.default && typeof QrScannerModule.default === 'function') {
             Scanner = QrScannerModule.default;
           } else if (typeof QrScannerModule === 'function') {
             Scanner = QrScannerModule;
+          } else if (QrScannerModule.QrScanner && typeof QrScannerModule.QrScanner === 'function') {
+            Scanner = QrScannerModule.QrScanner;
           } else {
-            throw new Error('QR Scanner constructor not found');
+            console.error('QR Scanner exports:', Object.keys(QrScannerModule));
+            throw new Error('QR Scanner constructor not found in module exports');
           }
           
-          setQrScannerLib(Scanner);
-          setScannerInitialized(true);
-          */
+          // Test the constructor before setting it
+          try {
+            // Don't actually create an instance, just verify the constructor exists
+            if (typeof Scanner !== 'function') {
+              throw new Error('Scanner is not a constructor function');
+            }
+            
+            setQrScannerLib(Scanner);
+            setScannerInitialized(true);
+            console.log('QR Scanner library successfully loaded');
+          } catch (testError) {
+            console.error('Scanner constructor test failed:', testError);
+            throw new Error('QR scanner constructor validation failed');
+          }
         } catch (error) {
           console.log('QR scanner disabled:', error.message);
           if (mounted) {

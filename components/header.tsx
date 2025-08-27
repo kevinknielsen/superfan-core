@@ -10,8 +10,14 @@ import { useFarcaster } from "@/lib/farcaster-context";
 import { useFarcasterAuthAction } from "@/lib/farcaster-auth";
 import { useFeatureFlag } from "@/config/featureFlags";
 import { useState, useEffect } from "react";
+import dynamic from 'next/dynamic';
 import Logo from "./logo";
-import QRScanner from "./qr-scanner";
+
+// Dynamic import for QR scanner to prevent SSR issues
+const QRScanner = dynamic(() => import('./qr-scanner').then(mod => ({ default: mod.QRScanner })), {
+  ssr: false,
+  loading: () => null
+});
 
 interface HeaderProps {
   showBackButton?: boolean;
