@@ -9,6 +9,29 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  webpack: (config, { isServer }) => {
+    // Handle QR scanner library properly
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+      };
+    }
+
+    // Ensure proper handling of worker files
+    config.module.rules.push({
+      test: /\.worker\.(js|ts)$/,
+      use: {
+        loader: 'worker-loader',
+        options: {
+          inline: 'fallback',
+        },
+      },
+    });
+
+    return config;
+  },
   async redirects() {
     return [
       // Commented out hosted manifest redirect - using local file instead
@@ -98,7 +121,7 @@ const nextConfig = {
           // X-XSS-Protection removed - deprecated and can cause issues in modern browsers
           {
             key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(), payment=()',
+            value: 'camera=(self), microphone=(), geolocation=(), payment=()',
           },
           {
             key: 'Strict-Transport-Security',

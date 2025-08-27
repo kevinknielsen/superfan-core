@@ -4,10 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, LogOut, User, Star, QrCode } from "lucide-react";
-import { usePrivy } from "@/lib/auth-context";
+import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { isManagerApp, isMainApp } from "@/lib/feature-flags";
-import { useFarcaster } from "@/lib/farcaster-context";
-import { useFarcasterAuthAction } from "@/lib/farcaster-auth";
 import { useFeatureFlag } from "@/config/featureFlags";
 import { useState, useEffect } from "react";
 import dynamic from 'next/dynamic';
@@ -25,9 +23,7 @@ interface HeaderProps {
 
 export default function Header({ showBackButton = false }: HeaderProps) {
   const router = useRouter();
-  const { logout, user } = usePrivy();
-  const { isInWalletApp } = useFarcaster();
-  const { requireAuth } = useFarcasterAuthAction();
+  const { logout, user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
   const enableMembership = useFeatureFlag('enableMembership');
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -48,19 +44,29 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   };
 
   const handleCheckInClick = () => {
-    requireAuth("scan", () => {
-      // Check if we're in a browser environment that supports QR scanning
-      if (typeof window !== 'undefined' && navigator.mediaDevices) {
-        setShowQRScanner(true);
-      } else {
-        // Fallback for environments without camera support
-        console.log('QR scanning not available in this environment');
-      }
-    });
+    // Check authentication first
+    if (!isAuthenticated) {
+      // Redirect to login if not authenticated
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+      router.push("/login?redirect=" + encodeURIComponent(currentPath));
+      return;
+    }
+
+    // Check if we're in a browser environment that supports QR scanning
+    if (typeof window !== 'undefined' && navigator.mediaDevices) {
+      setShowQRScanner(true);
+    } else {
+      // Fallback for environments without camera support
+      console.log('QR scanning not available in this environment');
+    }
   };
 
-  const handleAccountClick = () => {
-    requireAuth("profile", () => router.push("/account"));
+  const handleProfileClick = () => {
+    if (!isAuthenticated) {
+      router.push("/login?redirect=" + encodeURIComponent("/profile"));
+      return;
+    }
+    router.push("/profile");
   };
 
   return (
@@ -99,22 +105,10 @@ export default function Header({ showBackButton = false }: HeaderProps) {
               </button>
             )}
 
-            {/* Account Settings button */}
+            {/* Profile & Settings button */}
             <button 
-              onClick={handleAccountClick}
-              title="Account Settings"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
-                <Star className="h-4 w-4" />
-              </div>
-            </button>
-
-            {/* Profile & Wallet button */}
-            <button
-              onClick={() =>
-                requireAuth("profile", () => router.push("/profile"))
-              }
-              title="Profile & Wallet"
+              onClick={handleProfileClick}
+              title="Profile & Settings"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
                 <User className="h-4 w-4" />

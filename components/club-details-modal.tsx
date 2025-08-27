@@ -232,7 +232,7 @@ export default function ClubDetailsModal({
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center"
+        className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -240,30 +240,30 @@ export default function ClubDetailsModal({
       >
         <motion.div
           ref={modalRef}
-          className="relative w-full max-h-[90vh] overflow-y-auto rounded-t-3xl bg-[#0E0E14] sm:max-w-md sm:rounded-2xl mt-6 sm:mt-10 pt-[env(safe-area-inset-top)]"
+          className="relative w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#0E0E14] shadow-2xl mb-0 sm:mb-0"
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
         >
           {/* Header Image */}
-          <div className="relative h-64 w-full overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80" />
+          <div className="relative h-80 w-full overflow-hidden rounded-t-2xl">
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90" />
             
             {renderClubImages(club)}
 
             {/* Close button */}
             <button
               onClick={onClose}
-              className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+              className="absolute right-3 top-3 rounded-full bg-black/40 backdrop-blur-sm p-2 text-white hover:bg-black/60 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
 
             {/* Action buttons */}
-            <div className="absolute right-4 top-16 flex flex-col gap-3">
+            <div className="absolute right-3 top-16 flex flex-col gap-3">
               <button
-                className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+                className="rounded-full bg-black/40 backdrop-blur-sm p-2 text-white hover:bg-black/60 transition-colors"
                 onClick={async () => {
                   if (!club) return;
                   const url = "https://app.superfan.one";

@@ -4,9 +4,10 @@ import type React from "react";
 
 import { useMemo, useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Users, Play, Pause, MapPin, Star, Crown, Trophy, Shield } from "lucide-react";
+import { Users, Play, Pause, MapPin, Star, Crown, Trophy, Shield, Plus, QrCode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
+import QRScanner from "./qr-scanner";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,6 +52,7 @@ export default function ClubCard({
 }: ClubCardProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const [showDetails, setShowDetails] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -132,26 +134,82 @@ export default function ClubCard({
     }
   };
 
+  const handleQRScan = (data: string) => {
+    console.log('QR Code scanned:', data);
+    setShowQRScanner(false);
+    
+    // Check if it's a tap-in URL for this club
+    if (data.includes('/tap') && data.includes(`club=${club.id}`)) {
+      // Navigate to the tap-in URL
+      router.push(data.replace(window.location.origin, ''));
+    } else {
+      // Generic QR code - show info and allow manual navigation
+      toast({
+        title: "QR Code Detected",
+        description: "Opening link...",
+      });
+      if (data.startsWith('http')) {
+        window.open(data, '_blank');
+      }
+    }
+  };
+
   return (
     <>
       <motion.div
-        className={`relative overflow-hidden rounded-xl bg-[#0F141E] transition-all hover:bg-[#131822] shadow-lg shadow-black/20 hover:shadow-black/40 hover:translate-y-[-4px] cursor-pointer ${
+        className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-[#0F141E] to-[#0A0E16] border border-gray-800/50 transition-all duration-300 cursor-pointer group ${
           !membership ? "opacity-90" : ""
         }`}
+        style={{
+          boxShadow: `
+            0 4px 6px -1px rgba(0, 0, 0, 0.3),
+            0 2px 4px -1px rgba(0, 0, 0, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.05)
+          `
+        }}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.05, duration: 0.4 }}
+        whileHover={{
+          y: -8,
+          rotateX: 2,
+          rotateY: 2,
+          boxShadow: `
+            0 20px 25px -5px rgba(0, 0, 0, 0.4),
+            0 10px 10px -5px rgba(0, 0, 0, 0.3),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1)
+          `,
+          background: "linear-gradient(135deg, #131822, #0E1218)"
+        }}
+        whileTap={{ scale: 0.98 }}
         onClick={() => setShowDetails(true)}
       >
-        {/* Top-right status badge (matches project card badges) */}
-        {membership && (
+        {/* Top-right status badge or plus icon */}
+        {membership ? (
           <span className={`absolute top-3 right-3 ${statusBgColor} border border-current/30 text-xs px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium flex items-center gap-1 ${statusColor}`}>
             <StatusIcon className="h-3 w-3" />
             {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
           </span>
+        ) : (
+          <button
+            onClick={handleJoinClub}
+            disabled={joinClubMutation.isPending || !isAuthenticated}
+            className="absolute top-3 right-3 h-8 w-8 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center shadow z-30 transition-colors disabled:opacity-50"
+            aria-label={
+              !isAuthenticated
+                ? "Sign in required to add memberships"
+                : "Add membership"
+            }
+          >
+            {joinClubMutation.isPending ? (
+              <Spinner size="sm" color="white" />
+            ) : (
+              <Plus className="h-4 w-4 text-white" />
+            )}
+          </button>
         )}
 
-        <div className="p-4">
+        <div className="p-4 relative z-10">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
               <div className="relative mr-3 h-12 w-12 overflow-hidden rounded-full bg-primary/20 flex items-center justify-center">
@@ -169,7 +227,10 @@ export default function ClubCard({
               </div>
 
               <div>
-                <h3 className="font-medium text-white">{club.name}</h3>
+                <h3 className="font-medium text-white cursor-pointer hover:text-primary transition-colors" onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDetails(true);
+                }}>{club.name}</h3>
                 <div className="text-sm text-muted-foreground">
                   {club.city && (
                     <>
@@ -269,11 +330,11 @@ export default function ClubCard({
           <div className="mt-4" onClick={(e) => e.stopPropagation()}>
             {membership ? (
               <button
-                onClick={() => setShowDetails(true)}
+                onClick={() => setShowQRScanner(true)}
                 className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
               >
-                <StatusIcon className="h-4 w-4 mr-1" />
-                View Club
+                <QrCode className="h-4 w-4 mr-1" />
+                Check In
               </button>
             ) : (
               <button
@@ -304,6 +365,14 @@ export default function ClubCard({
           membership={membership}
           onClose={() => setShowDetails(false)}
           isOpen={showDetails}
+        />
+      )}
+      
+      {showQRScanner && (
+        <QRScanner
+          isOpen={showQRScanner}
+          onClose={() => setShowQRScanner(false)}
+          onScan={handleQRScan}
         />
       )}
     </>

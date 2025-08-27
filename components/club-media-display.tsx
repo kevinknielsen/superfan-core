@@ -131,20 +131,15 @@ export function ClubMediaDisplay({
             </Button>
           </div>
 
-          {/* Mute Toggle */}
+          {/* Mute Toggle - moved to bottom right */}
           <Button
             variant="secondary"
             size="sm"
             onClick={handleMuteToggle}
-            className="absolute top-2 right-2 bg-black/70 hover:bg-black/90 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute bottom-2 right-2 bg-black/70 hover:bg-black/90 text-white opacity-0 group-hover:opacity-100 transition-opacity"
           >
             {isMuted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
           </Button>
-
-          {/* Video indicator */}
-          <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-            Video
-          </div>
         </div>
       )}
 
@@ -162,7 +157,7 @@ export function ClubMediaDisplay({
             variant="secondary"
             size="sm"
             onClick={prevMedia}
-            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -171,13 +166,13 @@ export function ClubMediaDisplay({
             variant="secondary"
             size="sm"
             onClick={nextMedia}
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          {/* Media indicators */}
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+          {/* Media indicators - positioned to not overlap with mute button */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {displayMedia.map((_, index) => (
               <button
                 key={index}
@@ -191,9 +186,9 @@ export function ClubMediaDisplay({
         </>
       )}
 
-      {/* Media type indicator */}
-      {currentMedia && (
-        <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+      {/* Media type indicator - only show if primary or multiple media */}
+      {currentMedia && (currentMedia.is_primary || displayMedia.length > 1) && (
+        <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
           {currentMedia.media_type === 'video' ? 'Video' : 'Image'}
           {currentMedia.is_primary && ' • Primary'}
         </div>

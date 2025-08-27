@@ -139,7 +139,7 @@ export default function Dashboard() {
             transition={{ duration: 0.8, ease: "easeOut" }}
           >
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold leading-tight bg-gradient-to-r from-pink-400 via-purple-400 to-pink-500 bg-clip-text text-transparent">
-              Join The Music Community{" "}
+              Tastemakers Lead.{" "}
               <motion.span
                 initial={{ backgroundSize: "0% 100%" }}
                 animate={{ backgroundSize: "100% 100%" }}
@@ -150,7 +150,7 @@ export default function Dashboard() {
                   backgroundPosition: "left center",
                 }}
               >
-                Before Everyone Else
+                You Get In First
               </motion.span>
             </h2>
           </motion.div>
@@ -206,10 +206,10 @@ export default function Dashboard() {
             )}
           </section>
 
-          {/* Discover Clubs Section */}
+          {/* Discover Section */}
           <section className="mb-12">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold">Discover Clubs</h2>
+              <h2 className="text-xl font-semibold">Discover</h2>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <input

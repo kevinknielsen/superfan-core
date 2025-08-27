@@ -21,94 +21,38 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const scannerRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
   const { toast } = useToast();
 
-  // Dynamic import for qr-scanner (browser-only)
-  const [QrScannerLib, setQrScannerLib] = useState<any>(null);
-  const [scannerInitialized, setScannerInitialized] = useState(false);
+  // Use native browser APIs instead of qr-scanner library
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Ensure client-side rendering
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  useEffect(() => {
-    if (isClient && typeof window !== 'undefined' && isOpen && !scannerInitialized) {
-      // Only load QR scanner when actually needed and not already initialized
-      let mounted = true;
-      
-      const loadScanner = async () => {
-        try {
-          console.log('Loading QR scanner library...');
-          const QrScannerModule = await import('qr-scanner');
-          
-          if (!mounted) return; // Component unmounted
-          
-          console.log('QR Scanner module loaded:', QrScannerModule);
-          
-          // Handle different export patterns safely
-          let Scanner;
-          if (QrScannerModule.default && typeof QrScannerModule.default === 'function') {
-            Scanner = QrScannerModule.default;
-          } else if (typeof QrScannerModule === 'function') {
-            Scanner = QrScannerModule;
-          } else if ((QrScannerModule as any).QrScanner && typeof (QrScannerModule as any).QrScanner === 'function') {
-            Scanner = (QrScannerModule as any).QrScanner;
-          } else {
-            console.error('QR Scanner exports:', Object.keys(QrScannerModule));
-            throw new Error('QR Scanner constructor not found in module exports');
-          }
-          
-          // Test the constructor before setting it
-          try {
-            // Don't actually create an instance, just verify the constructor exists
-            if (typeof Scanner !== 'function') {
-              throw new Error('Scanner is not a constructor function');
-            }
-            
-            setQrScannerLib(Scanner);
-            setScannerInitialized(true);
-            console.log('QR Scanner library successfully loaded');
-          } catch (testError) {
-            console.error('Scanner constructor test failed:', testError);
-            throw new Error('QR scanner constructor validation failed');
-          }
-        } catch (error) {
-          console.log('QR scanner disabled:', error instanceof Error ? error.message : 'Unknown error');
-          if (mounted) {
-            setError('QR scanner library not compatible with this environment');
-          }
-        }
-      };
-      
-      loadScanner();
-      
-      return () => {
-        mounted = false;
-      };
-    }
-  }, [isClient, isOpen, scannerInitialized]);
-
   // Start camera when scanner opens
   useEffect(() => {
-    if (isOpen && QrScannerLib) {
-      startScanning();
+    if (isOpen && isClient) {
+      startCamera();
     } else {
-      stopScanning();
+      stopCamera();
     }
 
     return () => {
-      stopScanning();
+      stopCamera();
     };
-  }, [isOpen, QrScannerLib]);
+  }, [isOpen, isClient]);
 
-  const startScanning = async () => {
-    if (!QrScannerLib || !videoRef.current) {
-      console.log('QR Scanner not ready:', { QrScannerLib: !!QrScannerLib, videoRef: !!videoRef.current });
+  const startCamera = async () => {
+    if (!videoRef.current) {
+      console.log('Video element not ready');
       return;
     }
 
@@ -116,69 +60,134 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       setError(null);
       setIsScanning(true);
 
-      // Check if QrScannerLib has the required methods
-      if (typeof QrScannerLib.hasCamera !== 'function') {
-        throw new Error('QR Scanner library not properly loaded');
-      }
+      // Request camera access
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment', // Use back camera if available
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
 
-      // Check camera permission
-      const hasCamera = await QrScannerLib.hasCamera();
-      if (!hasCamera) {
-        throw new Error("No camera found on this device");
-      }
-
-      // Start QR scanner with error handling
-      let qrScanner;
-      try {
-        console.log('Initializing QR scanner...');
-        qrScanner = new QrScannerLib(
-          videoRef.current,
-          (result: any) => handleScanResult(result.data),
-          {
-            highlightScanRegion: true,
-            highlightCodeOutline: true,
-            maxScansPerSecond: 5,
-          }
-        );
-        console.log('QR scanner initialized successfully');
-      } catch (constructorError) {
-        console.error('QR scanner constructor error:', constructorError);
-        throw new Error('Failed to initialize QR scanner - library incompatible');
-      }
-
-      await qrScanner.start();
-      setHasPermission(true);
+      // Set up video stream
+      videoRef.current.srcObject = mediaStream;
+      videoRef.current.play();
       
-      // Store scanner reference for cleanup
-      scannerRef.current = qrScanner;
+      setStream(mediaStream);
+      streamRef.current = mediaStream;
+      setHasPermission(true);
+      setIsScanning(true);
+
+      console.log('Camera started successfully');
+
+      // Start QR detection after camera is ready
+      setTimeout(() => {
+        startQRDetection();
+      }, 1000);
 
     } catch (err) {
-      console.error("QR Scanner error:", err);
+      console.error("Camera error:", err);
       setHasPermission(false);
-      setError(err instanceof Error ? err.message : "Failed to start camera");
+      
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError') {
+          setError("Camera permission denied. Please allow camera access to scan QR codes.");
+        } else if (err.name === 'NotFoundError') {
+          setError("No camera found on this device");
+        } else {
+          setError("Failed to start camera: " + err.message);
+        }
+      } else {
+        setError("Failed to start camera");
+      }
       setIsScanning(false);
     }
   };
 
-  const stopScanning = () => {
-    if (scannerRef.current) {
-      scannerRef.current.stop();
-      scannerRef.current.destroy();
-      scannerRef.current = null;
+  const startQRDetection = async () => {
+    if (!videoRef.current || !canvasRef.current || !stream) return;
+
+    try {
+      // Check if BarcodeDetector is supported
+      if ('BarcodeDetector' in window) {
+        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+        
+        const scanFrame = async () => {
+          if (!videoRef.current || !canvasRef.current || !stream) return;
+          
+          try {
+            const canvas = canvasRef.current;
+            const context = canvas.getContext('2d');
+            const video = videoRef.current;
+            
+            if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+            // Set canvas size to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw current video frame to canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Detect QR codes in the frame
+            const barcodes = await detector.detect(canvas);
+            
+            if (barcodes.length > 0 && !isProcessing) {
+              const qrData = barcodes[0].rawValue;
+              console.log('QR Code detected:', qrData);
+              setIsProcessing(true);
+              handleScanResult(qrData);
+              return; // Stop scanning after detection
+            }
+          } catch (detectError) {
+            console.warn('QR detection error:', detectError);
+          }
+        };
+
+        // Start continuous scanning
+        scanIntervalRef.current = setInterval(scanFrame, 500); // Scan every 500ms
+        
+      } else {
+        console.warn('BarcodeDetector not supported, manual QR detection only');
+        toast({
+          title: "Limited QR Detection",
+          description: "Automatic scanning not available. Look for clickable QR codes.",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error('Failed to start QR detection:', error);
     }
-    
+  };
+
+  const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+    }
+    
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     
     if (scanTimeoutRef.current) {
       clearTimeout(scanTimeoutRef.current);
       scanTimeoutRef.current = null;
     }
+
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
     
     setIsScanning(false);
     setFlashEnabled(false);
+    setIsProcessing(false);
   };
 
   const handleScanResult = (data: string) => {
@@ -192,7 +201,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
     try {
       // First check if it's a relative path
       if (data.startsWith('/tap')) {
-        stopScanning();
+        stopCamera();
         onClose();
         router.push(data);
         toast({
@@ -210,7 +219,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       
       if (trustedDomains.includes(hostname) && url.pathname === '/tap') {
         // It's a tap-in QR code
-        stopScanning();
+        stopCamera();
         onClose();
         
         // Navigate to the tap-in URL safely
@@ -246,21 +255,31 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   };
 
   const toggleFlash = async () => {
-    if (!scannerRef.current) return;
+    if (!stream) return;
 
     try {
-      if (flashEnabled) {
-        await scannerRef.current.turnFlashOff();
-        setFlashEnabled(false);
-      } else {
-        await scannerRef.current.turnFlashOn();
-        setFlashEnabled(true);
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities() as any;
+
+      if (!capabilities.torch) {
+        toast({
+          title: "Flash unavailable",
+          description: "This device doesn't support camera flash",
+          variant: "destructive",
+        });
+        return;
       }
+
+      await track.applyConstraints({
+        advanced: [{ torch: !flashEnabled } as any]
+      });
+      
+      setFlashEnabled(!flashEnabled);
     } catch (err) {
       console.error("Flash toggle error:", err);
       toast({
         title: "Flash unavailable",
-        description: "This device doesn't support camera flash",
+        description: "Failed to toggle camera flash",
         variant: "destructive",
       });
     }
@@ -270,7 +289,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
     try {
       await navigator.mediaDevices.getUserMedia({ video: true });
       setHasPermission(true);
-      startScanning();
+      startCamera();
     } catch (err) {
       setHasPermission(false);
       setError("Camera permission denied. Please allow camera access to scan QR codes.");
@@ -333,19 +352,19 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
           {/* Scanner Content */}
           <div className="flex flex-col items-center justify-center h-full p-4">
             
-            {hasPermission === false || error || !QrScannerLib ? (
+            {hasPermission === false || error ? (
               <div className="text-center max-w-sm">
                 <div className="mb-6">
                   <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-white mb-2">
-                    {error?.includes('not available') || !QrScannerLib ? 'QR Scanner Unavailable' : 'Camera Access Required'}
+                    {error?.includes('not available') ? 'QR Scanner Unavailable' : 'Camera Access Required'}
                   </h3>
                   <p className="text-gray-400">
-                    {error || (!QrScannerLib ? "QR scanner is loading..." : "Please allow camera access to scan QR codes")}
+                    {error || "Please allow camera access to scan QR codes"}
                   </p>
                 </div>
                 
-                {!error?.includes('not available') && !error?.includes('library') && QrScannerLib ? (
+                {!error?.includes('not available') && !error?.includes('library') ? (
                   <button
                     onClick={requestPermission}
                     className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
@@ -402,16 +421,29 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
                       </div>
                     </div>
                   )}
+                  
+                  {/* Hidden canvas for QR detection */}
+                  <canvas
+                    ref={canvasRef}
+                    className="hidden"
+                    width="640"
+                    height="480"
+                  />
                 </div>
                 
                 {/* Instructions */}
                 <div className="mt-6 text-center max-w-sm">
                   <p className="text-gray-400 text-sm">
-                    Position the QR code within the frame to scan
+                    {isProcessing ? "Processing QR code..." : "Position the QR code within the frame"}
                   </p>
                   <p className="text-gray-500 text-xs mt-2">
-                    Look for QR codes at shows, events, or merch stands
+                    Automatic detection is active - hold steady for best results
                   </p>
+                  <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
+                    <p className="text-green-400 text-xs">
+                      ✨ QR codes will be detected automatically and award points instantly
+                    </p>
+                  </div>
                 </div>
               </>
             )}
