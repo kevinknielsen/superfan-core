@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { type } from "arktype";
-import { supabase } from "../../supabase";
+import { createServiceClient } from "../../supabase";
 
 const generateQRSchema = type({
   club_id: "string",
@@ -13,10 +13,18 @@ const generateQRSchema = type({
 });
 
 export async function POST(request: NextRequest) {
+  console.log("[QR Generate API] Starting QR generation request");
+  
   const auth = await verifyUnifiedAuth(request);
   if (!auth) {
+    console.log("[QR Generate API] Authentication failed");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  console.log("[QR Generate API] Authentication successful:", {
+    userId: auth.userId,
+    type: auth.type
+  });
 
   const body = await request.json();
   const qrData = generateQRSchema(body);
@@ -30,6 +38,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Initialize service client for database operations
+    const supabase = createServiceClient();
+    
     // Create QR code data payload
     const qrPayload = {
       club_id: qrData.club_id,
@@ -49,12 +60,25 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.superfan.one';
     const qrUrl = `${baseUrl}/tap?qr=${qrId}&club=${qrData.club_id}&source=${qrData.source}`;
     
+    // Default point values for different QR sources
+    const DEFAULT_POINTS = {
+      show_entry: 100,
+      merch_purchase: 50,
+      event: 40,
+      location: 20,
+      qr_code: 20,
+    };
+
+    // Use provided points or default based on source
+    const defaultPoints = DEFAULT_POINTS[qrData.source as keyof typeof DEFAULT_POINTS] || 20;
+    const finalPoints = qrData.points || defaultPoints;
+
     // Prepare public payload for encoding
     const publicPayload = {
       club_id: qrData.club_id,
       source: qrData.source,
       location: qrData.location,
-      points: qrData.points,
+      points: finalPoints,
       expires_at: qrData.expires_at,
     };
     const encodedPayload = Buffer.from(JSON.stringify(publicPayload)).toString('base64');
@@ -67,7 +91,7 @@ export async function POST(request: NextRequest) {
       created_by: auth.userId,
       source: qrData.source,
       location: qrData.location || null,
-      points: qrData.points || null,
+      points: finalPoints,
       expires_at: qrData.expires_at ? new Date(qrData.expires_at).toISOString() : null,
       qr_url: fullQrUrl,
       tap_url: qrUrl,
@@ -81,7 +105,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Save QR code to database
-    const { data: savedQR, error: saveError } = await (supabase as any)
+    const { data: savedQR, error: saveError } = await supabase
       .from('qr_codes')
       .insert(dbInsertData)
       .select()
@@ -139,8 +163,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Initialize service client for database operations
+    const supabase = createServiceClient();
+    
     // Fetch QR codes for the club
-    const { data: qrCodes, error } = await (supabase as any)
+    const { data: qrCodes, error } = await supabase
       .from('qr_codes')
       .select(`
         *,
