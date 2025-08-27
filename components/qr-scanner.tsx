@@ -31,7 +31,12 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       import('qr-scanner').then((QrScanner) => {
-        setQrScannerLib(QrScanner.default);
+        // Handle both CommonJS and ES module exports
+        const Scanner = QrScanner.default || QrScanner;
+        setQrScannerLib(Scanner);
+      }).catch((error) => {
+        console.error('Failed to load QR scanner:', error);
+        setError('QR scanner not available on this device');
       });
     }
   }, []);
@@ -62,16 +67,22 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
         throw new Error("No camera found on this device");
       }
 
-      // Start QR scanner
-      const qrScanner = new QrScannerLib(
-        videoRef.current,
-        (result: any) => handleScanResult(result.data),
-        {
-          highlightScanRegion: true,
-          highlightCodeOutline: true,
-          maxScansPerSecond: 5,
-        }
-      );
+      // Start QR scanner with error handling
+      let qrScanner;
+      try {
+        qrScanner = new QrScannerLib(
+          videoRef.current,
+          (result: any) => handleScanResult(result.data),
+          {
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+            maxScansPerSecond: 5,
+          }
+        );
+      } catch (constructorError) {
+        console.error('QR scanner constructor error:', constructorError);
+        throw new Error('Failed to initialize QR scanner');
+      }
 
       await qrScanner.start();
       setHasPermission(true);
@@ -248,19 +259,26 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
                 <div className="mb-6">
                   <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-white mb-2">
-                    Camera Access Required
+                    {error?.includes('not available') ? 'QR Scanner Unavailable' : 'Camera Access Required'}
                   </h3>
                   <p className="text-gray-400">
                     {error || "Please allow camera access to scan QR codes"}
                   </p>
                 </div>
                 
-                <button
-                  onClick={requestPermission}
-                  className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-                >
-                  Enable Camera
-                </button>
+                {!error?.includes('not available') ? (
+                  <button
+                    onClick={requestPermission}
+                    className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                  >
+                    Enable Camera
+                  </button>
+                ) : (
+                  <div className="text-sm text-gray-500">
+                    <p>Manual QR scanning is not available.</p>
+                    <p>Look for QR codes at events and tap them directly.</p>
+                  </div>
+                )}
               </div>
             ) : (
               <>

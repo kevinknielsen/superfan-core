@@ -42,51 +42,21 @@ export function useMetalHolder({ user }: { user: User | null }) {
         farcasterUser: farcasterUser?.fid,
       });
       
-      try {
-        const holder = await getOrCreateMetalHolder();
-        console.log("[useMetalHolder] Successfully fetched holder:", holder);
-
-        const usdcTokenIndex = holder.tokens.findIndex(
-          (t) =>
-            t.address.toLowerCase() ===
-            "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".toLowerCase()
-        );
-        
-        // Handle USDC token properly - only remove if found
-        let projectTokens = holder.tokens;
-        let usdcBalance = 0;
-        
-        if (usdcTokenIndex !== -1) {
-          projectTokens = holder.tokens.toSpliced(usdcTokenIndex, 1);
-          usdcBalance = holder.tokens[usdcTokenIndex]?.balance || 0;
-        }
-
-        return {
-          ...holder,
-          usdcBalance,
-          projectTokens,
-        };
-      } catch (error) {
-        console.error("[useMetalHolder] Error fetching metal holder:", error);
-        console.error("[useMetalHolder] Context debug:", {
-          isInWalletApp,
-          userIdentifier,
-          farcasterUser: farcasterUser?.fid,
-          privyUser: user?.id,
-        });
-        throw error;
-      }
+      console.log("[useMetalHolder] Metal holder functionality disabled in Club platform");
+      
+      // Return a default holder structure for compatibility
+      // This maintains compatibility with existing components that expect Metal holder data
+      return {
+        id: user?.id || 'unknown',
+        address: user?.wallet?.address || '',
+        usdcBalance: 0,
+        projectTokens: [],
+        tokens: [],
+      };
     },
-    enabled: !!userIdentifier,
-    // Balanced for wallet/holder data (balance can change but not too frequently)
-    retry: 2,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000),
-    // Reasonable caching for wallet data
-    staleTime: 15 * 1000, // 15 seconds - balance changes occasionally
-    gcTime: 3 * 60 * 1000, // 3 minutes garbage collection
-    // Balanced refetch strategies
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    enabled: false, // Disable Metal holder queries entirely
+    // Fast cache since data is static
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 }

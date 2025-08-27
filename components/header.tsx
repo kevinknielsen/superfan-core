@@ -45,7 +45,15 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   };
 
   const handleQRScanClick = () => {
-    requireAuth("scan", () => setShowQRScanner(true));
+    requireAuth("scan", () => {
+      // Check if we're in a browser environment that supports QR scanning
+      if (typeof window !== 'undefined' && navigator.mediaDevices) {
+        setShowQRScanner(true);
+      } else {
+        // Fallback for environments without camera support
+        console.log('QR scanning not available in this environment');
+      }
+    });
   };
 
   return (
