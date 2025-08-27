@@ -14,7 +14,7 @@ import dynamic from 'next/dynamic';
 import Logo from "./logo";
 
 // Dynamic import for QR scanner to prevent SSR issues
-const QRScanner = dynamic(() => import('./qr-scanner').then(mod => ({ default: mod.QRScanner })), {
+const QRScanner = dynamic(() => import('./qr-scanner'), {
   ssr: false,
   loading: () => null
 });
