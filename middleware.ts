@@ -53,7 +53,7 @@ export function middleware(request: NextRequest) {
   // Redirect any external/bot requests from manager to main app
   if (isBotOrCrawler && appType === 'manager') {
     const url = request.nextUrl.clone();
-    url.hostname = 'app.superfan.one';
+    url.hostname = 'superfan.one';
     url.port = '';
     return NextResponse.redirect(url);
   }
@@ -100,7 +100,7 @@ export function middleware(request: NextRequest) {
   // Always redirect individual project pages from manager to main app (since manager is internal-only)
   if (appType === 'manager' && pathname.startsWith('/projects/')) {
     const url = request.nextUrl.clone();
-    url.hostname = 'app.superfan.one';
+    url.hostname = 'superfan.one';
     url.port = '';
     return NextResponse.redirect(url);
   }
@@ -108,7 +108,7 @@ export function middleware(request: NextRequest) {
   // If this is a main app route but we're on manager app, redirect to main
   if (!isManagerRoute && appType === 'manager' && pathname !== '/' && pathname !== '/login' && pathname !== '/profile') {
     const url = request.nextUrl.clone();
-    url.hostname = 'app.superfan.one';
+    url.hostname = 'superfan.one';
     url.port = ''; // Remove port for production
     return NextResponse.redirect(url);
   }

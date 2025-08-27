@@ -473,7 +473,7 @@ export default function ProjectDetailsModal({
                   className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
                   onClick={async () => {
                     if (!project) return;
-                    const url = "https://app.superfan.one";
+                    const url = "https://superfan.one";
                     try {
                       await navigator.clipboard.writeText(url);
                       toast({

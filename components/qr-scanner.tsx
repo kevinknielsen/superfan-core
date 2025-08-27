@@ -301,7 +301,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       // Then check if it's an absolute URL
       const url = new URL(data);
       // Validate it's a trusted domain
-      const trustedDomains = ['superfan.one', 'app.superfan.one', 'localhost'];
+      const trustedDomains = ['superfan.one', 'app.superfan.one', 'localhost', '127.0.0.1'];
       const hostname = url.hostname.replace('www.', '');
       
       if (trustedDomains.includes(hostname) && url.pathname === '/tap') {

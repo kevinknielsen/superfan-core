@@ -67,6 +67,6 @@ export const getRedirectUrl = (pathname: string, currentDomain?: string) => {
   } else {
     return currentDomain
       ? `https://${currentDomain.replace("manager.", "app.")}${pathname}`
-      : `https://app.superfan.one${pathname}`;
+      : `https://superfan.one${pathname}`;
   }
 };

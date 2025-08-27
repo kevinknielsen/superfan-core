@@ -77,11 +77,11 @@ const nextConfig = {
     // Development and Preview CSP is more permissive for hot reloading, debugging, and Vercel features
     const scriptSrc = isDevOrPreview 
       ? "'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://vercel.live https://*.vercel.app https://*.vercel.com https://farcaster.xyz"
-      : "'self' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://app.superfan.one https://farcaster.xyz";
+      : "'self' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://superfan.one https://farcaster.xyz";
     
     const styleSrc = isDevOrPreview
       ? "'self' 'unsafe-inline' https://*.vercel.app https://*.vercel.com https://fonts.googleapis.com"
-      : "'self' 'unsafe-inline' https://fonts.googleapis.com https://app.superfan.one"; // Still needed for CSS-in-JS and dynamic styles
+      : "'self' 'unsafe-inline' https://fonts.googleapis.com https://superfan.one"; // Still needed for CSS-in-JS and dynamic styles
     
     return [
       {

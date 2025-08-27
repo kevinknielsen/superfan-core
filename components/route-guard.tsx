@@ -38,7 +38,7 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
       }
       
       // For other cases, redirect to main app
-      window.location.href = `https://app.superfan.one${pathname}`;
+      window.location.href = `https://superfan.one${pathname}`;
     }
   }, [pathname, router]);
 

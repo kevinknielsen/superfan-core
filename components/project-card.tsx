@@ -387,7 +387,7 @@ export default function ProjectCard({
           {/* Share Button */}
           <div className="mt-2">
             <FarcasterShare
-              url="https://app.superfan.one"
+              url="https://superfan.one"
               text={`Check out "${project.title}" by ${project.artist_name} on Superfan! 🎵`}
               className="w-full"
             />

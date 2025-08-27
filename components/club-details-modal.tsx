@@ -266,7 +266,7 @@ export default function ClubDetailsModal({
                 className="rounded-full bg-black/40 backdrop-blur-sm p-2 text-white hover:bg-black/60 transition-colors"
                 onClick={async () => {
                   if (!club) return;
-                  const url = "https://app.superfan.one";
+                  const url = "https://superfan.one";
                   try {
                     await navigator.clipboard.writeText(url);
                     toast({
