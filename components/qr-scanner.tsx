@@ -105,11 +105,11 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   };
 
   const startQRDetection = async () => {
-    if (!videoRef.current || !canvasRef.current || !stream) {
+    if (!videoRef.current || !canvasRef.current || !streamRef.current) {
       console.log('QR Detection failed: missing refs or stream', {
         video: !!videoRef.current,
         canvas: !!canvasRef.current,
-        stream: !!stream
+        stream: !!streamRef.current
       });
       return;
     }
@@ -123,7 +123,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
         const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
         
         const scanFrame = async () => {
-          if (!videoRef.current || !canvasRef.current || !stream) return;
+          if (!videoRef.current || !canvasRef.current || !streamRef.current) return;
           
           try {
             const canvas = canvasRef.current;
@@ -171,7 +171,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
         const jsQR = (await import('jsqr')).default;
         
         const scanFrame = async () => {
-          if (!videoRef.current || !canvasRef.current || !stream) return;
+          if (!videoRef.current || !canvasRef.current || !streamRef.current) return;
           
           try {
             const canvas = canvasRef.current;
