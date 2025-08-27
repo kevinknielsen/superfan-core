@@ -60,28 +60,46 @@ export async function POST(request: NextRequest) {
     const encodedPayload = Buffer.from(JSON.stringify(publicPayload)).toString('base64');
     const fullQrUrl = `${qrUrl}&data=${encodedPayload}`;
 
+    // Prepare data for database insert with validation
+    const dbInsertData = {
+      qr_id: qrId,
+      club_id: qrData.club_id,
+      created_by: auth.userId,
+      source: qrData.source,
+      location: qrData.location || null,
+      points: qrData.points || null,
+      expires_at: qrData.expires_at ? new Date(qrData.expires_at).toISOString() : null,
+      qr_url: fullQrUrl,
+      tap_url: qrUrl,
+      metadata: qrData.metadata || {},
+      description: qrData.metadata?.description || null
+    };
+
+    console.log("[QR Generate API] Attempting to save QR with data:", {
+      ...dbInsertData,
+      metadata: JSON.stringify(dbInsertData.metadata)
+    });
+
     // Save QR code to database
     const { data: savedQR, error: saveError } = await (supabase as any)
       .from('qr_codes')
-      .insert({
-        qr_id: qrId,
-        club_id: qrData.club_id,
-        created_by: auth.userId,
-        source: qrData.source,
-        location: qrData.location,
-        points: qrData.points,
-        expires_at: qrData.expires_at,
-        qr_url: fullQrUrl,
-        tap_url: qrUrl,
-        metadata: qrData.metadata || {},
-        description: qrData.metadata?.description
-      })
+      .insert(dbInsertData)
       .select()
       .single();
 
     if (saveError) {
-      console.error("[QR Generate API] Error saving QR code:", saveError);
-      return NextResponse.json({ error: "Failed to save QR code" }, { status: 500 });
+      console.error("[QR Generate API] Database error details:", {
+        error: saveError,
+        code: saveError.code,
+        message: saveError.message,
+        details: saveError.details,
+        hint: saveError.hint,
+        insertData: dbInsertData
+      });
+      return NextResponse.json({ 
+        error: "Failed to save QR code", 
+        details: saveError.message 
+      }, { status: 500 });
     }
 
     const response = {

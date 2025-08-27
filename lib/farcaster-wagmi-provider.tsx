@@ -110,7 +110,7 @@ export function FarcasterWagmiProvider({ children }: FarcasterWagmiProviderProps
     return (
       <WagmiProvider config={getWebWagmiConfig()}>
         <QueryClientProvider client={wagmiQueryClient}>
-          {children}
+          <div suppressHydrationWarning>{children}</div>
         </QueryClientProvider>
       </WagmiProvider>
     );
