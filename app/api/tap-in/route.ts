@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../supabase";
+import { createServiceClient } from "../supabase";
 
-// Type assertion for club schema tables (temporary workaround for outdated types)
-const supabaseAny = supabase as any;
 import { verifyUnifiedAuth } from "../auth";
 import { type } from "arktype";
 
@@ -60,6 +58,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Use service client to bypass RLS for server-side operations
+    const supabase = createServiceClient();
+    
     // Get the user from our database
     const { data: user, error: userError } = await supabase
       .from('users')
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify club exists
-    const { data: club, error: clubError } = await supabaseAny
+    const { data: club, error: clubError } = await supabase
       .from('clubs')
       .select('id, name')
       .eq('id', tapInData.club_id)
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get or create club membership
-    let { data: membership, error: membershipError } = await supabaseAny
+    let { data: membership, error: membershipError } = await supabase
       .from('club_memberships')
       .select('*')
       .eq('user_id', user.id)
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     if (membershipError && membershipError.code === 'PGRST116') {
       // Create membership if it doesn't exist
-      const { data: newMembership, error: createError } = await supabaseAny
+      const { data: newMembership, error: createError } = await supabase
         .from('club_memberships')
         .insert({
           user_id: user.id,
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
     const oldStatus = membership.current_status;
 
     // Start transaction
-    const { data: tapIn, error: tapInError } = await supabaseAny
+    const { data: tapIn, error: tapInError } = await supabase
       .from('tap_ins')
       .insert({
         user_id: user.id,
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update membership points and status
-    const { data: updatedMembership, error: updateError } = await supabaseAny
+    const { data: updatedMembership, error: updateError } = await supabase
       .from('club_memberships')
       .update({
         points: newTotalPoints,
@@ -163,7 +164,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add to points ledger
-    const { error: ledgerError } = await supabaseAny
+    const { error: ledgerError } = await supabase
       .from('points_ledger')
       .insert({
         user_id: user.id,
@@ -232,7 +233,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { data: tapIns, error } = await supabaseAny
+    const { data: tapIns, error } = await supabase
       .from('tap_ins')
       .select('*')
       .eq('user_id', user.id)

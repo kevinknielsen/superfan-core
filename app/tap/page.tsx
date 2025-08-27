@@ -9,6 +9,8 @@ import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/header";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
+import { usePrivy } from "@privy-io/react-auth";
+import { useFarcaster } from "@/lib/farcaster-context";
 
 interface AdditionalData {
   location?: string;
@@ -30,8 +32,10 @@ interface TapInResponse {
 function TapPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading } = useUnifiedAuth();
+  const { user, isAuthenticated, isLoading: authLoading, isInWalletApp } = useUnifiedAuth();
   const { toast } = useToast();
+  const { getAccessToken } = usePrivy();
+  const { user: farcasterUser } = useFarcaster();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [tapResult, setTapResult] = useState<TapInResponse | null>(null);
@@ -65,6 +69,29 @@ function TapPageContent() {
     }
   }, [authLoading, isAuthenticated, user, clubId, source]);
 
+  // Get authentication headers based on context
+  const getAuthHeaders = async (): Promise<{ Authorization: string }> => {
+    if (isInWalletApp) {
+      // Wallet app: use Farcaster authentication
+      const farcasterUserId = farcasterUser?.fid?.toString();
+      if (!farcasterUserId) {
+        throw new Error("Farcaster user not found in wallet app");
+      }
+      return {
+        Authorization: `Farcaster farcaster:${farcasterUserId}`,
+      };
+    } else {
+      // Web app: use Privy authentication
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error("User not logged in");
+      }
+      return {
+        Authorization: `Bearer ${accessToken}`,
+      };
+    }
+  };
+
   const processTapIn = async () => {
     setIsProcessing(true);
     setError(null);
@@ -92,10 +119,14 @@ function TapPageContent() {
         }
       };
 
+      // Get authentication headers
+      const authHeaders = await getAuthHeaders();
+      
       const response = await fetch('/api/tap-in', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify(tapInPayload),
       });
