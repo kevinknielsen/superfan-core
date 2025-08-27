@@ -87,7 +87,7 @@ export default function ClubDetailsModal({
   
   const membership = propMembership || userClubData?.membership;
   const joinClubMutation = useJoinClub();
-  const { linkTap, isLoading: tapLoading } = useQuickTapIn();
+
 
   // Status calculations
   const currentStatus = membership?.current_status || 'cadet';
