@@ -5,7 +5,7 @@ import { useFarcaster } from '@/lib/farcaster-context';
 import { usePrivy } from '@/lib/auth-context';
 import { useAccount } from 'wagmi';
 import { useMetalHolder } from '@/hooks/use-metal-holder';
-import { useUserMembership } from '@/hooks/use-membership';
+import { useUserStatus } from '@/hooks/use-status';
 import { useUserSync } from '@/hooks/use-user-sync';
 
 interface UnifiedAuthContextType {
@@ -21,11 +21,11 @@ interface UnifiedAuthContextType {
   isAdmin: boolean;
   isAdminLoading: boolean;
   
-  // Membership status
-  membership: any;
-  isMembershipLoading: boolean;
-  hasActiveMembership: boolean;
-  membershipFeatures: string[];
+  // Status system
+  userStatus: any;
+  isStatusLoading: boolean;
+  currentPoints: number;
+  statusName: string;
 }
 
 const UnifiedAuthContext = createContext<UnifiedAuthContextType | null>(null);
@@ -57,15 +57,15 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const user = isInWalletApp ? farcasterUser : privyUser;
   const isLoading = isInWalletApp ? !isSDKLoaded : !privyReady;
 
-  // Get membership status - use Privy user ID when available
+  // Get status - use Privy user ID when available
   const privyUserId = privyUser?.id || null;
   const { 
-    data: membership, 
-    isLoading: isMembershipLoading 
-  } = useUserMembership(privyUserId);
+    data: userStatus, 
+    isLoading: isStatusLoading 
+  } = useUserStatus(privyUserId);
   
-  const hasActiveMembership = membership?.status === 'active';
-  const membershipFeatures = membership?.plan?.features || [];
+  const currentPoints = userStatus?.currentPoints || 0;
+  const statusName = userStatus?.statusName || 'Cadet';
 
   // Sync user to Supabase when authenticated via Privy (not needed for Farcaster users)
   useEffect(() => {
@@ -199,10 +199,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         logout,
         isAdmin,
         isAdminLoading,
-        membership,
-        isMembershipLoading,
-        hasActiveMembership,
-        membershipFeatures,
+        userStatus,
+        isStatusLoading,
+        currentPoints,
+        statusName,
       }}
     >
       {children}
