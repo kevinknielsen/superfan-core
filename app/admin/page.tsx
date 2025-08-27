@@ -61,17 +61,14 @@ export default function AdminDashboard() {
 
   const checkAdminStatus = async () => {
     try {
-      // Check admin status directly using the user ID from auth context
-      const adminIds = process.env.NEXT_PUBLIC_ADMIN_USER_IDS?.split(",")
-        .map((id) => id.trim())
-        .filter(Boolean) || [];
+      // Use the API endpoint to check admin status (works on both local and remote)
+      const response = await fetch('/api/auth/admin-status');
+      const { isAdmin: userIsAdmin } = await response.json();
       
-      const userIsAdmin = adminIds.includes(user?.id || '');
-      
-      console.log('[Admin Check] Debug:', {
+      console.log('[Admin Check] API Response:', {
         userId: user?.id,
-        adminIds,
-        isAdmin: userIsAdmin
+        isAdmin: userIsAdmin,
+        status: response.status
       });
       
       if (userIsAdmin) {
