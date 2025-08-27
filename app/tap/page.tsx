@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Star, Trophy, Crown, Users, Zap, Sparkles } from "lucide-react";
@@ -9,6 +9,11 @@ import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/header";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
+
+interface AdditionalData {
+  location?: string;
+  metadata?: Record<string, any>;
+}
 
 interface TapInResponse {
   success: boolean;
@@ -66,10 +71,10 @@ function TapPageContent() {
 
     try {
       // Decode additional data if present
-      let additionalData = {};
+      let additionalData: AdditionalData = {};
       if (data) {
         try {
-          const decoded = JSON.parse(Buffer.from(data, 'base64').toString());
+          const decoded = JSON.parse(atob(data)) as AdditionalData;
           additionalData = decoded;
         } catch (e) {
           console.warn("Could not decode QR data:", e);
@@ -96,11 +101,21 @@ function TapPageContent() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData: { error?: string };
+        try {
+          errorData = await response.json() as { error?: string };
+        } catch {
+          errorData = { error: 'Invalid response from server' };
+        }
         throw new Error(errorData.error || 'Failed to process tap-in');
       }
 
-      const result: TapInResponse = await response.json();
+      let result: TapInResponse;
+      try {
+        result = await response.json() as TapInResponse;
+      } catch {
+        throw new Error('Invalid response format from server');
+      }
       setTapResult(result);
 
       // Trigger celebration animation

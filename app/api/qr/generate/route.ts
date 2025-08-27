@@ -48,9 +48,16 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.superfan.one';
     const qrUrl = `${baseUrl}/tap?qr=${qrId}&club=${qrData.club_id}&source=${qrData.source}`;
     
-    // Store QR code data (you might want to create a qr_codes table for tracking)
-    // For now, we'll encode the data in the QR itself
-    const encodedPayload = Buffer.from(JSON.stringify(qrPayload)).toString('base64');
+    // TODO: Store QR data in database with qrId as key
+    // For MVP, at minimum remove sensitive fields before encoding
+    const publicPayload = {
+      club_id: qrData.club_id,
+      source: qrData.source,
+      location: qrData.location,
+      points: qrData.points,
+      expires_at: qrData.expires_at,
+    };
+    const encodedPayload = Buffer.from(JSON.stringify(publicPayload)).toString('base64');
     const fullQrUrl = `${qrUrl}&data=${encodedPayload}`;
 
     const response = {

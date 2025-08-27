@@ -21,6 +21,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scannerRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
@@ -55,8 +56,8 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
             Scanner = QrScannerModule.default;
           } else if (typeof QrScannerModule === 'function') {
             Scanner = QrScannerModule;
-          } else if (QrScannerModule.QrScanner && typeof QrScannerModule.QrScanner === 'function') {
-            Scanner = QrScannerModule.QrScanner;
+          } else if ((QrScannerModule as any).QrScanner && typeof (QrScannerModule as any).QrScanner === 'function') {
+            Scanner = (QrScannerModule as any).QrScanner;
           } else {
             console.error('QR Scanner exports:', Object.keys(QrScannerModule));
             throw new Error('QR Scanner constructor not found in module exports');
@@ -77,7 +78,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
             throw new Error('QR scanner constructor validation failed');
           }
         } catch (error) {
-          console.log('QR scanner disabled:', error.message);
+          console.log('QR scanner disabled:', error instanceof Error ? error.message : 'Unknown error');
           if (mounted) {
             setError('QR scanner library not compatible with this environment');
           }
@@ -149,7 +150,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       setHasPermission(true);
       
       // Store scanner reference for cleanup
-      videoRef.current.qrScanner = qrScanner;
+      scannerRef.current = qrScanner;
 
     } catch (err) {
       console.error("QR Scanner error:", err);
@@ -160,10 +161,10 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   };
 
   const stopScanning = () => {
-    if (videoRef.current?.qrScanner) {
-      videoRef.current.qrScanner.stop();
-      videoRef.current.qrScanner.destroy();
-      videoRef.current.qrScanner = null;
+    if (scannerRef.current) {
+      scannerRef.current.stop();
+      scannerRef.current.destroy();
+      scannerRef.current = null;
     }
     
     if (streamRef.current) {
@@ -189,18 +190,31 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
 
     // Check if it's a Superfan tap-in URL
     try {
+      // First check if it's a relative path
+      if (data.startsWith('/tap')) {
+        stopScanning();
+        onClose();
+        router.push(data);
+        toast({
+          title: "QR Code detected! 📱",
+          description: "Processing your tap-in...",
+        });
+        return;
+      }
+      
+      // Then check if it's an absolute URL
       const url = new URL(data);
-      if (url.pathname === '/tap' || data.includes('superfan.one/tap')) {
+      // Validate it's a trusted domain
+      const trustedDomains = ['superfan.one', 'app.superfan.one', 'localhost'];
+      const hostname = url.hostname.replace('www.', '');
+      
+      if (trustedDomains.includes(hostname) && url.pathname === '/tap') {
         // It's a tap-in QR code
         stopScanning();
         onClose();
         
-        // Navigate to the tap-in URL
-        if (data.startsWith('http')) {
-          window.location.href = data;
-        } else {
-          router.push(data);
-        }
+        // Navigate to the tap-in URL safely
+        window.location.href = url.toString();
         
         toast({
           title: "QR Code detected! 📱",
@@ -210,7 +224,8 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
         return;
       }
     } catch (e) {
-      // Not a valid URL, treat as raw data
+      // Not a valid URL, continue to check if custom handler exists
+      console.warn("Invalid URL in QR code:", data);
     }
 
     // Handle other QR codes or call custom handler
@@ -231,14 +246,14 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   };
 
   const toggleFlash = async () => {
-    if (!videoRef.current?.qrScanner) return;
+    if (!scannerRef.current) return;
 
     try {
       if (flashEnabled) {
-        await videoRef.current.qrScanner.turnFlashOff();
+        await scannerRef.current.turnFlashOff();
         setFlashEnabled(false);
       } else {
-        await videoRef.current.qrScanner.turnFlashOn();
+        await scannerRef.current.turnFlashOn();
         setFlashEnabled(true);
       }
     } catch (err) {
@@ -374,7 +389,7 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
                     )}
                   </div>
                   
-                  {!isScanning && hasPermission !== false && (
+                  {!isScanning && hasPermission === true && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
                       <div className="text-center">
                         <motion.div

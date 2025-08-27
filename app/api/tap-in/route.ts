@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../supabase";
+
+// Type assertion for club schema tables (temporary workaround for outdated types)
+const supabaseAny = supabase as any;
 import { verifyUnifiedAuth } from "../auth";
 import { type } from "arktype";
 
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify club exists
-    const { data: club, error: clubError } = await supabase
+    const { data: club, error: clubError } = await supabaseAny
       .from('clubs')
       .select('id, name')
       .eq('id', tapInData.club_id)
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get or create club membership
-    let { data: membership, error: membershipError } = await supabase
+    let { data: membership, error: membershipError } = await supabaseAny
       .from('club_memberships')
       .select('*')
       .eq('user_id', user.id)
@@ -92,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     if (membershipError && membershipError.code === 'PGRST116') {
       // Create membership if it doesn't exist
-      const { data: newMembership, error: createError } = await supabase
+      const { data: newMembership, error: createError } = await supabaseAny
         .from('club_memberships')
         .insert({
           user_id: user.id,
@@ -116,13 +119,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine points to award
-    const pointsToAward = tapInData.points_earned || POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] || POINT_VALUES.default;
+    const pointsToAward = tapInData.points_earned || 
+      (tapInData.source in POINT_VALUES ? POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] : POINT_VALUES.default);
     const newTotalPoints = membership.points + pointsToAward;
     const newStatus = calculateStatus(newTotalPoints);
     const oldStatus = membership.current_status;
 
     // Start transaction
-    const { data: tapIn, error: tapInError } = await supabase
+    const { data: tapIn, error: tapInError } = await supabaseAny
       .from('tap_ins')
       .insert({
         user_id: user.id,
@@ -141,7 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update membership points and status
-    const { data: updatedMembership, error: updateError } = await supabase
+    const { data: updatedMembership, error: updateError } = await supabaseAny
       .from('club_memberships')
       .update({
         points: newTotalPoints,
@@ -159,7 +163,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add to points ledger
-    await supabase
+    const { error: ledgerError } = await supabaseAny
       .from('points_ledger')
       .insert({
         user_id: user.id,
@@ -168,6 +172,11 @@ export async function POST(request: NextRequest) {
         reason: 'tap_in',
         reference_id: tapIn.id
       });
+
+    if (ledgerError) {
+      console.error("[Tap-in API] Error creating ledger entry:", ledgerError);
+      // Note: Continue despite ledger error as main operations succeeded
+    }
 
     // Return success with status change info
     const statusChanged = oldStatus !== newStatus;
@@ -223,7 +232,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { data: tapIns, error } = await supabase
+    const { data: tapIns, error } = await supabaseAny
       .from('tap_ins')
       .select('*')
       .eq('user_id', user.id)

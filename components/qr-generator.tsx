@@ -11,19 +11,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import QRCodeLib from "qrcode";
 
-interface QRGeneratorProps {
-  clubId: string;
-  clubName: string;
-  onGenerated?: (qrData: any) => void;
+interface QRPayloadData {
+  club_id: string;
+  source: string;
+  location?: string;
+  points?: number;
+  expires_at?: string;
+  metadata?: {
+    description?: string;
+    generated_by?: string;
+    club_name?: string;
+  };
 }
 
 interface QRData {
   qr_id: string;
   qr_url: string;
-  qr_data: any;
+  qr_data: QRPayloadData;
   tap_url: string;
   expires_at?: string;
   created_at: string;
+}
+
+interface QRGeneratorProps {
+  clubId: string;
+  clubName: string;
+  onGenerated?: (qrData: QRData) => void;
 }
 
 const QR_SOURCES = [
@@ -73,11 +86,21 @@ export default function QRGenerator({ clubId, clubName, onGenerated }: QRGenerat
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        let errorData: { error?: string };
+        try {
+          errorData = await response.json() as { error?: string };
+        } catch {
+          errorData = { error: 'Invalid response from server' };
+        }
         throw new Error(errorData.error || 'Failed to generate QR code');
       }
 
-      const qrData: QRData = await response.json();
+      let qrData: QRData;
+      try {
+        qrData = await response.json() as QRData;
+      } catch {
+        throw new Error('Invalid response format from server');
+      }
       setGeneratedQR(qrData);
 
       // Generate QR code image
@@ -98,7 +121,7 @@ export default function QRGenerator({ clubId, clubName, onGenerated }: QRGenerat
 
       toast({
         title: "QR Code generated! 📱",
-        description: `Created ${source.replace('_', ' ')} QR for ${clubName}`,
+        description: `Created ${source.replace(/_/g, ' ')} QR for ${clubName}`,
       });
 
     } catch (error) {
