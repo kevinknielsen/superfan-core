@@ -3,17 +3,14 @@ import { supabase } from '@/lib/supabase';
 
 export interface StatusThreshold {
   id: string;
-  name: string;
-  points_required: number;
-  description: string | null;
+  status: string;
+  min_points: number;
   created_at: string;
-  updated_at: string;
 }
 
 export interface UserStatus {
   currentPoints: number;
   statusName: string;
-  statusDescription: string | null;
   pointsToNext: number | null;
   nextStatusName: string | null;
   progress: number; // 0-1 for progress bars
@@ -27,7 +24,7 @@ export function useStatusThresholds() {
       const { data, error } = await supabase
         .from('status_thresholds')
         .select('*')
-        .order('points_required');
+        .order('min_points');
 
       if (error) throw error;
       return data || [];
@@ -68,13 +65,13 @@ export function useUserStatus(privyUserId: string | null) {
       const currentPoints = pointsData.reduce((sum, entry) => sum + entry.delta, 0);
 
       // Find current status and next status
-      const sortedThresholds = [...thresholds].sort((a, b) => a.points_required - b.points_required);
+      const sortedThresholds = [...thresholds].sort((a, b) => a.min_points - b.min_points);
       
       let currentStatus = sortedThresholds[0]; // Default to lowest status
       let nextStatus: StatusThreshold | null = null;
 
       for (let i = 0; i < sortedThresholds.length; i++) {
-        if (currentPoints >= sortedThresholds[i].points_required) {
+        if (currentPoints >= sortedThresholds[i].min_points) {
           currentStatus = sortedThresholds[i];
           nextStatus = sortedThresholds[i + 1] || null;
         } else {
@@ -87,10 +84,10 @@ export function useUserStatus(privyUserId: string | null) {
       let pointsToNext: number | null = null;
 
       if (nextStatus) {
-        const pointsInCurrentTier = currentPoints - currentStatus.points_required;
-        const pointsNeededForTier = nextStatus.points_required - currentStatus.points_required;
+        const pointsInCurrentTier = currentPoints - currentStatus.min_points;
+        const pointsNeededForTier = nextStatus.min_points - currentStatus.min_points;
         progress = Math.min(pointsInCurrentTier / pointsNeededForTier, 1);
-        pointsToNext = nextStatus.points_required - currentPoints;
+        pointsToNext = nextStatus.min_points - currentPoints;
       } else {
         // Already at max status
         progress = 1;
@@ -99,10 +96,9 @@ export function useUserStatus(privyUserId: string | null) {
 
       return {
         currentPoints,
-        statusName: currentStatus.name,
-        statusDescription: currentStatus.description,
+        statusName: currentStatus.status,
         pointsToNext,
-        nextStatusName: nextStatus?.name || null,
+        nextStatusName: nextStatus?.status || null,
         progress,
       };
     },
@@ -118,16 +114,16 @@ export function useStatusAccess(privyUserId: string | null, requiredStatusName: 
   const hasAccess = (() => {
     if (!userStatus || !thresholds) return false;
     
-    const requiredThreshold = thresholds.find(t => t.name === requiredStatusName);
+    const requiredThreshold = thresholds.find(t => t.status === requiredStatusName);
     if (!requiredThreshold) return false;
     
-    return userStatus.currentPoints >= requiredThreshold.points_required;
+    return userStatus.currentPoints >= requiredThreshold.min_points;
   })();
 
   return {
     hasAccess,
     userStatus,
     currentPoints: userStatus?.currentPoints || 0,
-    requiredPoints: thresholds?.find(t => t.name === requiredStatusName)?.points_required || 0,
+    requiredPoints: thresholds?.find(t => t.status === requiredStatusName)?.min_points || 0,
   };
 }
