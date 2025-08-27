@@ -61,10 +61,20 @@ export default function AdminDashboard() {
 
   const checkAdminStatus = async () => {
     try {
-      const response = await fetch('/api/auth/admin-status');
-      const data = await response.json();
+      // Check admin status directly using the user ID from auth context
+      const adminIds = process.env.NEXT_PUBLIC_ADMIN_USER_IDS?.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean) || [];
       
-      if (data.isAdmin) {
+      const userIsAdmin = adminIds.includes(user?.id || '');
+      
+      console.log('[Admin Check] Debug:', {
+        userId: user?.id,
+        adminIds,
+        isAdmin: userIsAdmin
+      });
+      
+      if (userIsAdmin) {
         setIsAdmin(true);
         await loadAdminStats();
       } else {
