@@ -23,14 +23,19 @@ const BASE_RPC_URL =
   process.env.NEXT_PUBLIC_ALCHEMY_BASE_MAINNET_RPC_URL ||
   "https://mainnet.base.org";
 const BASE_CHAIN_ID = 8453;
-const envSplitsOwner = process.env.NEXT_PUBLIC_SPLITS_OWNER_ADDRESS;
-if (!envSplitsOwner) {
-  throw new Error("SPLITS_OWNER address not set in environment variables");
-}
-if (!isAddress(envSplitsOwner)) {
-  throw new Error(`Invalid SPLITS_OWNER address: ${envSplitsOwner}`);
-}
-export const SPLITS_OWNER = envSplitsOwner as `0x${string}`;
+
+// Legacy splits code - disabled for membership app
+// const envSplitsOwner = process.env.NEXT_PUBLIC_SPLITS_OWNER_ADDRESS;
+// if (!envSplitsOwner) {
+//   throw new Error("SPLITS_OWNER address not set in environment variables");
+// }
+// if (!isAddress(envSplitsOwner)) {
+//   throw new Error(`Invalid SPLITS_OWNER address: ${envSplitsOwner}`);
+// }
+// export const SPLITS_OWNER = envSplitsOwner as `0x${string}`;
+
+// Placeholder for legacy code compatibility
+export const SPLITS_OWNER = "0x0000000000000000000000000000000000000000" as `0x${string}`;
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_ABI = [

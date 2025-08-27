@@ -5,6 +5,7 @@ import { useFarcaster } from '@/lib/farcaster-context';
 import { usePrivy } from '@/lib/auth-context';
 import { useAccount } from 'wagmi';
 import { useMetalHolder } from '@/hooks/use-metal-holder';
+import { useUserMembership } from '@/hooks/use-membership';
 
 interface UnifiedAuthContextType {
   isAuthenticated: boolean;
@@ -18,6 +19,12 @@ interface UnifiedAuthContextType {
   logout: () => Promise<void>;
   isAdmin: boolean;
   isAdminLoading: boolean;
+  
+  // Membership status
+  membership: any;
+  isMembershipLoading: boolean;
+  hasActiveMembership: boolean;
+  membershipFeatures: string[];
 }
 
 const UnifiedAuthContext = createContext<UnifiedAuthContextType | null>(null);
@@ -44,6 +51,16 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const isAuthenticated = isInWalletApp ? !!farcasterUser : privyAuthenticated;
   const user = isInWalletApp ? farcasterUser : privyUser;
   const isLoading = isInWalletApp ? !isSDKLoaded : !privyReady;
+
+  // Get membership status - use Privy user ID when available
+  const privyUserId = privyUser?.id || null;
+  const { 
+    data: membership, 
+    isLoading: isMembershipLoading 
+  } = useUserMembership(privyUserId);
+  
+  const hasActiveMembership = membership?.status === 'active';
+  const membershipFeatures = membership?.plan?.features || [];
 
   // Fetch admin status when user is authenticated
   useEffect(() => {
@@ -148,7 +165,11 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         platform,
         logout,
         isAdmin,
-        isAdminLoading
+        isAdminLoading,
+        membership,
+        isMembershipLoading,
+        hasActiveMembership,
+        membershipFeatures,
       }}
     >
       {children}
