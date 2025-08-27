@@ -24,7 +24,7 @@ import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, Unlock, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
-import { useTapIn } from "@/hooks/use-tap-ins";
+import { useQuickTapIn } from "@/hooks/use-tap-ins";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
@@ -87,7 +87,7 @@ export default function ClubDetailsModal({
   
   const membership = propMembership || userClubData?.membership;
   const joinClubMutation = useJoinClub();
-  const tapInMutation = useTapIn();
+  const { linkTap, isLoading: tapLoading } = useQuickTapIn();
 
   // Status calculations
   const currentStatus = membership?.current_status || 'cadet';
@@ -153,6 +153,8 @@ export default function ClubDetailsModal({
     }
   };
 
+
+
   const handleTapIn = async (source: string) => {
     if (!isAuthenticated || !user?.id) {
       toast({
@@ -173,16 +175,11 @@ export default function ClubDetailsModal({
     }
 
     try {
-      const result = await tapInMutation.mutateAsync({
-        privyUserId: user.id,
-        clubId: club.id,
-        source: source as any,
-        location: "Club Details Modal",
-      });
+      await linkTap(club.id, source);
       
       toast({
-        title: result.statusChange ? "Status Up!" : "Points Earned!",
-        description: result.message,
+        title: "Points earned! 🎉",
+        description: `+10 points in ${club.name}`,
       });
     } catch (error) {
       console.error('Error recording tap-in:', error);
@@ -566,11 +563,11 @@ export default function ClubDetailsModal({
             {membership ? (
               <button
                 onClick={() => handleTapIn('link')}
-                disabled={tapInMutation.isPending}
+                disabled={tapLoading}
                 className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <QrCode className="h-5 w-5" />
-                {tapInMutation.isPending ? "Recording..." : "Tap In for Points"}
+                {tapLoading ? "Recording..." : "Tap In for Points"}
               </button>
             ) : (
               <button

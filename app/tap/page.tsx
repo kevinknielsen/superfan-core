@@ -1,0 +1,409 @@
+"use client";
+
+import { useEffect, useState, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle, Star, Trophy, Crown, Users, Zap, Sparkles } from "lucide-react";
+import confetti from "canvas-confetti";
+import { useUnifiedAuth } from "@/lib/unified-auth-context";
+import { useToast } from "@/hooks/use-toast";
+import Header from "@/components/header";
+import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
+
+interface TapInResponse {
+  success: boolean;
+  tap_in: any;
+  points_earned: number;
+  total_points: number;
+  current_status: string;
+  previous_status: string;
+  status_changed: boolean;
+  club_name: string;
+  membership: any;
+}
+
+function TapPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading } = useUnifiedAuth();
+  const { toast } = useToast();
+  
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [tapResult, setTapResult] = useState<TapInResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [animationComplete, setAnimationComplete] = useState(false);
+  
+  const confettiRef = useRef<HTMLCanvasElement>(null);
+  const processingStarted = useRef(false);
+
+  // Extract QR parameters
+  const qrId = searchParams.get('qr');
+  const clubId = searchParams.get('club');
+  const source = searchParams.get('source');
+  const data = searchParams.get('data');
+  const location = searchParams.get('location');
+
+  // Process tap-in when page loads
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && user && !processingStarted.current) {
+      if (!clubId || !source) {
+        setError("Invalid QR code - missing club or source information");
+        return;
+      }
+      
+      processingStarted.current = true;
+      processTapIn();
+    } else if (!authLoading && !isAuthenticated) {
+      // Redirect to login with return URL
+      const currentUrl = window.location.href;
+      router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
+    }
+  }, [authLoading, isAuthenticated, user, clubId, source]);
+
+  const processTapIn = async () => {
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      // Decode additional data if present
+      let additionalData = {};
+      if (data) {
+        try {
+          const decoded = JSON.parse(Buffer.from(data, 'base64').toString());
+          additionalData = decoded;
+        } catch (e) {
+          console.warn("Could not decode QR data:", e);
+        }
+      }
+
+      const tapInPayload = {
+        club_id: clubId,
+        source: source,
+        location: location || additionalData.location,
+        metadata: {
+          qr_id: qrId,
+          scanned_at: new Date().toISOString(),
+          ...additionalData.metadata
+        }
+      };
+
+      const response = await fetch('/api/tap-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tapInPayload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process tap-in');
+      }
+
+      const result: TapInResponse = await response.json();
+      setTapResult(result);
+
+      // Trigger celebration animation
+      setTimeout(() => {
+        triggerCelebration(result);
+      }, 500);
+
+      // Show success toast
+      toast({
+        title: "Points earned! 🎉",
+        description: `+${result.points_earned} points in ${result.club_name}`,
+      });
+
+    } catch (err) {
+      console.error("Tap-in error:", err);
+      setError(err instanceof Error ? err.message : "Failed to process tap-in");
+      toast({
+        title: "Tap-in failed",
+        description: err instanceof Error ? err.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const triggerCelebration = (result: TapInResponse) => {
+    // Confetti burst
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+    });
+
+    // Status upgrade confetti
+    if (result.status_changed) {
+      setTimeout(() => {
+        confetti({
+          particleCount: 150,
+          spread: 120,
+          origin: { y: 0.5 },
+          colors: ['#FFD700', '#FFA500', '#FF69B4', '#9370DB'],
+        });
+      }, 1000);
+    }
+
+    setAnimationComplete(true);
+  };
+
+  const getStatusIcon = (status: string) => {
+    const IconComponent = STATUS_ICONS[status as keyof typeof STATUS_ICONS] || Users;
+    return IconComponent;
+  };
+
+  const getStatusColor = (status: string) => {
+    return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-12">
+          <div className="max-w-md mx-auto text-center">
+            <div className="mb-6">
+              <div className="h-16 w-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Zap className="h-8 w-8 text-red-500" />
+              </div>
+              <h1 className="text-2xl font-bold mb-2">Tap-in Failed</h1>
+              <p className="text-muted-foreground">{error}</p>
+            </div>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      
+      <div className="container mx-auto px-4 py-12">
+        <div className="max-w-md mx-auto">
+          
+          {/* Processing State */}
+          {isProcessing && (
+            <motion.div
+              className="text-center"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+            >
+              <div className="mb-6">
+                <motion.div
+                  className="h-20 w-20 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                >
+                  <Zap className="h-10 w-10 text-primary" />
+                </motion.div>
+                <h1 className="text-2xl font-bold mb-2">Processing Tap-in...</h1>
+                <p className="text-muted-foreground">Earning your points</p>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Success State */}
+          {tapResult && (
+            <AnimatePresence>
+              <motion.div
+                className="text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+              >
+                {/* Success Icon */}
+                <motion.div
+                  className="mb-6"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                >
+                  <div className="h-20 w-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="h-10 w-10 text-green-500" />
+                  </div>
+                  
+                  <motion.h1
+                    className="text-3xl font-bold mb-2"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    Tap-in Successful! 🎉
+                  </motion.h1>
+                </motion.div>
+
+                {/* Points Animation */}
+                <motion.div
+                  className="mb-8"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.6 }}
+                >
+                  <div className="bg-[#0F141E] rounded-xl p-6 border border-primary/20">
+                    <motion.div
+                      className="text-4xl font-bold text-primary mb-2"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.8 }}
+                    >
+                      +{tapResult.points_earned}
+                    </motion.div>
+                    <p className="text-sm text-muted-foreground mb-4">Points earned</p>
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Total Points:</span>
+                      <span className="font-medium">{tapResult.total_points.toLocaleString()}</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-sm mt-2">
+                      <span className="text-muted-foreground">Club:</span>
+                      <span className="font-medium">{tapResult.club_name}</span>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Status Display */}
+                <motion.div
+                  className="mb-8"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1.0 }}
+                >
+                  {tapResult.status_changed ? (
+                    <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl p-6 border border-purple-500/30">
+                      <motion.div
+                        className="flex items-center justify-center mb-4"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 1.2, type: "spring", stiffness: 200 }}
+                      >
+                        <Sparkles className="h-6 w-6 text-purple-400 mr-2" />
+                        <span className="text-lg font-bold">Status Upgraded!</span>
+                        <Sparkles className="h-6 w-6 text-purple-400 ml-2" />
+                      </motion.div>
+                      
+                      <div className="flex items-center justify-center space-x-4">
+                        <div className="text-center">
+                          <div className={`${getStatusColor(tapResult.previous_status)} mb-1`}>
+                            {React.createElement(getStatusIcon(tapResult.previous_status), { className: "h-6 w-6 mx-auto" })}
+                          </div>
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {tapResult.previous_status}
+                          </span>
+                        </div>
+                        
+                        <motion.div
+                          initial={{ x: -10, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: 1.4 }}
+                        >
+                          →
+                        </motion.div>
+                        
+                        <div className="text-center">
+                          <motion.div
+                            className={`${getStatusColor(tapResult.current_status)} mb-1`}
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ delay: 1.5, type: "spring" }}
+                          >
+                            {React.createElement(getStatusIcon(tapResult.current_status), { className: "h-6 w-6 mx-auto" })}
+                          </motion.div>
+                          <span className="text-xs font-medium capitalize">
+                            {tapResult.current_status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-[#0F141E] rounded-xl p-4 border border-[#1E1E32]/20">
+                      <div className="flex items-center justify-center">
+                        <div className={`${getStatusColor(tapResult.current_status)} mr-2`}>
+                          {React.createElement(getStatusIcon(tapResult.current_status), { className: "h-5 w-5" })}
+                        </div>
+                        <span className="font-medium capitalize">
+                          {tapResult.current_status} Status
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+
+                {/* Actions */}
+                <motion.div
+                  className="space-y-3"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.6 }}
+                >
+                  <button
+                    onClick={() => router.push('/dashboard')}
+                    className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                  >
+                    Return to Dashboard
+                  </button>
+                  
+                  <button
+                    onClick={() => router.push(`/dashboard?club=${tapResult.membership.club_id}`)}
+                    className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
+                  >
+                    View Club Details
+                  </button>
+                </motion.div>
+
+              </motion.div>
+            </AnimatePresence>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function TapPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <TapPageContent />
+    </Suspense>
+  );
+}

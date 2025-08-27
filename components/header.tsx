@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, LogOut, User, Star, Crown } from "lucide-react";
+import { ArrowLeft, LogOut, User, Star, Crown, QrCode } from "lucide-react";
 import { usePrivy } from "@/lib/auth-context";
 import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFarcaster } from "@/lib/farcaster-context";
@@ -11,6 +11,7 @@ import { useFarcasterAuthAction } from "@/lib/farcaster-auth";
 import { useFeatureFlag } from "@/config/featureFlags";
 import { useState } from "react";
 import Logo from "./logo";
+import QRScanner from "./qr-scanner";
 
 interface HeaderProps {
   showBackButton?: boolean;
@@ -22,6 +23,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   const { isInWalletApp } = useFarcaster();
   const { requireAuth } = useFarcasterAuthAction();
   const enableMembership = useFeatureFlag('enableMembership');
+  const [showQRScanner, setShowQRScanner] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -40,6 +42,10 @@ export default function Header({ showBackButton = false }: HeaderProps) {
 
   const handleAccountClick = () => {
     requireAuth("profile", () => router.push("/account"));
+  };
+
+  const handleQRScanClick = () => {
+    requireAuth("scan", () => setShowQRScanner(true));
   };
 
   return (
@@ -78,6 +84,18 @@ export default function Header({ showBackButton = false }: HeaderProps) {
               </button>
             )}
 
+            {/* QR Scanner button */}
+            {!showBackButton && (
+              <button 
+                onClick={handleQRScanClick}
+                title="Scan QR Code"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
+                  <QrCode className="h-4 w-4" />
+                </div>
+              </button>
+            )}
+
             {/* Account Settings button */}
             <button 
               onClick={handleAccountClick}
@@ -110,6 +128,12 @@ export default function Header({ showBackButton = false }: HeaderProps) {
           </div>
         </div>
       </motion.header>
+
+      {/* QR Scanner Modal */}
+      <QRScanner
+        isOpen={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+      />
     </>
   );
 }

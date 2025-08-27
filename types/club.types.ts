@@ -1,4 +1,5 @@
 // Club-based types matching the Superfan memo data model
+import { Users, Star, Trophy, Crown } from "lucide-react";
 
 export type ClubStatus = 'cadet' | 'resident' | 'headliner' | 'superfan';
 export type UnlockType = 'perk' | 'lottery' | 'allocation';
@@ -133,6 +134,21 @@ export const STATUS_THRESHOLDS: Record<ClubStatus, number> = {
 };
 
 export const STATUS_ORDER: ClubStatus[] = ['cadet', 'resident', 'headliner', 'superfan'];
+
+// Status icon and color mappings
+export const STATUS_ICONS = {
+  cadet: Users,
+  resident: Star,
+  headliner: Trophy,
+  superfan: Crown,
+};
+
+export const STATUS_COLORS = {
+  cadet: "text-gray-400",
+  resident: "text-blue-400", 
+  headliner: "text-purple-400",
+  superfan: "text-yellow-400",
+};
 
 export function calculateStatus(points: number): ClubStatus {
   if (points >= 4000) return 'superfan';
