@@ -274,13 +274,27 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
     try {
       // First check if it's a relative path
       if (data.startsWith('/tap')) {
+        console.log("Navigating to tap-in URL:", data);
         stopCamera();
         onClose();
-        router.push(data);
-        toast({
-          title: "QR Code detected! 📱",
-          description: "Processing your tap-in...",
-        });
+        
+        // Use setTimeout to prevent any race conditions with camera cleanup
+        setTimeout(() => {
+          try {
+            router.push(data);
+            toast({
+              title: "QR Code detected! 📱",
+              description: "Processing your tap-in...",
+            });
+          } catch (navError) {
+            console.error("Navigation error:", navError);
+            toast({
+              title: "Navigation failed",
+              description: "Please try again",
+              variant: "destructive",
+            });
+          }
+        }, 100);
         return;
       }
       
@@ -292,16 +306,27 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
       
       if (trustedDomains.includes(hostname) && url.pathname === '/tap') {
         // It's a tap-in QR code
+        console.log("Navigating to external tap-in URL:", url.toString());
         stopCamera();
         onClose();
         
-        // Navigate to the tap-in URL safely
-        window.location.href = url.toString();
-        
-        toast({
-          title: "QR Code detected! 📱",
-          description: "Processing your tap-in...",
-        });
+        // Navigate to the tap-in URL safely with error handling
+        setTimeout(() => {
+          try {
+            window.location.href = url.toString();
+            toast({
+              title: "QR Code detected! 📱",
+              description: "Processing your tap-in...",
+            });
+          } catch (navError) {
+            console.error("External navigation error:", navError);
+            toast({
+              title: "Navigation failed",
+              description: "Please try again",
+              variant: "destructive",
+            });
+          }
+        }, 100);
         
         return;
       }
