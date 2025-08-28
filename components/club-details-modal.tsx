@@ -25,9 +25,7 @@ import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
 import PointsWalletWidget from "./points-wallet-widget";
-import RewardsDisplay from "./rewards-display";
 import UnlockRedemption from "./unlock-redemption";
-import { useClubPointWallet } from "@/hooks/use-points";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
@@ -78,11 +76,11 @@ export default function ClubDetailsModal({
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
   const modalRef = useRef<HTMLDivElement>(null);
+  const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
   
   // Get complete club data including unlocks
   const { data: clubData } = useClub(club.id);
   const { data: userClubData } = useUserClubData(user?.id || null, club.id);
-  const { data: pointWallet } = useClubPointWallet(club.id);
   
   const membership = propMembership || userClubData?.membership;
   const joinClubMutation = useJoinClub();
@@ -360,7 +358,7 @@ export default function ClubDetailsModal({
               <div className="mb-6 space-y-4">
                 {/* Status Section */}
                 <div className="rounded-xl border border-gray-800 p-4">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 mb-3">
                     <div className={`flex h-12 w-12 items-center justify-center rounded-full ${STATUS_COLORS[currentStatus]} bg-current/20`}>
                       <StatusIcon className="h-5 w-5" />
                     </div>
@@ -373,14 +371,15 @@ export default function ClubDetailsModal({
                       </p>
                     </div>
                   </div>
+                  <button
+                    onClick={() => setShowPurchaseOverlay(true)}
+                    className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg hover:bg-primary/90 transition-colors"
+                  >
+                    Boost Your Status
+                  </button>
                 </div>
 
-                {/* Points Wallet */}
-                <PointsWalletWidget 
-                  clubId={club.id}
-                  clubName={club.name}
-                  showPurchaseOptions={true}
-                />
+
               </div>
             ) : (
               <div className="mb-6 rounded-xl border border-gray-800 p-4 text-center">
@@ -451,25 +450,28 @@ export default function ClubDetailsModal({
             </div>
 
             {/* Unlocks Section (Status-based) */}
-            {membership && club.unlocks && club.unlocks.length > 0 && (
+            {membership && (
               <div className="mb-6">
+                <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
+                  <Gift className="h-5 w-5 text-primary" />
+                  Available Perks
+                </h3>
                 <UnlockRedemption
-                  club={club}
-                  membership={membership}
+                  clubId={club.id}
+                  userStatus={currentStatus}
+                  userPoints={currentPoints}
+                  onRedemption={() => {
+                    // Optionally refetch data or show success message
+                    toast({
+                      title: "Perk Redeemed!",
+                      description: "Check your email for details",
+                    });
+                  }}
                 />
               </div>
             )}
 
-            {/* Rewards Section (Points-based) */}
-            {membership && (
-              <div className="mb-6">
-                <RewardsDisplay
-                  clubId={club.id}
-                  userBalance={pointWallet?.balance_pts || 0}
-                  maxItems={4}
-                />
-              </div>
-            )}
+
 
             {/* Status progress (replaces funding progress) */}
             {membership && (
@@ -500,8 +502,8 @@ export default function ClubDetailsModal({
               </div>
             )}
 
-            {/* Action button (matches project modal) */}
-            {!membership && (
+            {/* Action buttons */}
+            {!membership ? (
               <button
                 onClick={handleJoinClub}
                 disabled={joinClubMutation.isPending || !isAuthenticated}
@@ -514,10 +516,46 @@ export default function ClubDetailsModal({
               >
                 {joinClubMutation.isPending ? "Adding Membership..." : "Add Membership"}
               </button>
+            ) : (
+              <button
+                onClick={() => setShowPurchaseOverlay(true)}
+                className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
+              >
+                Boost Your Status
+              </button>
             )}
           </div>
         </motion.div>
       </motion.div>
+      
+      {/* Purchase Overlay */}
+      {showPurchaseOverlay && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative w-full max-w-md bg-[#0E0E14] rounded-2xl shadow-2xl"
+          >
+            <button
+              onClick={() => setShowPurchaseOverlay(false)}
+              className="absolute right-3 top-3 rounded-full bg-gray-800 p-2 text-white hover:bg-gray-700 transition-colors z-10"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-2">Boost Your Status</h2>
+              <p className="text-gray-300 mb-6">Purchase points to level up faster and unlock more perks!</p>
+              
+              <PointsWalletWidget 
+                clubId={club.id}
+                clubName={club.name}
+                showPurchaseOptions={true}
+              />
+            </div>
+          </motion.div>
+        </div>
+      )}
     </AnimatePresence>
   );
 }

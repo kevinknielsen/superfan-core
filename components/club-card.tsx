@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
 import dynamic from "next/dynamic";
 const QRScanner = dynamic(() => import("./qr-scanner"), { ssr: false });
-import PointsWalletWidget from "./points-wallet-widget";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
 import Link from "next/link";
@@ -475,17 +474,7 @@ export default function ClubCard({
             </div>
           </div>
 
-          {/* Points Wallet Widget */}
-          {membership && (
-            <div className="mt-4">
-              <PointsWalletWidget 
-                clubId={club.id}
-                clubName={club.name}
-                compact={true}
-                className="bg-gray-800/50 rounded-lg p-3 border border-gray-700"
-              />
-            </div>
-          )}
+
 
           {/* Action Button (matches project card structure) */}
           <div className="mt-4" onClick={(e) => e.stopPropagation()}>
