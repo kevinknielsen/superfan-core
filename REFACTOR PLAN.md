@@ -524,7 +524,7 @@ ENABLE_REDEMPTION_CODES=true
 ENABLE_ADMIN_PANEL=true
 
 # App URLs (EXISTING)
-NEXT_PUBLIC_APP_URL=https://app.superfan.one
+NEXT_PUBLIC_APP_URL=https://superfan.one
 VERCEL_URL=auto-filled-by-vercel
 ```
 
@@ -955,12 +955,12 @@ ENABLE_ADMIN_PANEL=true
 ```
 
 ### Domain & SSL Configuration
-- [ ] Configure custom domain: `app.superfan.one`
+- [ ] Configure custom domain: `superfan.one`
 - [ ] Verify SSL certificate auto-renewal
 - [ ] Update Privy allowed origins to include production domain
 
 ### Webhook Configuration
-- [ ] Create Stripe webhook endpoint: `https://app.superfan.one/api/webhooks/stripe`
+- [ ] Create Stripe webhook endpoint: `https://superfan.one/api/webhooks/stripe`
 - [ ] Enable events: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `checkout.session.completed`
 - [ ] Copy webhook secret to environment variables
 

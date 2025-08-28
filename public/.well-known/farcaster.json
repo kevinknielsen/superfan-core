@@ -1,19 +1,19 @@
 {
   "accountAssociation": {
     "header": "eyJmaWQiOjEwOTkxNjQsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgwMjgwOTI0YWVkNzI1Y2RhMTE2OGEwMkEyNDBkQTlGOTIwNEYzODFiIn0",
-    "payload": "eyJkb21haW4iOiJhcHAuc3VwZXJmYW4ub25lIn0",
+    "payload": "eyJkb21haW4iOiJzdXBlcmZhbi5vbmUifQ==",
     "signature": "MHgyZjYzYmM0ZTk5YmZjNDMxYWU2NzkzYWI0YzFjNDFhNjA2NGI3MjEyYzdmNDAwYjdmZDkyMjg1YTJlZjczNTFmNDllZTZjMjc5YmYwYTMyMzE3NjI2ZGQ3YjVkZWJlM2VlNzM1MDE1M2RjOGE0ZDI3OTVmZjNjYWU1ZTk4YmU0ODFj"
   },
   "frame": {
     "version": "next",
     "name": "Superfan",
     "iconUrl": "https://i.ibb.co/6cQPpxBV/Logo.png",
-    "homeUrl": "https://app.superfan.one",
+    "homeUrl": "https://superfan.one",
     "imageUrl": "https://i.ibb.co/WNC9fnPn/cover.png",
     "buttonTitle": "Launch App",
-    "splashImageUrl": "https://app.superfan.one/splash-new.png",
+    "splashImageUrl": "https://superfan.one/splash-new.png",
     "splashBackgroundColor": "#0E0E14",
-    "webhookUrl": "https://app.superfan.one/api/farcaster/webhook",
+    "webhookUrl": "https://superfan.one/api/farcaster/webhook",
     "subtitle": "Fund the Future of Music",
     "description": "A launchpad and OS for artists to fund, manage, and release music with their team.",
     "screenshotUrls": [

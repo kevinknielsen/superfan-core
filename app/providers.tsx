@@ -9,6 +9,7 @@ import { FarcasterProvider } from "@/lib/farcaster-context";
 import { FarcasterAuthProvider } from "@/lib/farcaster-auth";
 import { FarcasterWagmiProvider } from "@/lib/farcaster-wagmi-provider";
 import { UnifiedAuthProvider } from "@/lib/unified-auth-context";
+import { UniversalAuthProvider } from "@/lib/universal-auth-context";
 
 const queryClient = new QueryClient();
 
@@ -54,8 +55,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <FarcasterAuthProvider>
             <FarcasterWagmiProvider>
               <UnifiedAuthProvider>
-                {children}
-                <Toaster />
+                <UniversalAuthProvider>
+                  {children}
+                  <Toaster />
+                </UniversalAuthProvider>
               </UnifiedAuthProvider>
             </FarcasterWagmiProvider>
           </FarcasterAuthProvider>

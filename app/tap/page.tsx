@@ -63,8 +63,9 @@ function TapPageContent() {
       processingStarted.current = true;
       processTapIn();
     } else if (!authLoading && !isAuthenticated) {
-      // Redirect to login with return URL
+      // Show auth modal instead of redirect
       const currentUrl = window.location.href;
+      // Import and use the auth modal here when needed
       router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
     }
   }, [authLoading, isAuthenticated, user, clubId, source]);

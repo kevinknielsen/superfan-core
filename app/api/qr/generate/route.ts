@@ -57,7 +57,14 @@ export async function POST(request: NextRequest) {
     const qrId = crypto.randomUUID();
     
     // Create the QR code URL that will trigger the tap-in
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one';
+    // Prefer current request origin for local and preview; fall back to configured prod URL
+    const requestUrl = new URL(request.url);
+    const isLocalDev = ['localhost', '127.0.0.1'].includes(requestUrl.hostname);
+    const isVercelPreview = requestUrl.hostname.endsWith('.vercel.app');
+    const baseUrl =
+      (isLocalDev || isVercelPreview)
+        ? `${requestUrl.protocol}//${requestUrl.host}`
+        : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
     const qrUrl = `${baseUrl}/tap?qr=${qrId}&club=${qrData.club_id}&source=${qrData.source}`;
     
     // Default point values for different QR sources
