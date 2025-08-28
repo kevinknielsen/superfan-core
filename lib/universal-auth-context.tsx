@@ -18,6 +18,7 @@ export type AuthAction =
 interface UniversalAuthContextType {
   showAuthModal: (action: AuthAction, callback?: () => void) => void;
   hideAuthModal: () => void;
+  resolveAuthSuccess: () => void;
   isAuthModalOpen: boolean;
   authAction: AuthAction | null;
   authCallback?: () => void;
@@ -39,11 +40,17 @@ export function UniversalAuthProvider({ children }: { children: React.ReactNode 
   const hideAuthModal = () => {
     setIsAuthModalOpen(false);
     setAuthAction(null);
-    // Execute callback if it exists, then clear it
+    setAuthCallback(undefined);
+  };
+
+  // Call only after confirmed authentication
+  const resolveAuthSuccess = () => {
     if (authCallback) {
       authCallback();
     }
     setAuthCallback(undefined);
+    setIsAuthModalOpen(false);
+    setAuthAction(null);
   };
 
   return (
@@ -51,6 +58,7 @@ export function UniversalAuthProvider({ children }: { children: React.ReactNode 
       value={{
         showAuthModal,
         hideAuthModal,
+        resolveAuthSuccess,
         isAuthModalOpen,
         authAction,
         authCallback,
@@ -100,7 +108,7 @@ export function useAuthAction() {
 }
 
 function UniversalAuthModal() {
-  const { isAuthModalOpen, hideAuthModal, authAction, authCallback } = useUniversalAuthModal();
+  const { isAuthModalOpen, hideAuthModal, resolveAuthSuccess, authAction, authCallback } = useUniversalAuthModal();
   const { isInWalletApp, user } = useFarcaster();
   const { login, authenticated } = usePrivy();
   const [isLoading, setIsLoading] = useState(false);
@@ -142,12 +150,12 @@ function UniversalAuthModal() {
     };
   }, [isAuthModalOpen, hideAuthModal]);
 
-  // Auto-close if user becomes authenticated and execute callback
+  // Auto-close on authentication and execute callback
   useEffect(() => {
     if ((authenticated || (isInWalletApp && user)) && isAuthModalOpen && authCallback) {
-      hideAuthModal(); // This will execute the callback
+      resolveAuthSuccess();
     }
-  }, [authenticated, user, isInWalletApp, isAuthModalOpen, authCallback, hideAuthModal]);
+  }, [authenticated, user, isInWalletApp, isAuthModalOpen, authCallback, resolveAuthSuccess]);
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -155,9 +163,8 @@ function UniversalAuthModal() {
 
     try {
       if (isInWalletApp) {
-        // In wallet app context, authentication should be automatic
-        // This shouldn't really happen, but we'll close the modal
-        hideAuthModal();
+        // Wallet context: consider auth resolved by the host app
+        resolveAuthSuccess();
       } else {
         // Web context - use Privy login (same as login page)
         login(); // This opens Privy's native modal
