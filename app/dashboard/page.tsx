@@ -99,13 +99,7 @@ export default function Dashboard() {
   const isLoading = authLoading || clubsLoading || membershipsLoading;
 
   // Redirect if not authenticated (except in wallet apps)
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      const queryString = searchParams.toString();
-      const fullPath = queryString ? `${pathname}?${queryString}` : pathname;
-      router.push(`/login?redirect=${encodeURIComponent(fullPath)}`);
-    }
-  }, [authLoading, isAuthenticated, router, pathname, searchParams]);
+  // Remove login redirect - dashboard is now browsable by everyone
 
   if (authLoading) {
     return (
@@ -115,9 +109,7 @@ export default function Dashboard() {
     );
   }
 
-  if (!isAuthenticated) {
-    return null; // Will redirect
-  }
+  // Dashboard is now browsable by everyone - auth state handled by individual components
 
 
 

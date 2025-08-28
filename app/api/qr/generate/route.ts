@@ -57,7 +57,12 @@ export async function POST(request: NextRequest) {
     const qrId = crypto.randomUUID();
     
     // Create the QR code URL that will trigger the tap-in
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one';
+    // Use current request origin in development, fall back to superfan.one in production
+    const requestUrl = new URL(request.url);
+    const isLocalDev = requestUrl.hostname === 'localhost' || requestUrl.hostname === '127.0.0.1';
+    const baseUrl = isLocalDev 
+      ? `${requestUrl.protocol}//${requestUrl.host}`
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
     const qrUrl = `${baseUrl}/tap?qr=${qrId}&club=${qrData.club_id}&source=${qrData.source}`;
     
     // Default point values for different QR sources
