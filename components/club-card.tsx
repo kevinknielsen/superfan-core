@@ -474,6 +474,8 @@ export default function ClubCard({
             </div>
           </div>
 
+
+
           {/* Action Button (matches project card structure) */}
           <div className="mt-4" onClick={(e) => e.stopPropagation()}>
             {membership ? (

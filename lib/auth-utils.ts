@@ -1,8 +1,21 @@
 import { useMemo } from 'react';
+import { NextRequest } from 'next/server';
 import { isAdmin } from './security';
+import { verifyUnifiedAuth } from '@/app/api/auth';
 
 // Re-export security functions for convenience
 export { isAdmin, truncateText, validateEmail, debugLog, productionLog, errorLog } from './security';
+
+// Server-side user authentication
+export async function getServerUser(request?: NextRequest) {
+  if (!request) {
+    // If no request provided, this is likely from a server component
+    // where we don't have access to the request object
+    return null;
+  }
+  
+  return await verifyUnifiedAuth(request);
+}
 
 // User wallet utilities
 export function getUserWalletAddress(user: any): string | null {
