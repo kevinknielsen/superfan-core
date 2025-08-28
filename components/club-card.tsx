@@ -7,9 +7,11 @@ import { motion } from "framer-motion";
 import { Users, Play, Pause, MapPin, Star, Crown, Trophy, Shield, Plus, QrCode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
-import QRScanner from "./qr-scanner";
+import dynamic from "next/dynamic";
+const QRScanner = dynamic(() => import("./qr-scanner"), { ssr: false });
 import PointsWalletWidget from "./points-wallet-widget";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
+import { useAuthAction } from "@/lib/universal-auth-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
@@ -84,6 +86,7 @@ export default function ClubCard({
   membership: propMembership,
 }: ClubCardProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
+  const { requireAuth } = useAuthAction();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -186,33 +189,26 @@ export default function ClubCard({
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    if (!isAuthenticated || !user?.id) {
-      toast({
-        title: "Sign in required",
-        description: "Please sign in to add memberships",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      await joinClubMutation.mutateAsync({
-        privyUserId: user.id,
-        clubId: club.id,
-      });
-      
-      toast({
-        title: "Membership added!",
-        description: `You've successfully joined ${club.name}`,
-      });
-    } catch (error) {
-      console.error('Error joining club:', error);
-      toast({
-        title: "Failed to add membership",
-        description: "Please try again later",
-        variant: "destructive",
-      });
-    }
+    requireAuth('membership', async () => {
+      try {
+        await joinClubMutation.mutateAsync({
+          privyUserId: user.id,
+          clubId: club.id,
+        });
+        
+        toast({
+          title: "Membership added!",
+          description: `You've successfully joined ${club.name}`,
+        });
+      } catch (error) {
+        console.error('Error joining club:', error);
+        toast({
+          title: "Failed to add membership",
+          description: "Please try again later",
+          variant: "destructive",
+        });
+      }
+    });
   };
 
   const handleQRScan = (data: string) => {
@@ -221,8 +217,15 @@ export default function ClubCard({
     
     // Check if it's a tap-in URL for this club
     if (data.includes('/tap') && data.includes(`club=${club.id}`)) {
-      // Navigate to the tap-in URL
-      router.push(data.replace(window.location.origin, ''));
+      try {
+        const url = new URL(data);
+        // Extract the path and search params for local navigation
+        const tapPath = `${url.pathname}${url.search}`;
+        router.push(tapPath);
+      } catch (error) {
+        // If URL parsing fails, try direct navigation
+        router.push(data.replace(window.location.origin, ''));
+      }
     } else {
       // Generic QR code - show info and allow manual navigation
       toast({
@@ -337,13 +340,9 @@ export default function ClubCard({
           ) : (
             <button
               onClick={handleJoinClub}
-              disabled={joinClubMutation.isPending || !isAuthenticated}
+              disabled={joinClubMutation.isPending}
               className="absolute top-3 right-3 h-8 w-8 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center shadow z-30 transition-colors disabled:opacity-50"
-              aria-label={
-                !isAuthenticated
-                  ? "Sign in required to add memberships"
-                  : "Add membership"
-              }
+              aria-label="Add membership"
             >
               {joinClubMutation.isPending ? (
                 <Spinner size="sm" color="white" />
@@ -417,9 +416,16 @@ export default function ClubCard({
 
             {/* Track Label (adapted for club) */}
             <div className="flex justify-between mt-1">
-              <span className="text-xs text-muted-foreground">Rookie</span>
               <span className="text-xs text-muted-foreground">
-                {membership ? `${currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}` : "Add membership to unlock"}
+                {membership ? "Cadet (0)" : "Start here"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {membership 
+                  ? nextStatus 
+                    ? `${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)} (${STATUS_THRESHOLDS[nextStatus]})`
+                    : "Max Level!"
+                  : "Add membership"
+                }
               </span>
             </div>
           </div>
@@ -494,13 +500,8 @@ export default function ClubCard({
             ) : (
               <button
                 onClick={handleJoinClub}
-                disabled={joinClubMutation.isPending || !isAuthenticated}
+                disabled={joinClubMutation.isPending}
                 className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50"
-                aria-label={
-                  !isAuthenticated
-                    ? "Sign in required to add memberships"
-                    : undefined
-                }
               >
                 {joinClubMutation.isPending ? (
                   <Spinner size="sm" className="mr-2" />

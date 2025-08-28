@@ -55,6 +55,7 @@ export default function AdminDashboard() {
     if (!authLoading && isAuthenticated && user) {
       checkAdminStatus();
     } else if (!authLoading && !isAuthenticated) {
+      // Redirect to login for admin access - could be modal in future
       router.push('/login');
     }
   }, [authLoading, isAuthenticated, user, router]);
