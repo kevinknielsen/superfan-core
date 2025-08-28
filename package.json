@@ -44,7 +44,6 @@
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
     "@tanstack/react-query": "^5.80.2",
-    "@types/stripe": "^8.0.416",
     "arktype": "^2.1.20",
     "autoprefixer": "^10.4.20",
     "canvas-confetti": "^1.9.3",
