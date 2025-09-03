@@ -1,7 +1,10 @@
--- Migration: Add Point Transfer Functions (Fixed with Security Validations)
+-- Migration: Add Point Transfer Functions (Secure with All Validations)
 -- Supporting functions for the unified points transfer system
 
 BEGIN;
+
+-- Ensure pgcrypto extension is available for UUID generation
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Function to safely transfer points between wallets
 CREATE OR REPLACE FUNCTION transfer_points(
@@ -16,17 +19,39 @@ DECLARE
   recipient_wallet RECORD;
   points_to_deduct_purchased INTEGER := 0;
   points_to_deduct_earned INTEGER := 0;
-  result JSON;
+  transfer_ref TEXT;
+  escrowed_earned INTEGER := 0;
+  available_earned INTEGER := 0;
 BEGIN
-  -- Get sender wallet with row-level lock to prevent race conditions
-  SELECT * INTO sender_wallet FROM point_wallets WHERE id = sender_wallet_id FOR UPDATE;
-  IF NOT FOUND THEN
+  -- Generate single unique reference for this transfer
+  transfer_ref := 'transfer_' || gen_random_uuid()::text;
+  
+  -- Validate transfer_type to prevent typos from defaulting to permissive mode
+  IF transfer_type NOT IN ('purchased_only', 'any') THEN
+    RETURN json_build_object('success', false, 'error', 'Invalid transfer_type: must be purchased_only or any');
+  END IF;
+
+  -- Prevent same-wallet transfers (security issue: converts earned→purchased without net change)
+  IF sender_wallet_id = recipient_wallet_id THEN
+    RETURN json_build_object('success', false, 'error', 'Cannot transfer to the same wallet');
+  END IF;
+
+  -- Lock wallets in deterministic order to prevent deadlocks
+  -- Always lock the smaller UUID first, then the larger UUID
+  IF sender_wallet_id < recipient_wallet_id THEN
+    SELECT * INTO sender_wallet FROM point_wallets WHERE id = sender_wallet_id FOR UPDATE;
+    SELECT * INTO recipient_wallet FROM point_wallets WHERE id = recipient_wallet_id FOR UPDATE;
+  ELSE
+    SELECT * INTO recipient_wallet FROM point_wallets WHERE id = recipient_wallet_id FOR UPDATE;
+    SELECT * INTO sender_wallet FROM point_wallets WHERE id = sender_wallet_id FOR UPDATE;
+  END IF;
+  
+  -- Validate both wallets exist after locking
+  IF sender_wallet.id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'Sender wallet not found');
   END IF;
   
-  -- Get recipient wallet with row-level lock to prevent race conditions
-  SELECT * INTO recipient_wallet FROM point_wallets WHERE id = recipient_wallet_id FOR UPDATE;
-  IF NOT FOUND THEN
+  IF recipient_wallet.id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'Recipient wallet not found');
   END IF;
   
@@ -35,15 +60,20 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Transfer amount must be positive');
   END IF;
 
-  -- Prevent same-wallet transfers (security issue: converts earned→purchased without net change)
-  IF sender_wallet_id = recipient_wallet_id THEN
-    RETURN json_build_object('success', false, 'error', 'Cannot transfer to the same wallet');
-  END IF;
-
   -- Enforce same club (prevent cross-club transfers)
   IF sender_wallet.club_id <> recipient_wallet.club_id THEN
     RETURN json_build_object('success', false, 'error', 'Wallets must belong to the same club');
   END IF;
+  
+  -- Calculate escrowed earned points for sender (cannot transfer escrowed points)
+  SELECT COALESCE(SUM(points_escrowed), 0) INTO escrowed_earned
+  FROM point_escrow 
+  WHERE user_id = sender_wallet.user_id 
+    AND club_id = sender_wallet.club_id 
+    AND status = 'held';
+  
+  -- Calculate available earned points (total earned minus escrowed)
+  available_earned := GREATEST(0, sender_wallet.earned_pts - escrowed_earned);
   
   -- Determine deduction strategy based on transfer type
   IF transfer_type = 'purchased_only' THEN
@@ -58,19 +88,32 @@ BEGIN
     END IF;
     points_to_deduct_purchased := points_amount;
     points_to_deduct_earned := 0;
-  ELSE
-    -- Allow transferring any points (purchased first, then earned)
-    IF sender_wallet.balance_pts < points_amount THEN
+  ELSIF transfer_type = 'any' THEN
+    -- Allow transferring any points (purchased first, then non-escrowed earned)
+    IF sender_wallet.balance_pts - escrowed_earned < points_amount THEN
       RETURN json_build_object(
         'success', false, 
-        'error', 'Insufficient total points',
-        'available', sender_wallet.balance_pts,
-        'requested', points_amount
+        'error', 'Insufficient available points (excluding escrowed)',
+        'available', sender_wallet.balance_pts - escrowed_earned,
+        'requested', points_amount,
+        'escrowed', escrowed_earned
       );
     END IF;
     
+    -- Deduct purchased points first, then available earned
     points_to_deduct_purchased := LEAST(points_amount, sender_wallet.purchased_pts);
-    points_to_deduct_earned := points_amount - points_to_deduct_purchased;
+    points_to_deduct_earned := LEAST(points_amount - points_to_deduct_purchased, available_earned);
+    
+    -- Final validation that we're not exceeding available points
+    IF points_to_deduct_purchased + points_to_deduct_earned < points_amount THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Cannot transfer escrowed points',
+        'available_purchased', sender_wallet.purchased_pts,
+        'available_earned', available_earned,
+        'escrowed_earned', escrowed_earned
+      );
+    END IF;
   END IF;
   
   -- Execute the transfer atomically
@@ -93,7 +136,7 @@ BEGIN
   INSERT INTO point_transactions (wallet_id, type, pts, source, affects_status, ref, metadata)
   VALUES 
     (sender_wallet_id, 'SPEND', points_amount, 'transferred', false, 
-     'transfer_' || extract(epoch from now())::bigint, 
+     transfer_ref, 
      jsonb_build_object(
        'transfer_type', 'outgoing', 
        'message', COALESCE(transfer_message, 'Point transfer'),
@@ -102,7 +145,7 @@ BEGIN
        'deducted_earned', points_to_deduct_earned
      )),
     (recipient_wallet_id, 'PURCHASE', points_amount, 'transferred', false,
-     'transfer_' || extract(epoch from now())::bigint,
+     transfer_ref,
      jsonb_build_object(
        'transfer_type', 'incoming', 
        'message', COALESCE(transfer_message, 'Point transfer'),
@@ -117,15 +160,11 @@ BEGIN
     'deducted_earned', points_to_deduct_earned,
     'sender_remaining_balance', sender_wallet.balance_pts - points_amount,
     'recipient_new_balance', recipient_wallet.balance_pts + points_amount,
-    'transfer_ref', 'transfer_' || extract(epoch from now())::bigint
+    'transfer_ref', transfer_ref
   );
   
-EXCEPTION WHEN OTHERS THEN
-  -- Rollback is automatic in functions
-  RETURN json_build_object(
-    'success', false, 
-    'error', 'Transfer failed: ' || SQLERRM
-  );
+  -- Remove EXCEPTION handler to ensure proper transaction rollback on errors
+  -- If there's an error, the entire transaction will be rolled back automatically
 END;
 $$ LANGUAGE plpgsql;
 
@@ -138,7 +177,6 @@ DECLARE
   wallet_data RECORD;
   escrowed_points INTEGER;
   status_points INTEGER;
-  result JSON;
 BEGIN
   -- Get wallet data
   SELECT * INTO wallet_data 

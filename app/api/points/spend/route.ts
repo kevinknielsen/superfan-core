@@ -29,11 +29,12 @@ export async function POST(request: NextRequest) {
     // Normalize description: trim and treat empty/whitespace as undefined
     const description = parsed.description?.trim() || 'Point spending';
 
-    // Get user's internal ID
+    // Get user's internal ID (handle both Privy and Farcaster users)
+    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userColumn, auth.userId)
       .single();
 
     if (userError || !user) {
@@ -120,6 +121,30 @@ export async function POST(request: NextRequest) {
 
     if (transactionError) {
       console.error('Error recording spend transaction:', transactionError);
+      
+      // Check if this is a duplicate reference (idempotent request)
+      if (transactionError.code === '23505' || // Postgres unique violation
+          transactionError.message?.includes('duplicate') ||
+          transactionError.message?.includes('unique')) {
+        console.log('Duplicate transaction reference detected, treating as idempotent success:', ref);
+        
+        // Return success response since the transaction was already recorded
+        return NextResponse.json({
+          success: true,
+          idempotent: true,
+          transaction: {
+            reference: ref,
+            points_spent: pointsToSpend,
+            spent_breakdown: {
+              purchased: spendResult.spent_purchased,
+              earned: spendResult.spent_earned
+            },
+            remaining_balance: spendResult.remaining_balance,
+            status_preserved: preserveStatus,
+            current_status: currentStatus
+          }
+        });
+      }
       
       // CRITICAL: Points were already spent, but transaction wasn't recorded
       // Implement compensation logic to maintain data integrity
@@ -220,11 +245,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'clubId required' }, { status: 400 });
     }
 
-    // Get user's internal ID
+    // Get user's internal ID (handle both Privy and Farcaster users)
+    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userColumn, auth.userId)
       .single();
 
     if (userError || !user) {
