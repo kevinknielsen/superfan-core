@@ -4,9 +4,12 @@ import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import Header from "@/components/header";
 import ClubCard from "@/components/club-card";
+import ClubDetailsModal from "@/components/club-details-modal";
 import { Search, Plus, Users, Star, Crown } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useToast } from "@/hooks/use-toast";
+import confetti from "canvas-confetti";
 
 import { useClubs, useUserClubMemberships } from "@/hooks/use-clubs";
 import type { Club, ClubMembership } from "@/types/club.types";
@@ -79,6 +82,9 @@ function useFilteredClubs(
 export default function Dashboard() {
   const { user, isAuthenticated, isLoading: authLoading } = useUnifiedAuth();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  const [showPurchaseSuccess, setShowPurchaseSuccess] = useState(false);
+  const [showPurchaseCanceled, setShowPurchaseCanceled] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -94,6 +100,57 @@ export default function Dashboard() {
     userMemberships,
     searchQuery
   );
+
+  const { toast } = useToast();
+
+  // Handle Stripe purchase success/cancel redirects
+  useEffect(() => {
+    const clubParam = searchParams.get('club');
+    const purchaseParam = searchParams.get('purchase');
+    
+    if (clubParam && purchaseParam) {
+      // Find the club
+      const club = allClubs.find(c => c.id === clubParam);
+      
+      if (club) {
+        if (purchaseParam === 'success') {
+          // Show success message and confetti
+          setSelectedClubId(clubParam);
+          setShowPurchaseSuccess(true);
+          
+          // Trigger confetti
+          setTimeout(() => {
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#10b981', '#3b82f6', '#8b5cf6']
+            });
+          }, 500);
+
+          toast({
+            title: "Points Purchase Successful! 🎉",
+            description: `Your points have been added to ${club.name}`,
+          });
+        } else if (purchaseParam === 'canceled') {
+          setSelectedClubId(clubParam);
+          setShowPurchaseCanceled(true);
+          
+          toast({
+            title: "Purchase Canceled",
+            description: "No charges were made to your account",
+            variant: "default",
+          });
+        }
+        
+        // Clean up URL parameters
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('club');
+        newUrl.searchParams.delete('purchase');
+        router.replace(newUrl.pathname + newUrl.search);
+      }
+    }
+  }, [searchParams, allClubs, router, toast]);
 
   // Loading state
   const isLoading = authLoading || clubsLoading || membershipsLoading;
@@ -257,6 +314,20 @@ export default function Dashboard() {
           </section>
         </main>
       </motion.div>
+
+      {/* Club Details Modal for Purchase Success/Cancel */}
+      {selectedClubId && (
+        <ClubDetailsModal
+          club={allClubs.find(c => c.id === selectedClubId)!}
+          membership={userMemberships.find(m => m.club_id === selectedClubId)}
+          isOpen={!!selectedClubId}
+          onClose={() => {
+            setSelectedClubId(null);
+            setShowPurchaseSuccess(false);
+            setShowPurchaseCanceled(false);
+          }}
+        />
+      )}
     </>
   );
 }

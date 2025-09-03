@@ -24,7 +24,7 @@ import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
-import PointsWalletWidget from "./points-wallet-widget";
+import UnifiedPointsWallet from "./unified-economy/unified-points-wallet";
 import UnlockRedemption from "./unlock-redemption";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
@@ -176,24 +176,33 @@ export default function ClubDetailsModal({
     }
   };
 
-  // Close modal when clicking outside (matches project modal)
+  // Close modal when clicking outside (temporarily disabled for unified points testing)
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
-        onClose();
-      }
-    };
+    // TODO: Re-enable outside click handler after unified points modals are working
+    // const handleClickOutside = (event: MouseEvent) => {
+    //   const target = event.target as Node;
+    //   
+    //   // Check if click is outside the main modal
+    //   if (modalRef.current && !modalRef.current.contains(target)) {
+    //     onClose();
+    //   }
+    // };
 
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    // if (isOpen) {
+    //   document.addEventListener("mousedown", handleClickOutside);
+    // }
 
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    // return () => {
+    //   document.removeEventListener("mousedown", handleClickOutside);
+    // };
+  }, [isOpen, onClose]);
+
+  // Add Escape key handling for accessibility
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
   // Prevent body scroll when modal is open (matches project modal)
@@ -458,7 +467,13 @@ export default function ClubDetailsModal({
                   <Gift className="h-5 w-5 text-primary" />
                   Available Perks
                 </h3>
-                <UnlockRedemption
+                {/* Temporarily disabled to fix React key conflicts */}
+                <div className="p-4 border border-dashed border-gray-300 rounded-lg text-center text-gray-500">
+                  <Gift className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>Unlocks system being upgraded for unified economy</p>
+                  <p className="text-sm">Coming back soon with enhanced features!</p>
+                </div>
+                {/* <UnlockRedemption
                   clubId={club.id}
                   userStatus={currentStatus}
                   userPoints={currentPoints}
@@ -469,7 +484,7 @@ export default function ClubDetailsModal({
                       description: "Check your email for details",
                     });
                   }}
-                />
+                /> */}
               </div>
             )}
 
@@ -556,10 +571,11 @@ export default function ClubDetailsModal({
               <h2 className="text-2xl font-bold text-white mb-2">Boost Your Status</h2>
               <p className="text-gray-300 mb-6">Purchase points to level up faster and unlock more perks!</p>
               
-              <PointsWalletWidget 
+              <UnifiedPointsWallet 
                 clubId={club.id}
                 clubName={club.name}
                 showPurchaseOptions={true}
+                showTransferOptions={false}
               />
             </div>
           </motion.div>

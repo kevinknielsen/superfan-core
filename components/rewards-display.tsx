@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { useClubRewards, useRedeemReward } from '@/hooks/use-points';
+import { useClubRewards, useRedeemReward } from '../legacy/hooks/use-points';
 import { formatPoints } from '@/lib/points';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';

@@ -11,6 +11,9 @@ const PurchaseRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  let communityId: string | undefined;
+  let bundleId: '1000' | '5000' | '10000' | undefined;
+  
   try {
     // Verify authentication
     const auth = await verifyUnifiedAuth(request);
@@ -22,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { communityId, bundleId } = PurchaseRequestSchema.parse(body);
+    ({ communityId, bundleId } = PurchaseRequestSchema.parse(body));
 
     // Get community details
     const { data: community, error: communityError } = await supabase
@@ -72,9 +75,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Stripe checkout session
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const successUrl = `${baseUrl}/points/${communityId}?success=true`;
-    const cancelUrl = `${baseUrl}/points/${communityId}?canceled=true`;
+    // Use Vercel URL in production, fallback to localhost in development
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+    // Redirect back to dashboard with modal state to preserve UX context
+    const successUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=success`;
+    const cancelUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=canceled`;
 
     const session = await createPointsPurchaseSession({
       communityId: community.id,
@@ -104,8 +111,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Provide more detailed error information
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Detailed purchase error:', {
+      message: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      communityId,
+      bundleId,
+    });
+
     return NextResponse.json(
-      { error: 'Failed to create purchase session' },
+      { 
+        error: 'Failed to create purchase session',
+        details: errorMessage,
+        hint: 'Check Stripe configuration and club pricing settings'
+      },
       { status: 500 }
     );
   }

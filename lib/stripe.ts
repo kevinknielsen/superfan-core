@@ -9,7 +9,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: process.env.STRIPE_API_VERSION || '2024-10-28',
+  apiVersion: process.env.STRIPE_API_VERSION || '2023-10-16',
 });
 
 /**
