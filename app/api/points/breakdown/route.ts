@@ -35,8 +35,57 @@ export async function GET(request: NextRequest) {
       .eq('club_id', clubId)
       .single();
 
+    // If wallet doesn't exist, create a default one or return empty state
     if (walletError || !walletView) {
-      return NextResponse.json({ error: 'Point wallet not found' }, { status: 404 });
+      console.log('Wallet not found, checking if user needs wallet creation:', { userId: user.id, clubId, error: walletError?.message });
+      
+      // Check if the user has a club membership first
+      const { data: membership } = await supabase
+        .from('club_memberships')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('club_id', clubId)
+        .single();
+
+      if (!membership) {
+        return NextResponse.json({ error: 'User is not a member of this club' }, { status: 404 });
+      }
+
+      // Return empty wallet state for new members
+      return NextResponse.json({
+        wallet: {
+          id: 'temp',
+          total_balance: 0,
+          earned_points: 0,
+          purchased_points: 0,
+          spent_points: 0,
+          escrowed_points: 0,
+          status_points: 0,
+          last_activity: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        },
+        status: {
+          current: membership.current_status || 'cadet',
+          current_threshold: 0,
+          next_status: 'resident',
+          next_threshold: 500,
+          progress_to_next: 0,
+          points_to_next: 500
+        },
+        spending_power: {
+          total_spendable: 0,
+          purchased_available: 0,
+          earned_available: 0,
+          earned_locked_for_status: 0,
+          escrowed: 0
+        },
+        transaction_breakdown: {},
+        recent_activity: [],
+        club_membership: {
+          join_date: membership.join_date,
+          total_points_in_club: membership.points || 0
+        }
+      });
     }
 
     // Get membership status for context

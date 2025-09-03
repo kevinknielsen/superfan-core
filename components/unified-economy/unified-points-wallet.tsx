@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
+import { useUnifiedPoints, useStatusInfo } from '@/hooks/unified-economy/use-unified-points';
+import { getAccessToken } from '@privy-io/react-auth';
 
 interface UnifiedPointsWalletProps {
   clubId: string;
@@ -57,12 +59,7 @@ interface PointsBreakdown {
   recent_activity: any[];
 }
 
-const statusConfig = {
-  cadet: { color: 'bg-gray-500', label: 'Cadet', icon: '🌟' },
-  resident: { color: 'bg-blue-500', label: 'Resident', icon: '🏠' },
-  headliner: { color: 'bg-purple-500', label: 'Headliner', icon: '🎤' },
-  superfan: { color: 'bg-gold-500', label: 'Superfan', icon: '👑' }
-};
+
 
 export default function UnifiedPointsWallet({ 
   clubId, 
@@ -71,50 +68,64 @@ export default function UnifiedPointsWallet({
   showTransferOptions = false,
   className = ""
 }: UnifiedPointsWalletProps) {
-  const [breakdown, setBreakdown] = useState<PointsBreakdown | null>(null);
-  const [loading, setLoading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const { toast } = useToast();
 
-  // Fetch points breakdown
-  const fetchBreakdown = async () => {
-    setLoading(true);
+  // Use the hook instead of manual fetch
+  const { 
+    breakdown, 
+    isLoading, 
+    error,
+    refetch,
+    spendPoints,
+    transferPoints,
+    isSpending,
+    isTransferring,
+    canSpend,
+    formatPoints,
+    totalBalance,
+    currentStatus
+  } = useUnifiedPoints(clubId);
+
+  const { getStatusInfo } = useStatusInfo();
+
+  // Handle buy points flow
+  const handleBuyPoints = async () => {
     try {
-      const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
-        method: 'GET',
+      console.log('Starting buy points flow for club:', clubId);
+      
+      // For now, redirect to 1000 point bundle (smallest option)
+      const response = await fetch('/api/points/purchase', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await getAccessToken()}`,
         },
-        credentials: 'include', // Include cookies for auth
+        body: JSON.stringify({
+          communityId: clubId,
+          bundleId: '1000' // Default to 1000 point bundle
+        }),
       });
-      
+
+      console.log('Purchase API response status:', response.status);
+
       if (response.ok) {
-        const data = await response.json();
-        setBreakdown(data);
+        const { url } = await response.json();
+        // Redirect to Stripe checkout
+        window.location.href = url;
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch points breakdown`);
+        const error = await response.json().catch(() => ({}));
+        console.error('Purchase API error:', error, 'Status:', response.status);
+        throw new Error(error.error || `HTTP ${response.status}: Failed to create checkout session`);
       }
     } catch (error) {
-      console.error('Error fetching points breakdown:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to load points breakdown",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+      console.error('Buy points error:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to start purchase'}`);
     }
   };
 
-  // Load breakdown on mount
-  React.useEffect(() => {
-    fetchBreakdown();
-  }, [clubId]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <Card className={`${className}`}>
         <CardContent className="p-6">
@@ -141,7 +152,7 @@ export default function UnifiedPointsWallet({
                 Coming soon! Enhanced points system with spending breakdown.
               </p>
             </div>
-            <Button variant="outline" onClick={fetchBreakdown} disabled={loading}>
+            <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
               Try Again
             </Button>
           </div>
@@ -151,7 +162,7 @@ export default function UnifiedPointsWallet({
   }
 
   const { wallet, status, spending_power } = breakdown;
-  const statusInfo = statusConfig[status.current as keyof typeof statusConfig];
+  const statusInfo = getStatusInfo(status.current);
 
   return (
     <Card className={`${className} overflow-hidden`}>
@@ -192,7 +203,7 @@ export default function UnifiedPointsWallet({
         {status.next_status && (
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>Progress to {statusConfig[status.next_status as keyof typeof statusConfig]?.label}</span>
+              <span>Progress to {status.next_status ? getStatusInfo(status.next_status).label : 'Max Status'}</span>
               <span>{status.points_to_next} points needed</span>
             </div>
             <Progress value={status.progress_to_next} className="h-2" />
@@ -202,7 +213,14 @@ export default function UnifiedPointsWallet({
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-3">
           {showPurchaseOptions && (
-            <Button variant="default" className="w-full">
+            <Button 
+              variant="default" 
+              className="w-full"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleBuyPoints();
+              }}
+            >
               <ArrowDownRight className="h-4 w-4 mr-2" />
               Buy Points
             </Button>
@@ -210,7 +228,10 @@ export default function UnifiedPointsWallet({
           
           <Button 
             variant="outline" 
-            onClick={() => setShowSpendModal(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSpendModal(true);
+            }}
             disabled={wallet.total_balance === 0}
           >
             <ArrowUpRight className="h-4 w-4 mr-2" />
@@ -220,7 +241,10 @@ export default function UnifiedPointsWallet({
           {showTransferOptions && (
             <Button 
               variant="outline" 
-              onClick={() => setShowTransferModal(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTransferModal(true);
+              }}
               disabled={spending_power.purchased_available === 0}
             >
               <Users className="h-4 w-4 mr-2" />
@@ -230,7 +254,10 @@ export default function UnifiedPointsWallet({
 
           <Button 
             variant="ghost" 
-            onClick={() => setShowDetails(!showDetails)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDetails(!showDetails);
+            }}
           >
             <Info className="h-4 w-4 mr-2" />
             Details
@@ -320,51 +347,78 @@ export default function UnifiedPointsWallet({
       </CardContent>
 
       {/* Spend Points Modal */}
-      {showSpendModal && (
-        <SpendPointsModal
-          clubId={clubId}
-          clubName={clubName}
-          availablePoints={spending_power.total_spendable}
-          statusProtectedPoints={spending_power.earned_locked_for_status}
-          onClose={() => setShowSpendModal(false)}
-          onSuccess={fetchBreakdown}
-        />
-      )}
+      <SpendPointsModal
+        clubId={clubId}
+        clubName={clubName}
+        isOpen={showSpendModal}
+        onClose={() => setShowSpendModal(false)}
+        onSuccess={() => {
+          refetch();
+          setShowSpendModal(false);
+        }}
+      />
 
       {/* Transfer Points Modal */}
-      {showTransferModal && (
-        <TransferPointsModal
-          clubId={clubId}
-          clubName={clubName}
-          availablePoints={spending_power.purchased_available}
-          onClose={() => setShowTransferModal(false)}
-          onSuccess={fetchBreakdown}
-        />
-      )}
+      <TransferPointsModal
+        clubId={clubId}
+        clubName={clubName}
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        onSuccess={() => {
+          refetch();
+          setShowTransferModal(false);
+        }}
+      />
     </Card>
   );
 }
 
 // Placeholder components for modals (to be implemented next)
-function SpendPointsModal({ onClose, onSuccess, ...props }: any) {
+function SpendPointsModal({ isOpen, onClose, onSuccess, clubId, clubName, ...props }: any) {
+  if (!isOpen) return null;
+  
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+    <div 
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" 
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      data-modal="spend-points"
+    >
+      <div 
+        className="bg-white p-6 rounded-lg max-w-md w-full mx-4" 
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3 className="text-lg font-semibold mb-4">Spend Points</h3>
-        <p className="text-muted-foreground mb-4">Spending modal coming soon...</p>
-        <Button onClick={onClose}>Close</Button>
+        <p className="text-muted-foreground mb-4">Enhanced spending modal coming soon...</p>
+        <p className="text-sm text-gray-600 mb-4">Club: {clubName}</p>
+        <Button onClick={(e) => { e.stopPropagation(); onClose(); }}>Close</Button>
       </div>
     </div>
   );
 }
 
-function TransferPointsModal({ onClose, onSuccess, ...props }: any) {
+function TransferPointsModal({ isOpen, onClose, onSuccess, clubId, clubName, ...props }: any) {
+  if (!isOpen) return null;
+  
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+    <div 
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" 
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      data-modal="transfer-points"
+    >
+      <div 
+        className="bg-white p-6 rounded-lg max-w-md w-full mx-4" 
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3 className="text-lg font-semibold mb-4">Transfer Points</h3>
-        <p className="text-muted-foreground mb-4">Transfer modal coming soon...</p>
-        <Button onClick={onClose}>Close</Button>
+        <p className="text-muted-foreground mb-4">Point transfer modal coming soon...</p>
+        <p className="text-sm text-gray-600 mb-4">Club: {clubName}</p>
+        <Button onClick={(e) => { e.stopPropagation(); onClose(); }}>Close</Button>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { getAccessToken } from '@privy-io/react-auth';
 
 export interface PointsBreakdown {
   wallet: {
@@ -67,11 +68,37 @@ export function useUnifiedPoints(clubId: string) {
   } = useQuery({
     queryKey: ['points-breakdown', clubId],
     queryFn: async (): Promise<PointsBreakdown> => {
-      const response = await fetch(`/api/points/breakdown?clubId=${clubId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch points breakdown');
+      const accessToken = await getAccessToken();
+      
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch points breakdown`);
+        }
+        
+        return response.json();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Request timed out - please try again');
+        }
+        throw error;
       }
-      return response.json();
     },
     enabled: !!clubId,
     staleTime: 30000, // 30 seconds
@@ -81,9 +108,13 @@ export function useUnifiedPoints(clubId: string) {
   // Spend points mutation
   const spendPointsMutation = useMutation({
     mutationFn: async (request: SpendPointsRequest) => {
+      const accessToken = await getAccessToken();
       const response = await fetch('/api/points/spend', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify(request),
       });
 
@@ -113,9 +144,13 @@ export function useUnifiedPoints(clubId: string) {
   // Transfer points mutation
   const transferPointsMutation = useMutation({
     mutationFn: async (request: TransferPointsRequest) => {
+      const accessToken = await getAccessToken();
       const response = await fetch('/api/points/transfer', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify(request),
       });
 

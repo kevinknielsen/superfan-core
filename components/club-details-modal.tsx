@@ -176,24 +176,25 @@ export default function ClubDetailsModal({
     }
   };
 
-  // Close modal when clicking outside (matches project modal)
+  // Close modal when clicking outside (temporarily disabled for unified points testing)
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
-        onClose();
-      }
-    };
+    // TODO: Re-enable outside click handler after unified points modals are working
+    // const handleClickOutside = (event: MouseEvent) => {
+    //   const target = event.target as Node;
+    //   
+    //   // Check if click is outside the main modal
+    //   if (modalRef.current && !modalRef.current.contains(target)) {
+    //     onClose();
+    //   }
+    // };
 
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    // if (isOpen) {
+    //   document.addEventListener("mousedown", handleClickOutside);
+    // }
 
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    // return () => {
+    //   document.removeEventListener("mousedown", handleClickOutside);
+    // };
   }, [isOpen, onClose]);
 
   // Prevent body scroll when modal is open (matches project modal)
@@ -458,7 +459,13 @@ export default function ClubDetailsModal({
                   <Gift className="h-5 w-5 text-primary" />
                   Available Perks
                 </h3>
-                <UnlockRedemption
+                {/* Temporarily disabled to fix React key conflicts */}
+                <div className="p-4 border border-dashed border-gray-300 rounded-lg text-center text-gray-500">
+                  <Gift className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>Unlocks system being upgraded for unified economy</p>
+                  <p className="text-sm">Coming back soon with enhanced features!</p>
+                </div>
+                {/* <UnlockRedemption
                   clubId={club.id}
                   userStatus={currentStatus}
                   userPoints={currentPoints}
@@ -469,7 +476,7 @@ export default function ClubDetailsModal({
                       description: "Check your email for details",
                     });
                   }}
-                />
+                /> */}
               </div>
             )}
 

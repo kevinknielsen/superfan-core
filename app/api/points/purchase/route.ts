@@ -104,8 +104,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Provide more detailed error information
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Detailed purchase error:', {
+      message: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      communityId,
+      bundleId
+    });
+
     return NextResponse.json(
-      { error: 'Failed to create purchase session' },
+      { 
+        error: 'Failed to create purchase session',
+        details: errorMessage,
+        hint: 'Check Stripe configuration and club pricing settings'
+      },
       { status: 500 }
     );
   }
