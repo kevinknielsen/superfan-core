@@ -14,16 +14,6 @@ ALTER TABLE point_wallets ADD COLUMN IF NOT EXISTS escrowed_pts INTEGER DEFAULT 
 ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS source TEXT CHECK (source IN ('earned', 'purchased', 'spent', 'transferred', 'escrowed', 'refunded'));
 ALTER TABLE point_transactions ADD COLUMN IF NOT EXISTS affects_status BOOLEAN DEFAULT false;
 
--- Create computed view for status points (avoids complex generated column)
-CREATE OR REPLACE VIEW v_point_wallets AS
-SELECT pw.*,
-       (pw.earned_pts - COALESCE(pe.sum_held, 0)) AS status_pts
-FROM point_wallets pw
-LEFT JOIN (
-  SELECT user_id, club_id, SUM(points_escrowed) AS sum_held
-  FROM point_escrow WHERE status = 'held' GROUP BY user_id, club_id
-) pe USING (user_id, club_id);
-
 -- Create point_escrow table for future escrow system (Phase 3)
 CREATE TABLE IF NOT EXISTS point_escrow (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -35,6 +25,16 @@ CREATE TABLE IF NOT EXISTS point_escrow (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   resolved_at TIMESTAMPTZ
 );
+
+-- Create computed view for status points (after point_escrow table exists)
+CREATE OR REPLACE VIEW v_point_wallets AS
+SELECT pw.*,
+       (pw.earned_pts - COALESCE(pe.sum_held, 0)) AS status_pts
+FROM point_wallets pw
+LEFT JOIN (
+  SELECT user_id, club_id, SUM(points_escrowed) AS sum_held
+  FROM point_escrow WHERE status = 'held' GROUP BY user_id, club_id
+) pe USING (user_id, club_id);
 
 -- Add indexes for performance
 CREATE INDEX IF NOT EXISTS idx_point_escrow_user_club ON point_escrow(user_id, club_id) WHERE status = 'held';
