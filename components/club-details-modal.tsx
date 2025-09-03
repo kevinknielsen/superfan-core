@@ -20,14 +20,15 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
-import type { Club, ClubMembership, Unlock, ClubStatus } from "@/types/club.types";
+import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
+import PointsWalletWidget from "./points-wallet-widget";
+import UnlockRedemption from "./unlock-redemption";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
-import UnlockRedemption from "./unlock-redemption";
 
 interface ClubDetailsModalProps {
   club: Club;
@@ -51,12 +52,7 @@ const STATUS_COLORS = {
   superfan: "text-yellow-400",
 };
 
-// Unlock type icons
-const UNLOCK_ICONS = {
-  perk: Gift,
-  lottery: Sparkles,
-  allocation: Crown,
-};
+
 
 // Helper function to render club media (supports images and videos)
 function renderClubImages(club: Club) {
@@ -80,6 +76,7 @@ export default function ClubDetailsModal({
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
   const modalRef = useRef<HTMLDivElement>(null);
+  const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
   
   // Get complete club data including unlocks
   const { data: clubData } = useClub(club.id);
@@ -97,21 +94,6 @@ export default function ClubDetailsModal({
   
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
-
-  // Filter unlocks by user's status
-  const availableUnlocks = clubData?.unlocks?.filter(unlock => {
-    const statusOrder = ['cadet', 'resident', 'headliner', 'superfan'];
-    const userStatusIndex = statusOrder.indexOf(currentStatus);
-    const requiredStatusIndex = statusOrder.indexOf(unlock.min_status);
-    return userStatusIndex >= requiredStatusIndex;
-  }) || [];
-
-  const lockedUnlocks = clubData?.unlocks?.filter(unlock => {
-    const statusOrder = ['cadet', 'resident', 'headliner', 'superfan'];
-    const userStatusIndex = statusOrder.indexOf(currentStatus);
-    const requiredStatusIndex = statusOrder.indexOf(unlock.min_status);
-    return userStatusIndex < requiredStatusIndex;
-  }) || [];
 
   // Platform-aware external link handler (matches project modal)
   const handleExternalLink = async (url: string, event: React.MouseEvent) => {
@@ -175,11 +157,14 @@ export default function ClubDetailsModal({
     }
 
     try {
-      await linkTap(club.id, source);
+      // TODO: Implement tap-in API call
+      console.log('Tap-in source:', source, 'Club:', club.id);
       
+      // Show informative message until API is implemented
       toast({
-        title: "Points earned! 🎉",
-        description: `+10 points in ${club.name}`,
+        title: "Tap-in Coming Soon",
+        description: "Point earning will be available once the tap-in system is live!",
+        variant: "default",
       });
     } catch (error) {
       console.error('Error recording tap-in:', error);
@@ -370,23 +355,33 @@ export default function ClubDetailsModal({
               </p>
             </div>
 
-            {/* Membership Status (replaces demo track) */}
+            {/* Membership Status and Points Wallet */}
             {membership ? (
-              <div className="mb-6 rounded-xl border border-gray-800 p-4">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${STATUS_COLORS[currentStatus]} bg-current/20`}>
-                    <StatusIcon className="h-5 w-5" />
+              <div className="mb-6 space-y-4">
+                {/* Status Section */}
+                <div className="rounded-xl border border-gray-800 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`flex h-12 w-12 items-center justify-center rounded-full ${STATUS_COLORS[currentStatus]} bg-current/20`}>
+                      <StatusIcon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium">
+                        {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
+                      </h4>
+                      <p className="text-sm text-gray-400">
+                        {currentPoints} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-medium">
-                      {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
-                    </h4>
-                    <p className="text-sm text-gray-400">
-                      {currentPoints} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
-                    </p>
-                  </div>
-
+                  <button
+                    onClick={() => setShowPurchaseOverlay(true)}
+                    className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg hover:bg-primary/90 transition-colors"
+                  >
+                    Boost Your Status
+                  </button>
                 </div>
+
+
               </div>
             ) : (
               <div className="mb-6 rounded-xl border border-gray-800 p-4 text-center">
@@ -456,10 +451,10 @@ export default function ClubDetailsModal({
               </div>
             </div>
 
-            {/* Unlocks Section */}
+            {/* Unlocks Section (Status-based) */}
             {membership && (
               <div className="mb-6">
-                <h3 className="mb-3 text-lg font-semibold flex items-center gap-2">
+                <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
                   <Gift className="h-5 w-5 text-primary" />
                   Available Perks
                 </h3>
@@ -468,15 +463,17 @@ export default function ClubDetailsModal({
                   userStatus={currentStatus}
                   userPoints={currentPoints}
                   onRedemption={() => {
-                    // Optionally refresh user data after redemption
+                    // Optionally refetch data or show success message
                     toast({
-                      title: "Perk Redeemed! 🎉",
-                      description: "Check your email or club announcements for details",
+                      title: "Perk Redeemed!",
+                      description: "Check your email for details",
                     });
                   }}
                 />
               </div>
             )}
+
+
 
             {/* Status progress (replaces funding progress) */}
             {membership && (
@@ -507,8 +504,8 @@ export default function ClubDetailsModal({
               </div>
             )}
 
-            {/* Action button (matches project modal) */}
-            {!membership && (
+            {/* Action buttons */}
+            {!membership ? (
               <button
                 onClick={handleJoinClub}
                 disabled={joinClubMutation.isPending || !isAuthenticated}
@@ -521,10 +518,53 @@ export default function ClubDetailsModal({
               >
                 {joinClubMutation.isPending ? "Adding Membership..." : "Add Membership"}
               </button>
+            ) : (
+              <button
+                onClick={() => setShowPurchaseOverlay(true)}
+                className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
+              >
+                Boost Your Status
+              </button>
             )}
           </div>
         </motion.div>
       </motion.div>
+      
+      {/* Purchase Overlay */}
+      {showPurchaseOverlay && (
+        <div 
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setShowPurchaseOverlay(false); 
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative w-full max-w-md bg-[#0E0E14] rounded-2xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowPurchaseOverlay(false)}
+              className="absolute right-3 top-3 rounded-full bg-gray-800 p-2 text-white hover:bg-gray-700 transition-colors z-10"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            
+            <div className="p-6">
+              <h2 className="text-2xl font-bold text-white mb-2">Boost Your Status</h2>
+              <p className="text-gray-300 mb-6">Purchase points to level up faster and unlock more perks!</p>
+              
+              <PointsWalletWidget 
+                clubId={club.id}
+                clubName={club.name}
+                showPurchaseOptions={true}
+              />
+            </div>
+          </motion.div>
+        </div>
+      )}
     </AnimatePresence>
   );
 }
