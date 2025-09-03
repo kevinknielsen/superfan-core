@@ -7,7 +7,7 @@ const SpendPointsSchema = z.object({
   clubId: z.string().uuid(),
   pointsToSpend: z.number().int().positive(),
   preserveStatus: z.boolean().default(false),
-  description: z.string().min(1).max(255),
+  description: z.string().max(255).optional(), // Allow empty descriptions
   referenceId: z.string().optional(), // For linking to unlocks, purchases, etc.
 });
 
@@ -23,7 +23,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { clubId, pointsToSpend, preserveStatus, description, referenceId } = SpendPointsSchema.parse(body);
+    const parsed = SpendPointsSchema.parse(body);
+    const { clubId, pointsToSpend, preserveStatus, referenceId } = parsed;
+    
+    // Normalize description: trim and treat empty/whitespace as undefined
+    const description = parsed.description?.trim() || 'Point spending';
 
     // Get user's internal ID
     const { data: user, error: userError } = await supabase
@@ -93,6 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Record the spending transaction
+    const ref = referenceId || `spend_${Date.now()}`;
     const { error: transactionError } = await supabase
       .from('point_transactions')
       .insert({
@@ -101,7 +106,7 @@ export async function POST(request: NextRequest) {
         pts: pointsToSpend,
         source: 'spent',
         affects_status: false, // Spending doesn't affect status, only earning does
-        ref: referenceId || `spend_${Date.now()}`,
+        ref,
         metadata: {
           description,
           spent_breakdown: {
@@ -170,6 +175,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       transaction: {
+        reference: ref,
         points_spent: pointsToSpend,
         spent_breakdown: {
           purchased: spendResult.spent_purchased,
@@ -208,7 +214,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const clubId = searchParams.get('clubId');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')));
 
     if (!clubId) {
       return NextResponse.json({ error: 'clubId required' }, { status: 400 });
@@ -237,10 +243,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
     }
 
-    // Get spending transactions
+    // Get spending transactions (select only needed fields)
     const { data: transactions, error: transactionsError } = await supabase
       .from('point_transactions')
-      .select('*')
+      .select('id,type,pts,source,ref,created_at,metadata')
       .eq('wallet_id', wallet.id)
       .eq('source', 'spent')
       .order('created_at', { ascending: false })

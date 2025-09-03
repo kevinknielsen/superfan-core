@@ -57,6 +57,11 @@ export default function SpendPointsModal({
   const canAffordSpending = canSpend(amount, preserveStatus);
   const statusInfo = getStatusInfo(breakdown.status.current);
 
+  // Calculate max spendable based on status protection toggle
+  const maxSpendable = preserveStatus 
+    ? breakdown.spending_power.purchased_available + breakdown.spending_power.earned_available
+    : breakdown.spending_power.total_spendable;
+
   // Calculate spending breakdown
   const calculateSpendingBreakdown = (amount: number, preserveStatus: boolean) => {
     const { spending_power } = breakdown;
@@ -168,7 +173,7 @@ export default function SpendPointsModal({
               value={pointsToSpend}
               onChange={(e) => setPointsToSpend(e.target.value)}
               min="1"
-              max={breakdown.spending_power.total_spendable}
+              max={maxSpendable}
               className="text-lg"
             />
             
@@ -180,7 +185,7 @@ export default function SpendPointsModal({
                   variant="outline"
                   size="sm"
                   onClick={() => setPointsToSpend(quickAmount.toString())}
-                  disabled={quickAmount > breakdown.spending_power.total_spendable}
+                  disabled={quickAmount > maxSpendable}
                 >
                   {formatPoints(quickAmount)}
                 </Button>
@@ -188,7 +193,7 @@ export default function SpendPointsModal({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setPointsToSpend(breakdown.spending_power.total_spendable.toString())}
+                onClick={() => setPointsToSpend(maxSpendable.toString())}
               >
                 Max
               </Button>
