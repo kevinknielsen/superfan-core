@@ -95,12 +95,71 @@ CREATE UNIQUE INDEX idx_point_transactions_ref_wallet_unique ON point_transactio
 
 ---
 
-### **Phase 2: Pre-Order Escrow MVP** (2 weeks) - THE CORE INNOVATION 🔥
+### **Phase 2: Complete Club Owner Admin Experience** (1 week) - FOUNDATION COMPLETION 🔧
+**Goal**: Finish the club owner management experience within existing `/admin` dashboard
+
+**Focus**: Enable admins to create and fully manage clubs without needing separate owner dashboards
+
+**Missing Admin Features:** 📋 COMPLETE THE FOUNDATION
+```typescript
+// Club Creation & Management (within /admin dashboard)
+interface ClubCreationForm {
+  name: string;
+  description: string;
+  city: string;
+  point_sell_cents: number; // $1 = 1000 points default
+  point_settle_cents: number;
+  image_url?: string;
+}
+
+// Admin-only club management - no separate owner dashboards needed
+```
+
+**Phase 2 Features:** 🔄 ADMIN DASHBOARD COMPLETION
+- [ ] **Club Creation API** - `POST /api/admin/clubs` with validation
+- [ ] **Club Creation Modal** - Form within existing admin dashboard
+- [ ] **Club Editing Interface** - Update club details, pricing, settings
+- [ ] **Pricing Configuration** - Let admins set point sell/settle prices
+- [ ] **Club Media Upload** - Logo/banner management per club
+- [ ] **Club Status Management** - Activate/deactivate with member impact handling
+
+**Phase 2 API Routes:** (Admin Dashboard Extensions)
+- `POST /api/admin/clubs` - Create new club
+- `PUT /api/admin/clubs/[id]` - Update club details  
+- `POST /api/admin/clubs/[id]/pricing` - Update point pricing
+- `DELETE /api/admin/clubs/[id]` - Soft delete club
+
+### **Current Admin Dashboard Status** ✅ PARTIALLY COMPLETE
+
+**What's Working in `/admin`:**
+- ✅ **Admin Access Control** - Environment-based admin user list
+- ✅ **Dashboard Layout** - 5 tabs: Clubs, Members, QR, Unlocks, Analytics
+- ✅ **Club Viewing** - Search, filter, view details, toggle active status
+- ✅ **QR Code Generation** - Create event QRs with custom point values
+- ✅ **Unlock Management** - Full CRUD for club perks (8 unlock types)
+- ✅ **Member Analytics** - View all members across clubs
+- ✅ **Platform Stats** - Real-time engagement metrics
+
+**What Needs Completion:**
+- ❌ **Club Creation** - Currently shows "Coming Soon" toast
+- ❌ **Club Editing** - Currently shows "Coming Soon" toast  
+- ❌ **Pricing Management** - Point prices hardcoded in migrations
+- ❌ **Media Upload** - Club media manager exists but no creation flow
+
+**Technical Foundation:**
+- ✅ All database tables exist and working
+- ✅ Admin security and access control implemented
+- ✅ UI components and layouts ready for extension
+- ✅ API patterns established (unlocks API as reference)
+
+---
+
+### **Phase 3: Pre-Order Escrow MVP** (2 weeks) - THE CORE INNOVATION 🔥
 **Goal**: Prove the revolutionary concept with minimal complexity
 
 **MVP Focus**: Single user story - "Fan commits points to vinyl pre-order, gets refund if target not met, gets vinyl if successful"
 
-**Simplified Database Schema:** 📋 MVP-FOCUSED
+**Escrow Database Schema:** 📋 REVOLUTIONARY FEATURE
 ```sql
 -- Simple pre-order campaigns (no variants, no complex features)
 CREATE TABLE preorder_campaigns (
@@ -133,23 +192,23 @@ CREATE TABLE preorder_commitments (
 -- Uses existing point_escrow table
 ```
 
-**MVP Core Features:** 🔄 READY TO BUILD
-- [ ] **Campaign creation** - Simple form: title, description, MOQ, deadline, point price
-- [ ] **Point commitments** - Fans commit points, held in escrow safely
-- [ ] **MOQ tracking** - Real-time progress bar showing commitments vs target
-- [ ] **Auto-resolution** - Fund when MOQ hit, refund when deadline missed
-- [ ] **Basic campaign page** - Show progress, allow commitments, display status
+**Phase 3 Features:** 🔄 THE BREAKTHROUGH
+- [ ] **Campaign Creation** - Admin creates campaigns within club management
+- [ ] **Point Commitments** - Fans commit points, held in escrow safely
+- [ ] **MOQ Tracking** - Real-time progress bar showing commitments vs target
+- [ ] **Auto-Resolution** - Fund when MOQ hit, refund when deadline missed
+- [ ] **Campaign Management** - Admin dashboard tab for campaign oversight
 
-**MVP API Routes:** (Simplified)
-- `POST /api/campaigns` - Create campaign
-- `POST /api/campaigns/[id]/commit` - Commit points
+**Phase 3 API Routes:** (Escrow System)
+- `POST /api/admin/campaigns` - Create campaign (admin only)
+- `POST /api/campaigns/[id]/commit` - Commit points (fans)
 - `POST /api/campaigns/[id]/resolve` - Check and resolve campaign
 - `GET /api/campaigns/[id]` - Get campaign status and progress
 
 ---
 
 ### **Future Phases: Advanced Features** ❌ ELIMINATED FOR MVP
-**Rationale**: These features add significant complexity without proving the core escrow concept.
+**Rationale**: These features add complexity without proving the core concepts.
 
 **Eliminated Features:**
 - ❌ **Referral tracking** - Social features can wait

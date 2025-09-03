@@ -86,17 +86,28 @@ The app has been successfully transformed from a funding platform to a **Club-ba
 
 This is now a **revolutionary artist economy platform** with unified points currency! 🎉
 
-## 🚀 **NEXT: Phase 3 - Pre-Order Escrow System**
+## 🚀 **NEXT: Phase 2 - Complete Club Owner Admin Experience**
+
+**The Foundation Completion**: Finish club management within existing `/admin` dashboard:
+- **Club Creation** - Admins can create new clubs with pricing settings
+- **Club Editing** - Update existing club details, descriptions, pricing
+- **Media Management** - Upload and manage club logos/banners
+- **Pricing Control** - Set point sell/settle prices per club
+- **Complete CRUD** - Full club lifecycle management in admin interface
+
+**Branch Strategy**: Continue on `unified-economy` branch for Phase 2 completion
+**Timeline**: 1 week to complete admin club management, then move to escrow
+
+## 🚀 **THEN: Phase 3 - Pre-Order Escrow System**
 
 **The Revolutionary Feature**: Let fans commit points to vinyl/merch pre-orders with automatic fulfillment:
-- **Risk-free validation** - Only produce what's pre-sold
-- **Point commitments** - Fans escrow points until MOQ reached  
+- **Risk-free validation** - Only produce what's pre-sold  
+- **Point commitments** - Fans escrow points until MOQ reached
 - **Automatic fulfillment** - Manufacturing triggered when target hit
-- **Status-gated access** - Higher tiers get early access and exclusive variants
+- **Admin Campaign Management** - Create/manage campaigns within existing admin dashboard
 - **Social proof** - Real-time commitment tracking and viral mechanics
 
-**Branch Strategy**: Continue on `unified-economy` branch for Phase 3 implementation
-**Timeline**: 3 weeks for complete escrow system with manufacturing integration
+**Timeline**: 2 weeks for complete escrow system with admin campaign management
 
 ## 1. System Map (Current)
 

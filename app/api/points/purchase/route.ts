@@ -75,9 +75,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Stripe checkout session
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const successUrl = `${baseUrl}/points/${communityId}?success=true`;
-    const cancelUrl = `${baseUrl}/points/${communityId}?canceled=true`;
+    // Use Vercel URL in production, fallback to localhost in development
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+    // Redirect back to dashboard with modal state to preserve UX context
+    const successUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=success`;
+    const cancelUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=canceled`;
 
     const session = await createPointsPurchaseSession({
       communityId: community.id,
