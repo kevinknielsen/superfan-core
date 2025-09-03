@@ -22,7 +22,15 @@ ALTER TABLE point_wallets ADD COLUMN earned_pts INTEGER DEFAULT 0;
 ALTER TABLE point_wallets ADD COLUMN purchased_pts INTEGER DEFAULT 0; 
 ALTER TABLE point_wallets ADD COLUMN spent_pts INTEGER DEFAULT 0;
 ALTER TABLE point_wallets ADD COLUMN escrowed_pts INTEGER DEFAULT 0;
-ALTER TABLE point_wallets ADD COLUMN status_pts INTEGER GENERATED ALWAYS AS (earned_pts - COALESCE((SELECT SUM(points_escrowed) FROM point_escrow WHERE user_id = point_wallets.user_id AND club_id = point_wallets.club_id AND status = 'held'), 0)) STORED;
+-- Create computed view for status points (avoids complex generated column)
+CREATE OR REPLACE VIEW v_point_wallets AS
+SELECT pw.*,
+       (pw.earned_pts - COALESCE(pe.sum_held, 0)) AS status_pts
+FROM point_wallets pw
+LEFT JOIN (
+  SELECT user_id, club_id, SUM(points_escrowed) AS sum_held
+  FROM point_escrow WHERE status = 'held' GROUP BY user_id, club_id
+) pe USING (user_id, club_id);
 
 -- Enhanced transactions with source tracking
 ALTER TABLE point_transactions ADD COLUMN source TEXT CHECK (source IN ('earned', 'purchased', 'spent', 'transferred', 'escrowed', 'refunded'));
@@ -124,7 +132,7 @@ CREATE TABLE preorder_commitments (
   campaign_id UUID NOT NULL REFERENCES preorder_campaigns(id),
   
   quantity INTEGER NOT NULL DEFAULT 1,
-  variant_name TEXT,
+  variant_name TEXT NOT NULL DEFAULT '',
   points_committed INTEGER NOT NULL,
   
   -- Escrow status
@@ -369,7 +377,7 @@ SELECT
   pw.id,
   'PURCHASE',
   'purchased',
-  (ha.balance_cents / c.point_sell_cents * 100), -- Convert USD to points
+  ROUND((ha.balance_cents::NUMERIC / c.point_sell_cents::NUMERIC))::INTEGER, -- Convert USD to points with safe division
   ha.balance_cents
 FROM house_accounts ha
 JOIN users u ON ha.user_id = u.id  

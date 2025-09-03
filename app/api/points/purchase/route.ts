@@ -38,8 +38,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate community pricing configuration
+    const pointSellCents = Number(community.point_sell_cents);
+    const pointSettleCents = Number(community.point_settle_cents ?? 0);
+    
+    if (!pointSellCents || pointSellCents <= 0) {
+      return NextResponse.json(
+        { error: 'Invalid community pricing configuration: point_sell_cents must be positive' },
+        { status: 400 }
+      );
+    }
+
     // Generate purchase bundles
-    const bundles = generatePurchaseBundles(community.point_sell_cents);
+    const bundles = generatePurchaseBundles(pointSellCents);
     
     // Find the requested bundle
     let selectedBundle;
@@ -71,8 +82,8 @@ export async function POST(request: NextRequest) {
       points: selectedBundle.points,
       bonusPoints: selectedBundle.bonus_pts || 0,
       usdCents: selectedBundle.usd_cents,
-      unitSellCents: community.point_sell_cents,
-      unitSettleCents: community.point_settle_cents,
+      unitSellCents: pointSellCents,
+      unitSettleCents: pointSettleCents,
       successUrl,
       cancelUrl,
       userId: auth.userId,

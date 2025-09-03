@@ -76,17 +76,18 @@ export async function GET(
       upfront_cents: 0,
     };
 
-    // Get total outstanding points
-    const { data: wallets, error: walletsError } = await supabase
+    // Get total outstanding points (optimized with database aggregation)
+    const { data: pointsSum, error: walletsError } = await supabase
       .from('point_wallets')
-      .select('balance_pts')
-      .eq('club_id', clubId);
+      .select('sum:balance_pts.sum()')
+      .eq('club_id', clubId)
+      .single();
 
     if (walletsError) {
       throw walletsError;
     }
 
-    const outstandingPoints = wallets?.reduce((sum, wallet) => sum + wallet.balance_pts, 0) || 0;
+    const outstandingPoints = Number(pointsSum?.sum || 0);
 
     // Get total redemptions count
     const { count: totalRedemptions, error: redemptionsError } = await supabase
@@ -159,9 +160,9 @@ export async function GET(
       },
       financial: {
         coverage_ratio: coverageRatio,
-        // For MVP, reserve target equals simulated NAV
-        simulated_nav_cents: Math.ceil(outstandingPoints * 0.6 * (1 - 0.15 + 0.10)), // Using default settle rate
-        modeled_liability_cents: Math.ceil(outstandingPoints * 0.6 * (1 - 0.15 + 0.10)),
+        // For MVP, reserve target equals simulated NAV (corrected math: subtract both fees and reserves)
+        simulated_nav_cents: Math.ceil(outstandingPoints * 0.6 * (1 - 0.15 - 0.10)), // Using default settle rate with proper deductions
+        modeled_liability_cents: Math.ceil(outstandingPoints * 0.6 * (1 - 0.15 - 0.10)),
       },
       recent_activity: recentTransactions || [],
     });

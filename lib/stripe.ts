@@ -148,16 +148,16 @@ export function processCheckoutSessionCompleted(session: Stripe.Checkout.Session
     validationErrors.push('bonus_points must be a non-negative integer');
   }
   
-  if (!Number.isInteger(unitSellCents) || unitSellCents < 0) {
-    validationErrors.push('unit_sell_cents must be a non-negative integer');
+  if (!Number.isInteger(unitSellCents) || unitSellCents <= 0) {
+    validationErrors.push('unit_sell_cents must be a positive integer');
   }
   
   if (!Number.isInteger(unitSettleCents) || unitSettleCents < 0) {
     validationErrors.push('unit_settle_cents must be a non-negative integer');
   }
   
-  if (!Number.isFinite(usdGrossCents) || usdGrossCents < 0) {
-    validationErrors.push('amount_total must be a non-negative number');
+  if (!Number.isInteger(usdGrossCents) || usdGrossCents < 0) {
+    validationErrors.push('amount_total must be a non-negative integer');
   }
 
   if (validationErrors.length > 0) {

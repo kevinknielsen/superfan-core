@@ -5,10 +5,10 @@ import { createServiceClient } from '@/app/api/supabase';
 // Get media for a club
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const clubId = params.id;
+    const clubId = (await params).id;
     const supabase = createServiceClient();
     
     const { data: media, error } = await supabase
@@ -32,9 +32,9 @@ export async function GET(
 // Upload new media to a club
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const clubId = params.id;
+  const clubId = (await params).id;
   console.log('[POST /api/clubs/[clubId]/media] === ROUTE HIT ===');
   console.log('[POST /api/clubs/[clubId]/media] clubId:', clubId);
   console.log('[POST /api/clubs/[clubId]/media] request method:', request.method);

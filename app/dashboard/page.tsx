@@ -131,7 +131,7 @@ export default function Dashboard() {
             transition={{ duration: 0.8, ease: "easeOut" }}
           >
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold leading-tight bg-gradient-to-r from-pink-400 via-purple-400 to-pink-500 bg-clip-text text-transparent">
-              Tastemakers Lead.{" "}
+              Join Your Community.{" "}
               <motion.span
                 initial={{ backgroundSize: "0% 100%" }}
                 animate={{ backgroundSize: "100% 100%" }}
@@ -142,7 +142,7 @@ export default function Dashboard() {
                   backgroundPosition: "left center",
                 }}
               >
-                You Get In First
+                Earn Your Status
               </motion.span>
             </h2>
           </motion.div>
