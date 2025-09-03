@@ -101,8 +101,10 @@ export function useUnifiedPoints(clubId: string) {
       }
     },
     enabled: !!clubId,
-    staleTime: 30000, // 30 seconds
-    cacheTime: 300000, // 5 minutes
+    staleTime: 10000, // 10 seconds (shorter for faster updates)
+    cacheTime: 60000, // 1 minute (shorter cache)
+    retry: 1, // Only retry once on failure
+    refetchOnWindowFocus: false // Don't refetch when window gains focus
   });
 
   // Spend points mutation

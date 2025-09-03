@@ -96,26 +96,16 @@ export async function GET(request: NextRequest) {
       .eq('club_id', clubId)
       .single();
 
-    // Get transaction breakdown by source
-    const { data: transactionBreakdown, error: transactionError } = await supabase
-      .from('point_transactions')
-      .select('source, type, sum:pts.sum(), count:pts.count()')
-      .eq('wallet_id', walletView.id)
-      .not('source', 'is', null)
-      .group('source, type')
-      .order('source');
-
-    if (transactionError) {
-      console.error('Error fetching transaction breakdown:', transactionError);
-    }
-
-    // Get recent transactions for activity feed
+    // Simplified: Skip expensive transaction breakdown for now (can be added later)
+    const transactionBreakdown = [];
+    
+    // Get only essential recent transactions (limit to 3 for speed)
     const { data: recentTransactions, error: recentError } = await supabase
       .from('point_transactions')
-      .select('*')
+      .select('id, type, pts, source, created_at')
       .eq('wallet_id', walletView.id)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(3);
 
     if (recentError) {
       console.error('Error fetching recent transactions:', recentError);
@@ -146,15 +136,8 @@ export async function GET(request: NextRequest) {
       escrowed: walletView.escrowed_pts || 0 // Committed to pre-orders
     };
 
-    // Process transaction breakdown for easier consumption
-    const processedBreakdown = (transactionBreakdown || []).reduce((acc: any, item: any) => {
-      const key = `${item.source}_${item.type}`;
-      acc[key] = {
-        total_points: item.sum || 0,
-        transaction_count: item.count || 0
-      };
-      return acc;
-    }, {});
+    // Simplified transaction breakdown (empty for now to improve performance)
+    const processedBreakdown = {};
 
     return NextResponse.json({
       wallet: {
