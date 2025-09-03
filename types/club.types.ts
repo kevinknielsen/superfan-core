@@ -15,6 +15,16 @@ export interface Club {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Pricing fields
+  point_sell_cents?: number;
+  point_settle_cents?: number;
+  // Guardrail fields
+  guardrail_min_sell?: number;
+  guardrail_max_sell?: number;
+  guardrail_min_settle?: number;
+  guardrail_max_settle?: number;
+  // Computed fields
+  member_count?: number;
   unlocks?: Unlock[]; // Optional array of unlocks for this club
 }
 

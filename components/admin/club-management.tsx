@@ -106,6 +106,16 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
   const handleSubmitClub = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate point prices
+    if (formData.point_settle_cents > formData.point_sell_cents) {
+      toast({
+        title: "Invalid Pricing",
+        description: "Settle price cannot be higher than sell price",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     const isEdit = !!editingClub;
     const setLoading = isEdit ? setIsEditing : setIsCreating;
     
@@ -131,11 +141,11 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json() as { error?: string };
         throw new Error(error.error || `Failed to ${isEdit ? 'update' : 'create'} club`);
       }
 
-      const club = await response.json();
+      const club = await response.json() as Club;
       
       // Refresh clubs list and stats
       await refetch();
@@ -194,7 +204,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           description: `${club.name} has been ${club.is_active ? 'deactivated' : 'activated'}`,
         });
       } else {
-        const error = await response.json();
+        const error = await response.json() as { error?: string };
         throw new Error(error.error || 'Failed to update club');
       }
     } catch (error) {
@@ -323,7 +333,14 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           />
         </div>
         
-        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <Dialog open={showCreateModal || showEditModal} onOpenChange={(open) => {
+          if (!open) {
+            setShowCreateModal(false);
+            setShowEditModal(false);
+            setEditingClub(null);
+            resetForm();
+          }
+        }}>
           <DialogTrigger asChild>
             <Button onClick={handleCreateClub}>
               <Plus className="h-4 w-4 mr-2" />
@@ -332,7 +349,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Create New Club</DialogTitle>
+              <DialogTitle>{editingClub ? 'Edit Club' : 'Create New Club'}</DialogTitle>
             </DialogHeader>
             
             <form onSubmit={handleSubmitClub} className="space-y-4">
@@ -419,12 +436,20 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
                 <Button 
                   type="button" 
                   variant="outline" 
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setShowEditModal(false);
+                    setEditingClub(null);
+                    resetForm();
+                  }}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isCreating}>
-                  {isCreating ? 'Creating...' : 'Create Club'}
+                <Button type="submit" disabled={isCreating || isEditing}>
+                  {editingClub 
+                    ? (isEditing ? 'Updating...' : 'Update Club')
+                    : (isCreating ? 'Creating...' : 'Create Club')
+                  }
                 </Button>
               </div>
             </form>
@@ -552,111 +577,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
         )}
       </div>
 
-      {/* Edit Club Modal */}
-      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Club</DialogTitle>
-          </DialogHeader>
-          
-          <form onSubmit={handleSubmitClub} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-name">Club Name</Label>
-                <Input
-                  id="edit-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="e.g., PHAT Club"
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="edit-city">City</Label>
-                <Input
-                  id="edit-city"
-                  value={formData.city}
-                  onChange={(e) => setFormData({...formData, city: e.target.value})}
-                  placeholder="e.g., Los Angeles"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="edit-description">Description</Label>
-              <Textarea
-                id="edit-description"
-                value={formData.description}
-                onChange={(e) => setFormData({...formData, description: e.target.value})}
-                placeholder="Describe the artist, label, or curator community..."
-                rows={3}
-              />
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-point_sell_cents">Point Sell Price (cents)</Label>
-                <Input
-                  id="edit-point_sell_cents"
-                  type="number"
-                  value={formData.point_sell_cents}
-                  onChange={(e) => setFormData({...formData, point_sell_cents: parseInt(e.target.value) || 100})}
-                  min="50"
-                  max="500"
-                  placeholder="100"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {formData.point_sell_cents}¢ = ${(formData.point_sell_cents / 100).toFixed(2)} for 1000 points
-                </p>
-              </div>
-              
-              <div>
-                <Label htmlFor="edit-point_settle_cents">Point Settle Price (cents)</Label>
-                <Input
-                  id="edit-point_settle_cents"
-                  type="number"
-                  value={formData.point_settle_cents}
-                  onChange={(e) => setFormData({...formData, point_settle_cents: parseInt(e.target.value) || 50})}
-                  min="25"
-                  max="250"
-                  placeholder="50"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Artist gets {formData.point_settle_cents}¢ per 1000 points spent
-                </p>
-              </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="edit-image_url">Club Logo URL (optional)</Label>
-              <Input
-                id="edit-image_url"
-                type="url"
-                value={formData.image_url}
-                onChange={(e) => setFormData({...formData, image_url: e.target.value})}
-                placeholder="https://example.com/logo.png"
-              />
-            </div>
-            
-            <div className="flex justify-end gap-3 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditingClub(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isEditing}>
-                {isEditing ? 'Updating...' : 'Update Club'}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

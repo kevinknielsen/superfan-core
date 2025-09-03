@@ -14,6 +14,15 @@ const createClubSchema = z.object({
   point_sell_cents: z.number().int().min(1).max(1000).default(100), // Default: $1 = 1000 points
   point_settle_cents: z.number().int().min(1).max(500).default(50), // Default: 50% of sell price
   image_url: z.string().url().optional(),
+}).refine(data => {
+  // Ensure settle price doesn't exceed sell price
+  if (data.point_settle_cents > data.point_sell_cents) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Settle price cannot exceed sell price",
+  path: ["point_settle_cents"]
 });
 
 const updateClubSchema = z.object({
@@ -25,6 +34,15 @@ const updateClubSchema = z.object({
   point_settle_cents: z.number().int().min(1).max(500).optional(),
   image_url: z.string().url().optional(),
   is_active: z.boolean().optional(),
+}).refine(data => {
+  // Ensure settle price doesn't exceed sell price when both are provided
+  if (data.point_settle_cents && data.point_sell_cents && data.point_settle_cents > data.point_sell_cents) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Settle price cannot exceed sell price",
+  path: ["point_settle_cents"]
 });
 
 // Get all clubs (admin only)
@@ -93,7 +111,10 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (userError || !adminUser) {
-      return NextResponse.json({ error: "Admin user not found" }, { status: 404 });
+      console.error(`[Admin Clubs API] Admin user ${auth.userId} not found in database`);
+      return NextResponse.json({ 
+        error: "Admin user not found in database. Please ensure user sync is complete." 
+      }, { status: 404 });
     }
 
     // Create the club
@@ -108,11 +129,17 @@ export async function POST(request: NextRequest) {
         point_settle_cents: clubData.point_settle_cents,
         image_url: clubData.image_url,
         is_active: true,
-        // Add pricing guardrails for safety
+        // Add pricing guardrails for safety with proper bounds
         guardrail_min_sell: Math.max(50, Math.floor(clubData.point_sell_cents * 0.5)),
-        guardrail_max_sell: Math.min(500, Math.floor(clubData.point_sell_cents * 2)),
+        guardrail_max_sell: Math.max(
+          clubData.point_sell_cents,
+          Math.min(500, Math.floor(clubData.point_sell_cents * 2))
+        ),
         guardrail_min_settle: Math.max(25, Math.floor(clubData.point_settle_cents * 0.5)),
-        guardrail_max_settle: Math.min(250, Math.floor(clubData.point_settle_cents * 2)),
+        guardrail_max_settle: Math.max(
+          clubData.point_settle_cents,
+          Math.min(250, Math.floor(clubData.point_settle_cents * 2))
+        ),
       })
       .select()
       .single();
@@ -179,12 +206,18 @@ export async function PUT(request: NextRequest) {
     if (clubData.point_sell_cents !== undefined) {
       updateData.point_sell_cents = clubData.point_sell_cents;
       updateData.guardrail_min_sell = Math.max(50, Math.floor(clubData.point_sell_cents * 0.5));
-      updateData.guardrail_max_sell = Math.min(500, Math.floor(clubData.point_sell_cents * 2));
+      updateData.guardrail_max_sell = Math.max(
+        clubData.point_sell_cents,
+        Math.min(500, Math.floor(clubData.point_sell_cents * 2))
+      );
     }
     if (clubData.point_settle_cents !== undefined) {
       updateData.point_settle_cents = clubData.point_settle_cents;
       updateData.guardrail_min_settle = Math.max(25, Math.floor(clubData.point_settle_cents * 0.5));
-      updateData.guardrail_max_settle = Math.min(250, Math.floor(clubData.point_settle_cents * 2));
+      updateData.guardrail_max_settle = Math.max(
+        clubData.point_settle_cents,
+        Math.min(250, Math.floor(clubData.point_settle_cents * 2))
+      );
     }
 
     // Add updated timestamp
