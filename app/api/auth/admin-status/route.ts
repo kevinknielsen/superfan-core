@@ -1,29 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyUnifiedAuth } from '@/app/api/auth';
-import { isAdmin } from '@/lib/security.server';
 
 /**
  * Check if the current user has admin access
+ * TEMPORARY: Open to everyone for testing
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await verifyUnifiedAuth(request);
-    if (!auth) {
-      return NextResponse.json({ isAdmin: false }, { status: 200 });
-    }
-
-    // Now ADMIN_USER_IDS contains Privy DIDs, so we can check directly
-    const userIsAdmin = isAdmin(auth.userId);
+    console.log('[Admin Status] TESTING MODE - Admin access open to everyone');
     
-    console.log('[Admin Status] Admin check:', {
-      userId: auth.userId,
-      isAdmin: userIsAdmin,
-      authType: auth.type
+    // Always return true for testing
+    return NextResponse.json({ 
+      isAdmin: true,
+      testingMode: true,
+      timestamp: new Date().toISOString()
     });
-    
-    return NextResponse.json({ isAdmin: userIsAdmin });
   } catch (error) {
-    console.error('[Admin Status] Error checking admin status:', error);
+    console.error('[Admin Status] Error:', error);
     return NextResponse.json({ isAdmin: false }, { status: 200 });
   }
 }
