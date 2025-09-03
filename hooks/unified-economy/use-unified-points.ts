@@ -87,11 +87,11 @@ export function useUnifiedPoints(clubId: string) {
         clearTimeout(timeoutId);
         
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+          const errorData = await response.json().catch(() => ({})) as any;
           throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch points breakdown`);
         }
         
-        return response.json();
+        return response.json() as Promise<PointsBreakdown>;
       } catch (error) {
         clearTimeout(timeoutId);
         if (error instanceof Error && error.name === 'AbortError') {
@@ -101,8 +101,8 @@ export function useUnifiedPoints(clubId: string) {
       }
     },
     enabled: !!clubId,
-    staleTime: 10000, // 10 seconds (shorter for faster updates)
-    cacheTime: 60000, // 1 minute (shorter cache)
+    staleTime: 30000, // 30 seconds - balance between freshness and performance
+    gcTime: 300000, // 5 minutes - reasonable cache duration
     retry: 1, // Only retry once on failure
     refetchOnWindowFocus: false // Don't refetch when window gains focus
   });
@@ -121,17 +121,17 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json() as any;
         throw new Error(error.error || 'Failed to spend points');
       }
 
-      return response.json();
+      return response.json() as any;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId] });
       toast({
         title: "Points Spent! 🎉",
-        description: `Successfully spent ${data.transaction.points_spent} points`,
+        description: `Successfully spent ${data.transaction?.points_spent || 'some'} points`,
       });
     },
     onError: (error: Error) => {
@@ -157,17 +157,17 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json() as any;
         throw new Error(error.error || 'Failed to transfer points');
       }
 
-      return response.json();
+      return response.json() as any;
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId] });
       toast({
         title: "Transfer Successful! 📤",
-        description: `Sent ${data.transfer.points_transferred} points to ${data.transfer.recipient_email}`,
+        description: `Sent ${data.transfer?.points_transferred || 'some'} points to ${data.transfer?.recipient_email || 'recipient'}`,
       });
     },
     onError: (error: Error) => {
@@ -184,7 +184,12 @@ export function useUnifiedPoints(clubId: string) {
     return useQuery({
       queryKey: ['spending-history', clubId, limit],
       queryFn: async () => {
-        const response = await fetch(`/api/points/spend?clubId=${clubId}&limit=${limit}`);
+        const accessToken = await getAccessToken();
+        const response = await fetch(`/api/points/spend?clubId=${clubId}&limit=${limit}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch spending history');
         }
@@ -199,7 +204,12 @@ export function useUnifiedPoints(clubId: string) {
     return useQuery({
       queryKey: ['transfer-history', clubId, limit],
       queryFn: async () => {
-        const response = await fetch(`/api/points/transfer?clubId=${clubId}&limit=${limit}`);
+        const accessToken = await getAccessToken();
+        const response = await fetch(`/api/points/transfer?clubId=${clubId}&limit=${limit}`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch transfer history');
         }
@@ -278,38 +288,40 @@ export function useUnifiedPoints(clubId: string) {
   };
 }
 
+// Static status configuration (memoized for performance)
+const statusConfig = {
+  cadet: { 
+    color: 'bg-gray-500', 
+    label: 'Cadet', 
+    icon: '🌟',
+    threshold: 0,
+    description: 'New member getting started'
+  },
+  resident: { 
+    color: 'bg-blue-500', 
+    label: 'Resident', 
+    icon: '🏠',
+    threshold: 500,
+    description: 'Regular community member'
+  },
+  headliner: { 
+    color: 'bg-purple-500', 
+    label: 'Headliner', 
+    icon: '🎤',
+    threshold: 1500,
+    description: 'Active community contributor'
+  },
+  superfan: { 
+    color: 'bg-yellow-500', 
+    label: 'Superfan', 
+    icon: '👑',
+    threshold: 4000,
+    description: 'Ultimate community champion'
+  }
+};
+
 // Utility hook for status information
 export function useStatusInfo() {
-  const statusConfig = {
-    cadet: { 
-      color: 'bg-gray-500', 
-      label: 'Cadet', 
-      icon: '🌟',
-      threshold: 0,
-      description: 'New member getting started'
-    },
-    resident: { 
-      color: 'bg-blue-500', 
-      label: 'Resident', 
-      icon: '🏠',
-      threshold: 500,
-      description: 'Regular community member'
-    },
-    headliner: { 
-      color: 'bg-purple-500', 
-      label: 'Headliner', 
-      icon: '🎤',
-      threshold: 1500,
-      description: 'Active community contributor'
-    },
-    superfan: { 
-      color: 'bg-gold-500', 
-      label: 'Superfan', 
-      icon: '👑',
-      threshold: 4000,
-      description: 'Ultimate community champion'
-    }
-  };
 
   const getStatusInfo = useCallback((status: string) => {
     return statusConfig[status as keyof typeof statusConfig] || statusConfig.cadet;

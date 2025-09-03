@@ -123,9 +123,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Execute transfer in transaction
-    const { error: transferError } = await supabase.rpc('transfer_points', {
+    const { data: transferResult, error: transferError } = await supabase.rpc('transfer_points', {
       sender_wallet_id: senderWallet.id,
-      recipient_wallet_id: recipientWallet.id,
+      recipient_wallet_id: recipientWallet!.id,
       points_amount: pointsToTransfer,
       transfer_type: transferType,
       transfer_message: message || `Transfer from ${sender.email}`
@@ -137,6 +137,14 @@ export async function POST(request: NextRequest) {
         error: 'Transfer failed', 
         details: transferError.message 
       }, { status: 500 });
+    }
+
+    // Check if the transfer was successful
+    if (!transferResult?.success) {
+      return NextResponse.json({
+        error: transferResult?.error || 'Transfer failed',
+        details: transferResult
+      }, { status: 400 });
     }
 
     // Record transfer transactions
@@ -164,7 +172,7 @@ export async function POST(request: NextRequest) {
     await supabase
       .from('point_transactions')
       .insert({
-        wallet_id: recipientWallet.id,
+        wallet_id: recipientWallet!.id,
         type: 'PURCHASE',
         pts: pointsToTransfer,
         source: 'transferred',

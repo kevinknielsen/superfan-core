@@ -10,11 +10,12 @@ UPDATE clubs SET
   point_settle_cents = 5  -- 0.05 cents per point = $0.50 per 1000 points
 WHERE name IN ('PHAT Club', 'Vault Records');
 
--- For any other clubs, set reasonable default pricing
-UPDATE clubs SET 
-  point_sell_cents = COALESCE(point_sell_cents, 10),
-  point_settle_cents = COALESCE(point_settle_cents, 5)
-WHERE point_sell_cents IS NULL OR point_sell_cents > 50; -- Fix any clubs with expensive pricing
+-- For any other clubs, set reasonable default pricing (fix logic bug)
+UPDATE clubs SET
+  point_sell_cents   = CASE WHEN point_sell_cents   IS NULL OR point_sell_cents   > 50 THEN 10 ELSE point_sell_cents   END,
+  point_settle_cents = CASE WHEN point_settle_cents IS NULL OR point_settle_cents > 25 THEN 5  ELSE point_settle_cents END
+WHERE (point_sell_cents IS NULL OR point_sell_cents > 50)
+   OR (point_settle_cents IS NULL OR point_settle_cents > 25);
 
 -- Add guardrails for reasonable pricing (prevent clubs from setting crazy prices)
 UPDATE clubs SET

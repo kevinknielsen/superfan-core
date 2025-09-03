@@ -11,6 +11,9 @@ const PurchaseRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  let communityId: string | undefined;
+  let bundleId: '1000' | '5000' | '10000' | undefined;
+  
   try {
     // Verify authentication
     const auth = await verifyUnifiedAuth(request);
@@ -22,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { communityId, bundleId } = PurchaseRequestSchema.parse(body);
+    ({ communityId, bundleId } = PurchaseRequestSchema.parse(body));
 
     // Get community details
     const { data: community, error: communityError } = await supabase
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
       message: errorMessage,
       stack: error instanceof Error ? error.stack : undefined,
       communityId,
-      bundleId
+      bundleId,
     });
 
     return NextResponse.json(

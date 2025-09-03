@@ -115,8 +115,56 @@ export async function POST(request: NextRequest) {
 
     if (transactionError) {
       console.error('Error recording spend transaction:', transactionError);
-      // Note: Points were already spent, but transaction wasn't recorded
-      // In production, you might want to implement compensation logic
+      
+      // CRITICAL: Points were already spent, but transaction wasn't recorded
+      // Implement compensation logic to maintain data integrity
+      try {
+        // Attempt to reverse the spending by calling the database function again
+        const { data: compensationResult, error: compensationError } = await supabase
+          .rpc('spend_points_with_protection', {
+            p_wallet_id: wallet.id,
+            p_points_to_spend: -pointsToSpend, // Negative amount to reverse
+            p_preserve_status: false, // Don't preserve status during compensation
+            p_current_status: currentStatus
+          });
+
+        if (compensationError || !compensationResult?.success) {
+          console.error('CRITICAL: Failed to compensate for transaction recording failure:', {
+            originalError: transactionError,
+            compensationError,
+            compensationResult,
+            walletId: wallet.id,
+            pointsToSpend,
+            userId: user.id,
+            clubId
+          });
+          
+          // Return error but note that manual intervention may be needed
+          return NextResponse.json({
+            error: 'Transaction recording failed and compensation failed',
+            details: 'Points may have been spent but not recorded. Manual intervention required.',
+            compensation_attempted: true,
+            compensation_result: compensationResult,
+            original_error: transactionError.message
+          }, { status: 500 });
+        }
+        
+        console.log('Successfully compensated for transaction recording failure');
+        return NextResponse.json({
+          error: 'Transaction recording failed but spending was reversed',
+          details: 'Please try again',
+          compensation_successful: true
+        }, { status: 500 });
+        
+      } catch (compensationError) {
+        console.error('CRITICAL: Compensation logic failed:', compensationError);
+        return NextResponse.json({
+          error: 'Critical error: Points spent but cannot record or compensate',
+          details: 'Manual database intervention required',
+          wallet_id: wallet.id,
+          points_affected: pointsToSpend
+        }, { status: 500 });
+      }
     }
 
     return NextResponse.json({

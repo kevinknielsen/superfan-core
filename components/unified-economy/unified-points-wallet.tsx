@@ -19,9 +19,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
-import { useUnifiedPoints, useStatusInfo } from '@/hooks/unified-economy/use-unified-points';
+
+import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { getAccessToken } from '@privy-io/react-auth';
+import SpendPointsModal from './spend-points-modal';
 
 interface UnifiedPointsWalletProps {
   clubId: string;
@@ -31,33 +32,7 @@ interface UnifiedPointsWalletProps {
   className?: string;
 }
 
-interface PointsBreakdown {
-  wallet: {
-    id: string;
-    total_balance: number;
-    earned_points: number;
-    purchased_points: number;
-    spent_points: number;
-    escrowed_points: number;
-    status_points: number;
-  };
-  status: {
-    current: string;
-    current_threshold: number;
-    next_status: string | null;
-    next_threshold: number | null;
-    progress_to_next: number;
-    points_to_next: number;
-  };
-  spending_power: {
-    total_spendable: number;
-    purchased_available: number;
-    earned_available: number;
-    earned_locked_for_status: number;
-    escrowed: number;
-  };
-  recent_activity: any[];
-}
+
 
 
 
@@ -100,7 +75,7 @@ export default function UnifiedPointsWallet({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await getAccessToken()}`,
+          'Authorization': `Bearer ${await getAccessToken() || ''}`,
         },
         body: JSON.stringify({
           communityId: clubId,
@@ -111,11 +86,12 @@ export default function UnifiedPointsWallet({
       console.log('Purchase API response status:', response.status);
 
       if (response.ok) {
-        const { url } = await response.json();
+        const data = await response.json() as { url: string };
+        const { url } = data;
         // Redirect to Stripe checkout
         window.location.href = url;
       } else {
-        const error = await response.json().catch(() => ({}));
+        const error = await response.json().catch(() => ({})) as any;
         console.error('Purchase API error:', error, 'Status:', response.status);
         throw new Error(error.error || `HTTP ${response.status}: Failed to create checkout session`);
       }
@@ -324,7 +300,7 @@ export default function UnifiedPointsWallet({
                   
                   <div className="space-y-2">
                     {breakdown.recent_activity.slice(0, 3).map((tx, index) => (
-                      <div key={tx.id || `tx-${index}-${tx.created_at}`} className="flex justify-between items-center text-sm">
+                      <div key={tx.id || `tx-${index}-${tx.created_at || Date.now()}`} className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">
                           {tx.source === 'earned' ? '🎯 Earned' :
                            tx.source === 'purchased' ? '💳 Purchased' :
@@ -373,32 +349,7 @@ export default function UnifiedPointsWallet({
   );
 }
 
-// Placeholder components for modals (to be implemented next)
-function SpendPointsModal({ isOpen, onClose, onSuccess, clubId, clubName, ...props }: any) {
-  if (!isOpen) return null;
-  
-  return (
-    <div 
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" 
-      onClick={(e) => {
-        e.stopPropagation();
-        onClose();
-      }}
-      data-modal="spend-points"
-    >
-      <div 
-        className="bg-white p-6 rounded-lg max-w-md w-full mx-4" 
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold mb-4">Spend Points</h3>
-        <p className="text-muted-foreground mb-4">Enhanced spending modal coming soon...</p>
-        <p className="text-sm text-gray-600 mb-4">Club: {clubName}</p>
-        <Button onClick={(e) => { e.stopPropagation(); onClose(); }}>Close</Button>
-      </div>
-    </div>
-  );
-}
-
+// Placeholder for Transfer Modal (to be implemented in Phase 2)
 function TransferPointsModal({ isOpen, onClose, onSuccess, clubId, clubName, ...props }: any) {
   if (!isOpen) return null;
   
@@ -416,7 +367,7 @@ function TransferPointsModal({ isOpen, onClose, onSuccess, clubId, clubName, ...
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-lg font-semibold mb-4">Transfer Points</h3>
-        <p className="text-muted-foreground mb-4">Point transfer modal coming soon...</p>
+        <p className="text-muted-foreground mb-4">Point transfer modal coming soon in Phase 2...</p>
         <p className="text-sm text-gray-600 mb-4">Club: {clubName}</p>
         <Button onClick={(e) => { e.stopPropagation(); onClose(); }}>Close</Button>
       </div>

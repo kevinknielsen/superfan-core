@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
       // Return empty wallet state for new members
       return NextResponse.json({
         wallet: {
-          id: 'temp',
+          id: null,
           total_balance: 0,
           earned_points: 0,
           purchased_points: 0,
@@ -96,9 +96,10 @@ export async function GET(request: NextRequest) {
       .eq('club_id', clubId)
       .single();
 
-    // Simplified: Skip expensive transaction breakdown for now (can be added later)
-    const transactionBreakdown = [];
-    
+    if (membershipError && membershipError.code !== 'PGRST116') {
+      console.error('Membership fetch error:', membershipError);
+    }
+
     // Get only essential recent transactions (limit to 3 for speed)
     const { data: recentTransactions, error: recentError } = await supabase
       .from('point_transactions')
@@ -127,17 +128,22 @@ export async function GET(request: NextRequest) {
       currentStatus === 'resident' ? 'headliner' : 'resident';
     const nextThreshold = nextStatus ? statusThresholds[nextStatus as keyof typeof statusThresholds] : null;
 
-    // Calculate spending power breakdown
+    // Calculate spending power breakdown (corrected math to avoid double-counting)
+    const earned = walletView.earned_pts || 0;
+    const escrowed = walletView.escrowed_pts || 0;
+    const lockedForStatus = Math.min(statusPoints, currentThreshold);
+    const earnedAvailable = Math.max(0, earned - lockedForStatus - escrowed);
+    
     const spendingPower = {
       total_spendable: walletView.balance_pts,
-      purchased_available: walletView.purchased_pts, // Always spendable
-      earned_available: Math.max(0, walletView.earned_pts - currentThreshold), // Available above status threshold
-      earned_locked_for_status: Math.min(walletView.earned_pts, currentThreshold), // Locked to maintain status
-      escrowed: walletView.escrowed_pts || 0 // Committed to pre-orders
+      purchased_available: walletView.purchased_pts,
+      earned_available: earnedAvailable,
+      earned_locked_for_status: lockedForStatus,
+      escrowed: escrowed
     };
 
     // Simplified transaction breakdown (empty for now to improve performance)
-    const processedBreakdown = {};
+    const processedBreakdown: Record<string, number> = {};
 
     return NextResponse.json({
       wallet: {
@@ -156,7 +162,9 @@ export async function GET(request: NextRequest) {
         current_threshold: currentThreshold,
         next_status: nextStatus,
         next_threshold: nextThreshold,
-        progress_to_next: nextThreshold ? Math.min(100, (statusPoints / nextThreshold) * 100) : 100,
+        progress_to_next: nextThreshold
+          ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
+          : 100,
         points_to_next: nextThreshold ? Math.max(0, nextThreshold - statusPoints) : 0
       },
       spending_power: spendingPower,

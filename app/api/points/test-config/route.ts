@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 // Test endpoint to check Stripe configuration without making actual calls
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const doNetworkCheck = searchParams.get('networkCheck') === '1';
+    
     const config = {
       stripe_secret_key: !!process.env.STRIPE_SECRET_KEY,
       stripe_publishable_key: !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
@@ -15,8 +18,10 @@ export async function GET(request: NextRequest) {
     let stripeImportError = null;
     try {
       const { stripe } = await import('@/lib/stripe');
-      // Test if stripe client is working
-      await stripe.accounts.retrieve(); // This will fail but tell us if Stripe is configured
+      // Only perform a live network check if explicitly requested
+      if (doNetworkCheck) {
+        await stripe.accounts.retrieve();
+      }
     } catch (error) {
       stripeImportError = error instanceof Error ? error.message : 'Unknown Stripe error';
     }

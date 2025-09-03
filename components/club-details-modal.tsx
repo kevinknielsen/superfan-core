@@ -197,6 +197,14 @@ export default function ClubDetailsModal({
     // };
   }, [isOpen, onClose]);
 
+  // Add Escape key handling for accessibility
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   // Prevent body scroll when modal is open (matches project modal)
   useEffect(() => {
     if (isOpen) {
@@ -567,7 +575,7 @@ export default function ClubDetailsModal({
                 clubId={club.id}
                 clubName={club.name}
                 showPurchaseOptions={true}
-                showTransferOptions={true}
+                showTransferOptions={false}
               />
             </div>
           </motion.div>

@@ -18,14 +18,14 @@ DECLARE
   points_to_deduct_earned INTEGER := 0;
   result JSON;
 BEGIN
-  -- Get sender wallet
-  SELECT * INTO sender_wallet FROM point_wallets WHERE id = sender_wallet_id;
+  -- Get sender wallet with row-level lock to prevent race conditions
+  SELECT * INTO sender_wallet FROM point_wallets WHERE id = sender_wallet_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'error', 'Sender wallet not found');
   END IF;
   
-  -- Get recipient wallet
-  SELECT * INTO recipient_wallet FROM point_wallets WHERE id = recipient_wallet_id;
+  -- Get recipient wallet with row-level lock to prevent race conditions
+  SELECT * INTO recipient_wallet FROM point_wallets WHERE id = recipient_wallet_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'error', 'Recipient wallet not found');
   END IF;
@@ -149,5 +149,10 @@ $$ LANGUAGE plpgsql;
 -- Add helpful indexes for the new functionality
 CREATE INDEX IF NOT EXISTS idx_point_transactions_wallet_source_type ON point_transactions(wallet_id, source, type);
 CREATE INDEX IF NOT EXISTS idx_point_transactions_ref ON point_transactions(ref) WHERE ref IS NOT NULL;
+
+-- Add missing performance index for point_escrow queries
+CREATE INDEX IF NOT EXISTS idx_point_escrow_user_club_status 
+  ON point_escrow(user_id, club_id, status) 
+  WHERE status = 'held';
 
 COMMIT;

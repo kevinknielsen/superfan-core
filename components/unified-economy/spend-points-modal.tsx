@@ -36,7 +36,7 @@ export default function SpendPointsModal({
   prefilledReferenceId,
   hideDescriptionField = false
 }: SpendPointsModalProps) {
-  const [pointsToSpend, setPointsToSpend] = useState(prefilledAmount || '');
+  const [pointsToSpend, setPointsToSpend] = useState<string>(prefilledAmount?.toString() || '');
   const [description, setDescription] = useState(prefilledDescription || '');
   const [preserveStatus, setPreserveStatus] = useState(true);
   const [showBreakdown, setShowBreakdown] = useState(false);
@@ -53,7 +53,7 @@ export default function SpendPointsModal({
 
   if (!isOpen || !breakdown) return null;
 
-  const amount = parseInt(pointsToSpend as string) || 0;
+  const amount = parseInt(pointsToSpend) || 0;
   const canAffordSpending = canSpend(amount, preserveStatus);
   const statusInfo = getStatusInfo(breakdown.status.current);
 
@@ -64,9 +64,8 @@ export default function SpendPointsModal({
     if (amount <= 0) return { purchased: 0, earned: 0, valid: false };
     
     const availablePurchased = spending_power.purchased_available;
-    const availableEarned = preserveStatus 
-      ? spending_power.earned_available 
-      : spending_power.earned_available + spending_power.earned_locked_for_status;
+    const availableEarned = spending_power.earned_available + 
+      (preserveStatus ? 0 : (spending_power.earned_locked_for_status ?? 0));
     
     const spendPurchased = Math.min(amount, availablePurchased);
     const spendEarned = Math.max(0, amount - spendPurchased);
@@ -80,7 +79,7 @@ export default function SpendPointsModal({
   const spendingBreakdown = calculateSpendingBreakdown(amount, preserveStatus);
 
   const handleSpend = async () => {
-    if (!canAffordSpending || !description.trim() || amount <= 0) return;
+    if (!canAffordSpending || (!hideDescriptionField && !description.trim()) || amount <= 0) return;
 
     try {
       await spendPoints({
@@ -264,7 +263,7 @@ export default function SpendPointsModal({
                     {showBreakdown && (
                       <div className="pt-2 border-t text-xs text-muted-foreground space-y-1">
                         <p>• Purchased points are always available for spending</p>
-                        <p>• Earned points {preserveStatus ? 'above status threshold' : ''} can be spent</p>
+                        <p>• Earned points{preserveStatus ? ' above status threshold' : ''} can be spent</p>
                         {preserveStatus && (
                           <p>• {formatPoints(breakdown.spending_power.earned_locked_for_status)} earned points protected for status</p>
                         )}
@@ -307,7 +306,7 @@ export default function SpendPointsModal({
             className="flex-1"
             disabled={
               !canAffordSpending || 
-              !description.trim() || 
+              (!hideDescriptionField && !description.trim()) || 
               amount <= 0 || 
               isSpending ||
               !spendingBreakdown.valid
