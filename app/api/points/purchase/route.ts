@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { createPointsPurchaseSession } from '@/lib/stripe';
 import { generatePurchaseBundles } from '@/lib/points';
+import { verifyUnifiedAuth } from '@/app/api/auth';
 
 const PurchaseRequestSchema = z.object({
   communityId: z.string().uuid(),
@@ -11,6 +12,15 @@ const PurchaseRequestSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { communityId, bundleId } = PurchaseRequestSchema.parse(body);
 
@@ -65,6 +75,7 @@ export async function POST(request: NextRequest) {
       unitSettleCents: community.point_settle_cents,
       successUrl,
       cancelUrl,
+      userId: auth.userId,
     });
 
     return NextResponse.json({

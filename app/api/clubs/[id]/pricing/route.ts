@@ -142,6 +142,7 @@ export async function GET(
       .select(`
         id,
         name,
+        owner_id,
         point_sell_cents,
         point_settle_cents,
         guardrail_min_sell,

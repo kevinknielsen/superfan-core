@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
 
 async function processPointsPurchase(data: {
   communityId: string;
+  userId: string;
   points: number;
   bonusPoints: number;
   unitSellCents: number;
@@ -86,26 +87,32 @@ async function processPointsPurchase(data: {
   sessionId: string;
 }) {
   try {
-    // For this MVP, we need to get the user somehow
-    // In a real implementation, you'd associate the session with a user during checkout
-    // For now, we'll need to implement user identification via session metadata or customer
-    
-    // This is a placeholder - you'd need to get the actual user ID from the session
-    // either through Stripe customer ID mapping or session metadata
     console.log('Processing points purchase:', data);
     
-    // TODO: Implement user identification from Stripe session
-    // const userId = await getUserFromStripeSession(data.sessionId);
-    
-    // For now, log the purchase data
-    console.log('Points purchase completed but user identification not implemented');
-    console.log('Purchase data:', data);
+    // Now we have the user ID from the session metadata
+    const { userId, communityId } = data;
     
     // Calculate financial breakdown
     const totalPoints = data.points + data.bonusPoints;
     const platformFeeCents = Math.round(data.usdGrossCents * PLATFORM_FEE);
     const reserveDeltaCents = calculateReserveDelta(totalPoints, data.unitSettleCents);
     const upfrontCents = calculateUpfrontAmount(data.usdGrossCents, reserveDeltaCents);
+
+    // Credit points to user's wallet
+    const wallet = await getOrCreatePointWallet(userId, communityId);
+    
+    // Update wallet balance with purchased points
+    await updateWalletBalance(
+      wallet.id,
+      totalPoints,
+      'PURCHASE',
+      {
+        unit_sell_cents: data.unitSellCents,
+        unit_settle_cents: data.unitSettleCents,
+        usd_gross_cents: data.usdGrossCents,
+        ref: data.sessionId
+      }
+    );
 
     // Update weekly upfront stats
     await updateWeeklyUpfrontStats(
@@ -116,7 +123,9 @@ async function processPointsPurchase(data: {
       upfrontCents
     );
 
-    console.log('Financial breakdown:', {
+    console.log('Points purchase completed successfully:', {
+      userId,
+      communityId,
       totalPoints,
       grossCents: data.usdGrossCents,
       platformFeeCents,
@@ -130,13 +139,4 @@ async function processPointsPurchase(data: {
   }
 }
 
-// TODO: Implement this function to map Stripe sessions to users
-async function getUserFromStripeSession(sessionId: string): Promise<string> {
-  // This would need to be implemented based on how you associate
-  // Stripe sessions with users. Options:
-  // 1. Store user ID in session metadata during checkout creation
-  // 2. Use Stripe customer ID to look up user
-  // 3. Use session URL parameters or other identification
-  
-  throw new Error('User identification from Stripe session not implemented');
-}
+

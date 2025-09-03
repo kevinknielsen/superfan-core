@@ -160,9 +160,11 @@ export default function ClubDetailsModal({
       // TODO: Implement tap-in API call
       console.log('Tap-in source:', source, 'Club:', club.id);
       
+      // Show informative message until API is implemented
       toast({
-        title: "Points earned! 🎉",
-        description: `+10 points in ${club.name}`,
+        title: "Tap-in Coming Soon",
+        description: "Point earning will be available once the tap-in system is live!",
+        variant: "default",
       });
     } catch (error) {
       console.error('Error recording tap-in:', error);
@@ -530,11 +532,18 @@ export default function ClubDetailsModal({
       
       {/* Purchase Overlay */}
       {showPurchaseOverlay && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+        <div 
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setShowPurchaseOverlay(false); 
+          }}
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="relative w-full max-w-md bg-[#0E0E14] rounded-2xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setShowPurchaseOverlay(false)}

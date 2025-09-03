@@ -9,7 +9,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-10-28.acacia',
+  apiVersion: process.env.STRIPE_API_VERSION || '2024-10-28',
 });
 
 /**
@@ -25,6 +25,7 @@ export async function createPointsPurchaseSession({
   unitSettleCents,
   successUrl,
   cancelUrl,
+  userId,
 }: {
   communityId: string;
   communityName: string;
@@ -35,6 +36,7 @@ export async function createPointsPurchaseSession({
   unitSettleCents: number;
   successUrl: string;
   cancelUrl: string;
+  userId: string;
 }): Promise<{ sessionId: string; url: string }> {
   const totalPoints = points + bonusPoints;
   const displayName = bonusPoints > 0 
@@ -63,6 +65,7 @@ export async function createPointsPurchaseSession({
     metadata: {
       type: 'points_purchase',
       community_id: communityId,
+      user_id: userId,
       points: points.toString(),
       bonus_points: bonusPoints.toString(),
       unit_sell_cents: unitSellCents.toString(),
@@ -72,6 +75,7 @@ export async function createPointsPurchaseSession({
       metadata: {
         type: 'points_purchase',
         community_id: communityId,
+        user_id: userId,
         points: points.toString(),
         bonus_points: bonusPoints.toString(),
         unit_sell_cents: unitSellCents.toString(),
@@ -107,6 +111,7 @@ export function verifyWebhookSignature(
 export function processCheckoutSessionCompleted(session: Stripe.Checkout.Session): {
   type: 'points_purchase';
   communityId: string;
+  userId: string;
   points: number;
   bonusPoints: number;
   unitSellCents: number;
@@ -121,18 +126,53 @@ export function processCheckoutSessionCompleted(session: Stripe.Checkout.Session
 
   const { metadata } = session;
   
-  if (!metadata.community_id || !metadata.points) {
-    throw new Error('Invalid points purchase session metadata');
+  if (!metadata.community_id || !metadata.points || !metadata.user_id) {
+    throw new Error(`Invalid points purchase session metadata for session ${session.id}: missing community_id, points, or user_id`);
+  }
+
+  // Validate and parse numeric fields
+  const points = parseInt(metadata.points, 10);
+  const bonusPoints = parseInt(metadata.bonus_points || '0', 10);
+  const unitSellCents = parseInt(metadata.unit_sell_cents || '0', 10);
+  const unitSettleCents = parseInt(metadata.unit_settle_cents || '0', 10);
+  const usdGrossCents = session.amount_total || 0;
+
+  // Validate all numeric values
+  const validationErrors: string[] = [];
+  
+  if (!Number.isInteger(points) || points <= 0) {
+    validationErrors.push('points must be a positive integer');
+  }
+  
+  if (!Number.isInteger(bonusPoints) || bonusPoints < 0) {
+    validationErrors.push('bonus_points must be a non-negative integer');
+  }
+  
+  if (!Number.isInteger(unitSellCents) || unitSellCents < 0) {
+    validationErrors.push('unit_sell_cents must be a non-negative integer');
+  }
+  
+  if (!Number.isInteger(unitSettleCents) || unitSettleCents < 0) {
+    validationErrors.push('unit_settle_cents must be a non-negative integer');
+  }
+  
+  if (!Number.isFinite(usdGrossCents) || usdGrossCents < 0) {
+    validationErrors.push('amount_total must be a non-negative number');
+  }
+
+  if (validationErrors.length > 0) {
+    throw new Error(`Invalid numeric values in session ${session.id}: ${validationErrors.join(', ')}`);
   }
 
   return {
     type: 'points_purchase',
     communityId: metadata.community_id,
-    points: parseInt(metadata.points, 10),
-    bonusPoints: parseInt(metadata.bonus_points || '0', 10),
-    unitSellCents: parseInt(metadata.unit_sell_cents || '0', 10),
-    unitSettleCents: parseInt(metadata.unit_settle_cents || '0', 10),
-    usdGrossCents: session.amount_total || 0,
+    userId: metadata.user_id,
+    points,
+    bonusPoints,
+    unitSellCents,
+    unitSettleCents,
+    usdGrossCents,
     sessionId: session.id,
   };
 }
@@ -143,13 +183,21 @@ export function processCheckoutSessionCompleted(session: Stripe.Checkout.Session
 export async function refundPointsPurchase(
   paymentIntentId: string,
   amountCents?: number,
-  reason: string = 'requested_by_customer'
+  reason: Stripe.RefundCreateParams.Reason = 'requested_by_customer',
+  idempotencyKey?: string
 ): Promise<Stripe.Refund> {
-  return await stripe.refunds.create({
+  const params: Stripe.RefundCreateParams = {
     payment_intent: paymentIntentId,
     amount: amountCents, // undefined means full refund
     reason,
-  });
+  };
+
+  const options: Stripe.RequestOptions = {};
+  if (idempotencyKey) {
+    options.idempotencyKey = idempotencyKey;
+  }
+
+  return await stripe.refunds.create(params, options);
 }
 
 /**

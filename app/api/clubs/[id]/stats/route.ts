@@ -91,7 +91,7 @@ export async function GET(
     // Get total redemptions count
     const { count: totalRedemptions, error: redemptionsError } = await supabase
       .from('reward_redemptions')
-      .select('*', { count: 'exact' })
+      .select('*', { head: true, count: 'exact' })
       .eq('club_id', clubId);
 
     if (redemptionsError) {
@@ -101,7 +101,7 @@ export async function GET(
     // Get active rewards count
     const { count: activeRewards, error: rewardsError } = await supabase
       .from('rewards')
-      .select('*', { count: 'exact' })
+      .select('*', { head: true, count: 'exact' })
       .eq('club_id', clubId)
       .eq('status', 'active');
 
@@ -112,7 +112,7 @@ export async function GET(
     // Get total members (point wallet holders)
     const { count: totalMembers, error: membersError } = await supabase
       .from('point_wallets')
-      .select('*', { count: 'exact' })
+      .select('*', { head: true, count: 'exact' })
       .eq('club_id', clubId);
 
     if (membersError) {

@@ -18,19 +18,11 @@ export async function GET(
         city,
         image_url,
         is_active,
-        point_sell_cents,
-        point_settle_cents,
-        guardrail_min_sell,
-        guardrail_max_sell,
-        guardrail_min_settle,
-        guardrail_max_settle,
         created_at,
         updated_at,
+        owner_id,
         users!clubs_owner_id_fkey (
-          id,
-          privy_id,
-          email,
-          wallet_address
+          id
         )
       `)
       .eq('id', clubId)
@@ -47,7 +39,7 @@ export async function GET(
     // Get club membership count
     const { count: memberCount, error: countError } = await supabase
       .from('club_memberships')
-      .select('*', { count: 'exact' })
+      .select('*', { head: true, count: 'exact' })
       .eq('club_id', clubId)
       .eq('status', 'active');
 
@@ -58,7 +50,7 @@ export async function GET(
     // Get active rewards count
     const { count: rewardsCount, error: rewardsError } = await supabase
       .from('rewards')
-      .select('*', { count: 'exact' })
+      .select('*', { head: true, count: 'exact' })
       .eq('club_id', clubId)
       .eq('status', 'active');
 
