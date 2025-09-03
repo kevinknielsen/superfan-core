@@ -24,7 +24,7 @@ import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
-import PointsWalletWidget from "./points-wallet-widget";
+import UnifiedPointsWallet from "./unified-economy/unified-points-wallet";
 import UnlockRedemption from "./unlock-redemption";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
@@ -556,10 +556,11 @@ export default function ClubDetailsModal({
               <h2 className="text-2xl font-bold text-white mb-2">Boost Your Status</h2>
               <p className="text-gray-300 mb-6">Purchase points to level up faster and unlock more perks!</p>
               
-              <PointsWalletWidget 
+              <UnifiedPointsWallet 
                 clubId={club.id}
                 clubName={club.name}
                 showPurchaseOptions={true}
+                showTransferOptions={true}
               />
             </div>
           </motion.div>

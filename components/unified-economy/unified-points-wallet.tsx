@@ -82,18 +82,26 @@ export default function UnifiedPointsWallet({
   const fetchBreakdown = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/points/breakdown?clubId=${clubId}`);
+      const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Include cookies for auth
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setBreakdown(data);
       } else {
-        throw new Error('Failed to fetch points breakdown');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch points breakdown`);
       }
     } catch (error) {
       console.error('Error fetching points breakdown:', error);
       toast({
         title: "Error",
-        description: "Failed to load points breakdown",
+        description: error instanceof Error ? error.message : "Failed to load points breakdown",
         variant: "destructive",
       });
     } finally {
@@ -106,7 +114,7 @@ export default function UnifiedPointsWallet({
     fetchBreakdown();
   }, [clubId]);
 
-  if (loading || !breakdown) {
+  if (loading) {
     return (
       <Card className={`${className}`}>
         <CardContent className="p-6">
@@ -114,6 +122,28 @@ export default function UnifiedPointsWallet({
             <div className="h-4 bg-gray-200 rounded w-1/4"></div>
             <div className="h-8 bg-gray-200 rounded w-1/2"></div>
             <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Fallback if unified system is not ready yet
+  if (!breakdown) {
+    return (
+      <Card className={`${className}`}>
+        <CardContent className="p-6 text-center">
+          <div className="space-y-3">
+            <Wallet className="h-8 w-8 mx-auto text-muted-foreground" />
+            <div>
+              <h3 className="font-medium">Unified Points System</h3>
+              <p className="text-sm text-muted-foreground">
+                Coming soon! Enhanced points system with spending breakdown.
+              </p>
+            </div>
+            <Button variant="outline" onClick={fetchBreakdown} disabled={loading}>
+              Try Again
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -258,7 +288,7 @@ export default function UnifiedPointsWallet({
               </div>
 
               {/* Transaction History Preview */}
-              {breakdown.recent_activity.length > 0 && (
+              {breakdown.recent_activity && breakdown.recent_activity.length > 0 && (
                 <div className="space-y-3">
                   <h4 className="font-medium text-sm flex items-center gap-2">
                     <History className="h-4 w-4" />
@@ -267,7 +297,7 @@ export default function UnifiedPointsWallet({
                   
                   <div className="space-y-2">
                     {breakdown.recent_activity.slice(0, 3).map((tx, index) => (
-                      <div key={index} className="flex justify-between items-center text-sm">
+                      <div key={tx.id || `tx-${index}-${tx.created_at}`} className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">
                           {tx.source === 'earned' ? '🎯 Earned' :
                            tx.source === 'purchased' ? '💳 Purchased' :
