@@ -4,6 +4,9 @@
     "payload": "eyJkb21haW4iOiJzdXBlcmZhbi5vbmUifQ==",
     "signature": "MHgyZjYzYmM0ZTk5YmZjNDMxYWU2NzkzYWI0YzFjNDFhNjA2NGI3MjEyYzdmNDAwYjdmZDkyMjg1YTJlZjczNTFmNDllZTZjMjc5YmYwYTMyMzE3NjI2ZGQ3YjVkZWJlM2VlNzM1MDE1M2RjOGE0ZDI3OTVmZjNjYWU1ZTk4YmU0ODFj"
   },
+  "baseBuilder": {
+    "allowedAddresses": ["0x84d572a4c4Ba9164a908c1DD2cD584FDC156E711"]
+  },
   "frame": {
     "version": "next",
     "name": "Superfan",
