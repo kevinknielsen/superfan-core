@@ -112,12 +112,12 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching recent transactions:', recentError);
     }
 
-    // Calculate status thresholds and progress
+    // Calculate status thresholds and progress (unified peg: 10x higher thresholds)
     const statusThresholds = {
       cadet: 0,
-      resident: 500,
-      headliner: 1500,
-      superfan: 4000
+      resident: 5000,    // 50 points at $1 per 100 pts
+      headliner: 15000,  // 150 points at $1 per 100 pts  
+      superfan: 40000    // 400 points at $1 per 100 pts
     };
 
     const currentStatus = membership?.current_status || 'cadet';

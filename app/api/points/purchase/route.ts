@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { createPointsPurchaseSession } from '@/lib/stripe';
-import { generatePurchaseBundles } from '@/lib/points';
+import { generateUnifiedPurchaseBundles } from '@/lib/points';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 
 const PurchaseRequestSchema = z.object({
@@ -27,10 +27,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     ({ communityId, bundleId } = PurchaseRequestSchema.parse(body));
 
-    // Get community details
+    // Get community details (simplified for unified peg)
     const { data: community, error: communityError } = await supabase
       .from('clubs')
-      .select('id, name, point_sell_cents, point_settle_cents')
+      .select('id, name')
       .eq('id', communityId)
       .single();
 
@@ -41,19 +41,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate community pricing configuration
-    const pointSellCents = Number(community.point_sell_cents);
-    const pointSettleCents = Number(community.point_settle_cents ?? 0);
-    
-    if (!pointSellCents || pointSellCents <= 0) {
-      return NextResponse.json(
-        { error: 'Invalid community pricing configuration: point_sell_cents must be positive' },
-        { status: 400 }
-      );
-    }
-
-    // Generate purchase bundles
-    const bundles = generatePurchaseBundles(pointSellCents);
+    // Generate purchase bundles using unified peg (1 cent per point)
+    const bundles = generateUnifiedPurchaseBundles();
     
     // Find the requested bundle
     let selectedBundle;
@@ -89,8 +78,8 @@ export async function POST(request: NextRequest) {
       points: selectedBundle.points,
       bonusPoints: selectedBundle.bonus_pts || 0,
       usdCents: selectedBundle.usd_cents,
-      unitSellCents: pointSellCents,
-      unitSettleCents: pointSettleCents,
+      unitSellCents: 1, // Unified peg: 1 cent per point
+      unitSettleCents: 1, // Unified peg: 1 cent per point
       successUrl,
       cancelUrl,
       userId: auth.userId,

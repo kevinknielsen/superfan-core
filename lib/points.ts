@@ -190,7 +190,7 @@ export async function calculateCoverageRatio(clubId: string): Promise<number> {
 }
 
 /**
- * Generate purchase bundles for a community
+ * Generate purchase bundles for a community (LEGACY - use generateUnifiedPurchaseBundles)
  */
 export function generatePurchaseBundles(sellCentsPerPoint: number): PurchaseBundle[] {
   const baseSellCents = sellCentsPerPoint / 100; // Convert to dollars
@@ -212,6 +212,31 @@ export function generatePurchaseBundles(sellCentsPerPoint: number): PurchaseBund
       bonus_pts: 1000, // 10% bonus
       usd_cents: 10000 * sellCentsPerPoint,
       display_name: `10,000 Points + 1,000 Bonus ($${(10000 * baseSellCents).toFixed(2)})`
+    }
+  ];
+}
+
+/**
+ * Generate purchase bundles using unified peg (100 points = $1)
+ */
+export function generateUnifiedPurchaseBundles(): PurchaseBundle[] {
+  return [
+    {
+      points: 1000,
+      usd_cents: 1000, // $10 for 1000 points (1 cent per point)
+      display_name: `1,000 Points ($10.00)`
+    },
+    {
+      points: 5000,
+      bonus_pts: 250, // 5% bonus
+      usd_cents: 5000, // $50 for 5000 points
+      display_name: `5,000 Points + 250 Bonus ($50.00)`
+    },
+    {
+      points: 10000,
+      bonus_pts: 1000, // 10% bonus
+      usd_cents: 10000, // $100 for 10000 points
+      display_name: `10,000 Points + 1,000 Bonus ($100.00)`
     }
   ];
 }

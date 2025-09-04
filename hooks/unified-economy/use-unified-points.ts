@@ -288,7 +288,7 @@ export function useUnifiedPoints(clubId: string) {
   };
 }
 
-// Static status configuration (memoized for performance)
+// Static status configuration (unified peg thresholds)
 const statusConfig = {
   cadet: { 
     color: 'bg-gray-500', 
@@ -301,21 +301,21 @@ const statusConfig = {
     color: 'bg-blue-500', 
     label: 'Resident', 
     icon: '🏠',
-    threshold: 500,
+    threshold: 5000,  // 50 points at $1 per 100 pts
     description: 'Regular community member'
   },
   headliner: { 
     color: 'bg-purple-500', 
     label: 'Headliner', 
     icon: '🎤',
-    threshold: 1500,
+    threshold: 15000, // 150 points at $1 per 100 pts
     description: 'Active community contributor'
   },
   superfan: { 
     color: 'bg-yellow-500', 
     label: 'Superfan', 
     icon: '👑',
-    threshold: 4000,
+    threshold: 40000, // 400 points at $1 per 100 pts
     description: 'Ultimate community champion'
   }
 };
