@@ -8,23 +8,21 @@
     "allowedAddresses": ["0x84d572a4c4Ba9164a908c1DD2cD584FDC156E711"]
   },
   "frame": {
-    "version": "next",
+    "version": "1",
     "name": "Superfan",
     "iconUrl": "https://i.ibb.co/6cQPpxBV/Logo.png",
     "homeUrl": "https://superfan.one",
     "imageUrl": "https://i.ibb.co/WNC9fnPn/cover.png",
     "buttonTitle": "Launch App",
-    "splashImageUrl": "https://superfan.one/splash-new.png",
-    "splashBackgroundColor": "#0E0E14",
+    "splashImageUrl": "https://superfan.one/splash.png",
+    "splashBackgroundColor": "#9C26B0",
     "webhookUrl": "https://superfan.one/api/farcaster/webhook",
     "subtitle": "Fund the Future of Music",
     "description": "A launchpad and OS for artists to fund, manage, and release music with their team.",
     "screenshotUrls": [
-      "https://i.ibb.co/8gGCN32P/EMBED.png",
-      "https://i.postimg.cc/yNrmrTmd/image.png", 
-      "https://i.postimg.cc/NjsRsnbF/image.png"
+      "https://i.ibb.co/LDcPD9wd/Screenshot-2025-06-23-at-22-46-13.png"
     ],
-    "primaryCategory": "music",
+    "primaryCategory": "finance",
     "tags": [
       "music",
       "funding", 
@@ -36,6 +34,6 @@
     "tagline": "Fund the Future of Music",
     "ogTitle": "Superfan - Fund Music Projects",
     "ogDescription": "Discover and fund innovative music projects. Connect with artists and back the next big release.",
-    "ogImageUrl": "https://i.ibb.co/8gGCN32P/EMBED.png"
+    "ogImageUrl": "https://i.ibb.co/LDcPD9wd/Screenshot-2025-06-23-at-22-46-13.png"
   }
 } 
