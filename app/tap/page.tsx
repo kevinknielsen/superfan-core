@@ -76,6 +76,7 @@ function TapPageContent() {
       
       processingStarted.current = true;
       processTapIn();
+    }
   }, [authLoading, isAuthenticated, user, clubInfo, source]);
 
   const handleAuthAndTapIn = async () => {
