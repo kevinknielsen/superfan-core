@@ -37,11 +37,17 @@ export default function BillfoldWallet({ className = "" }: BillfoldWalletProps) 
   // Get global points balance for display
   const {
     data: globalData,
-    isLoading
+    isLoading,
+    isError,
+    error
   } = useQuery<GlobalPointsData>({
     queryKey: ['global-points-balance'],
     queryFn: async () => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Authentication required');
+      }
+      
       const response = await fetch('/api/points/global-balance', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -49,10 +55,11 @@ export default function BillfoldWallet({ className = "" }: BillfoldWalletProps) 
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch global balance');
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch global balance (${response.status}): ${errorText}`);
       }
       
-      return response.json();
+      return response.json() as Promise<GlobalPointsData>;
     },
     staleTime: 30000,
     refetchOnWindowFocus: false,
@@ -154,20 +161,27 @@ export default function BillfoldWallet({ className = "" }: BillfoldWalletProps) 
                 <div>
                   <h4 className="text-lg font-medium">Superfan Points</h4>
                   <p className="text-sm text-muted-foreground">
-                    Across {globalData?.global_balance.active_clubs_count || 0} active club{(globalData?.global_balance.active_clubs_count || 0) !== 1 ? 's' : ''}
+                    Across {(globalData?.global_balance?.active_clubs_count ?? 0)} active club{(globalData?.global_balance?.active_clubs_count ?? 0) !== 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
               <div className="text-right">
                 {isLoading ? (
                   <div className="text-2xl font-bold text-muted-foreground">Loading...</div>
+                ) : isError || !globalData ? (
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-red-500">Error</div>
+                    <div className="text-xs text-muted-foreground">
+                      {error?.message || 'Failed to load balance'}
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <div className="text-2xl font-bold">
-                      {globalData?.global_balance.total_points.toLocaleString() || '0'}
+                      {(globalData?.global_balance?.total_points ?? 0).toLocaleString()}
                     </div>
                     <div className="text-sm text-primary font-medium">
-                      ${globalData?.global_balance.total_usd_value.toFixed(2) || '0.00'} USD
+                      ${(globalData?.global_balance?.total_usd_value ?? 0).toFixed(2)} USD
                     </div>
                   </>
                 )}

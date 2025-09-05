@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, Wallet, QrCode, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,11 @@ export default function ScannerWalletToggle({
   defaultMode = 'scanner' 
 }: ScannerWalletToggleProps) {
   const [mode, setMode] = useState<'scanner' | 'wallet'>(defaultMode);
+
+  // Sync internal state with prop changes
+  useEffect(() => {
+    setMode(defaultMode);
+  }, [defaultMode]);
 
   if (!isOpen) return null;
 

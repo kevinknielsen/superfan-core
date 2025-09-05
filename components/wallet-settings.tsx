@@ -61,21 +61,25 @@ export default function WalletSettings() {
     isLoading: isLoadingPoints,
     error: pointsError
   } = useQuery<GlobalPointsData>({
-    queryKey: ['global-points-balance'],
-    queryFn: async (): Promise<GlobalPointsData> => {
+    queryKey: ['global-points-balance', user?.id || 'anonymous'], // Scope cache by user ID
+    queryFn: async (context): Promise<GlobalPointsData> => {
       const accessToken = await getAccessToken();
-      if (!accessToken) {
+      
+      // Support wallet-app flows that don't use Privy tokens
+      if (!accessToken && !isInWalletApp) {
         throw new Error('Authentication required');
       }
       
       const response = await fetch('/api/points/global-balance', {
-        headers: {
+        headers: accessToken ? {
           'Authorization': `Bearer ${accessToken}`,
-        }
+        } : {}, // Let unified auth handle wallet-app authentication
+        signal: context.signal, // Support query cancellation
       });
       
       if (!response.ok) {
-        throw new Error('Failed to fetch global balance');
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch global balance (${response.status}): ${errorText}`);
       }
       
       return response.json() as Promise<GlobalPointsData>;
@@ -208,13 +212,13 @@ export default function WalletSettings() {
               <>
                 <div className="mb-4">
                   <div className="text-3xl font-bold">
-                    {globalPointsData.global_balance.total_points.toLocaleString()} Points
+                    {(globalPointsData?.global_balance?.total_points ?? 0).toLocaleString()} Points
                   </div>
                   <div className="text-lg text-primary font-medium">
-                    ${globalPointsData.global_balance.total_usd_value.toFixed(2)} USD Value
+                    ${(globalPointsData?.global_balance?.total_usd_value ?? 0).toFixed(2)} USD Value
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    Across {globalPointsData.global_balance.active_clubs_count} active club{globalPointsData.global_balance.active_clubs_count !== 1 ? 's' : ''}
+                    Across {(globalPointsData?.global_balance?.active_clubs_count ?? 0)} active club{(globalPointsData?.global_balance?.active_clubs_count ?? 0) !== 1 ? 's' : ''}
                   </div>
                 </div>
 
@@ -226,7 +230,7 @@ export default function WalletSettings() {
                       <span className="text-xs font-medium">Earned</span>
                     </div>
                     <div className="text-sm font-bold text-green-600">
-                      {globalPointsData.global_balance.total_earned_points.toLocaleString()}
+                      {(globalPointsData?.global_balance?.total_earned_points ?? 0).toLocaleString()}
                     </div>
                   </div>
                   
@@ -236,7 +240,7 @@ export default function WalletSettings() {
                       <span className="text-xs font-medium">Purchased</span>
                     </div>
                     <div className="text-sm font-bold text-blue-600">
-                      {globalPointsData.global_balance.total_purchased_points.toLocaleString()}
+                      {(globalPointsData?.global_balance?.total_purchased_points ?? 0).toLocaleString()}
                     </div>
                   </div>
                   
@@ -246,25 +250,25 @@ export default function WalletSettings() {
                       <span className="text-xs font-medium">Spent</span>
                     </div>
                     <div className="text-sm font-bold text-orange-600">
-                      {globalPointsData.global_balance.total_spent_points.toLocaleString()}
+                      {(globalPointsData?.global_balance?.total_spent_points ?? 0).toLocaleString()}
                     </div>
                   </div>
                 </div>
 
                 {/* Club Breakdown */}
-                {globalPointsData.club_breakdown.length > 0 && (
+                {(globalPointsData?.club_breakdown?.length ?? 0) > 0 && (
                   <div className="mb-4">
                     <h4 className="text-sm font-medium mb-2">Points by Club</h4>
                     <div className="space-y-2">
-                      {globalPointsData.club_breakdown.slice(0, 3).map((club, index) => (
-                        <div key={club.club_id || `club-${index}`} className="flex justify-between items-center text-sm">
-                          <span className="text-muted-foreground">{club.club_name}</span>
-                          <span className="font-medium">{club.balance_pts.toLocaleString()}</span>
+                      {(globalPointsData?.club_breakdown || []).slice(0, 3).map((club, index) => (
+                        <div key={club?.club_id || `club-${index}`} className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">{club?.club_name || 'Unknown Club'}</span>
+                          <span className="font-medium">{(club?.balance_pts ?? 0).toLocaleString()}</span>
                         </div>
                       ))}
-                      {globalPointsData.club_breakdown.length > 3 && (
+                      {(globalPointsData?.club_breakdown?.length ?? 0) > 3 && (
                         <div className="text-xs text-muted-foreground text-center">
-                          +{globalPointsData.club_breakdown.length - 3} more clubs
+                          +{(globalPointsData?.club_breakdown?.length ?? 0) - 3} more clubs
                         </div>
                       )}
                     </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
+import { isAdmin } from '@/lib/security.server';
 
 const OperatorControlsSchema = z.object({
   earn_multiplier: z.number().min(0.5).max(5.0).optional(),
@@ -26,6 +27,47 @@ const StatusMultipliersSchema = z.array(z.object({
   redeem_boost: z.number().min(0.8).max(1.2),
 }));
 
+const TestPricingSchema = z.object({
+  base_usd_cents: z.number().min(0),
+  user_status: z.enum(['cadet', 'resident', 'headliner', 'superfan'])
+});
+
+// Authorization helper
+async function verifyClubAccess(userId: string, clubId: string): Promise<{ isAuthorized: boolean; isOwner: boolean; isSystemAdmin: boolean }> {
+  // Check if user is system admin
+  const isSystemAdmin = isAdmin(userId);
+  
+  if (isSystemAdmin) {
+    return { isAuthorized: true, isOwner: false, isSystemAdmin: true };
+  }
+  
+  // Check if user owns the club
+  const { data: club, error } = await supabase
+    .from('clubs')
+    .select('owner_id')
+    .eq('id', clubId)
+    .single();
+    
+  if (error || !club) {
+    return { isAuthorized: false, isOwner: false, isSystemAdmin: false };
+  }
+  
+  const isOwner = club.owner_id === userId;
+  return { isAuthorized: isOwner, isOwner, isSystemAdmin: false };
+}
+
+// Helper to get user ID from auth
+async function getUserId(auth: { userId: string; type: 'farcaster' | 'privy' }): Promise<{ id: string } | null> {
+  const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id')
+    .eq(userColumn, auth.userId)
+    .single();
+
+  return error || !user ? null : user;
+}
+
 // Get operator controls for a club
 export async function GET(
   request: NextRequest,
@@ -36,11 +78,21 @@ export async function GET(
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // TODO: Add proper admin check when isAdmin is available
-    // For now, allow authenticated users (add admin check later)
 
     const clubId = params.id;
+    const user = await getUserId(auth);
+    
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    
+    // Verify authorization (club owner or system admin)
+    const { isAuthorized, isOwner, isSystemAdmin } = await verifyClubAccess(user.id, clubId);
+    if (!isAuthorized) {
+      return NextResponse.json({ 
+        error: 'Access denied: Only club owners and system administrators can view operator controls' 
+      }, { status: 403 });
+    }
 
     // Get club operator controls
     const { data: club, error: clubError } = await supabase
@@ -75,15 +127,20 @@ export async function GET(
       console.error('Error fetching status multipliers:', statusError);
     }
 
-    // Get settlement pool info
-    const { data: settlementPool, error: poolError } = await supabase
-      .from('club_settlement_pools')
-      .select('balance_usd_cents, reserved_usd_cents')
-      .eq('club_id', clubId)
-      .single();
+    // Get settlement pool info (system admin only)
+    let settlementPool = null;
+    if (isSystemAdmin) {
+      const { data: poolData, error: poolError } = await supabase
+        .from('club_settlement_pools')
+        .select('balance_usd_cents, reserved_usd_cents')
+        .eq('club_id', clubId)
+        .single();
 
-    if (poolError) {
-      console.error('Error fetching settlement pool:', poolError);
+      if (poolError) {
+        console.error('Error fetching settlement pool:', poolError);
+      } else {
+        settlementPool = poolData;
+      }
     }
 
     return NextResponse.json({
@@ -100,11 +157,15 @@ export async function GET(
         system_purchase_rate: club.system_purchase_rate,
       },
       status_multipliers: statusMultipliers || [],
-      settlement_pool: {
+      settlement_pool: isSystemAdmin ? {
         balance_usd_cents: settlementPool?.balance_usd_cents || 0,
         reserved_usd_cents: settlementPool?.reserved_usd_cents || 0,
         available_usd_cents: (settlementPool?.balance_usd_cents || 0) - (settlementPool?.reserved_usd_cents || 0),
-      },
+      } : null, // Only expose to system admins
+      authorization: {
+        is_owner: isOwner,
+        is_system_admin: isSystemAdmin
+      }
     });
 
   } catch (error) {
@@ -123,11 +184,22 @@ export async function PUT(
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // TODO: Add proper admin check when isAdmin is available
-    // For now, allow authenticated users (add admin check later)
 
     const clubId = params.id;
+    const user = await getUserId(auth);
+    
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+    
+    // Verify authorization (club owner or system admin)
+    const { isAuthorized } = await verifyClubAccess(user.id, clubId);
+    if (!isAuthorized) {
+      return NextResponse.json({ 
+        error: 'Access denied: Only club owners and system administrators can update operator controls' 
+      }, { status: 403 });
+    }
+
     const body = await request.json() as any;
     
     // Validate operator controls
@@ -195,20 +267,25 @@ export async function POST(
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    
-    // TODO: Add proper admin check when isAdmin is available
-    // For now, allow authenticated users (add admin check later)
 
     const clubId = params.id;
-    const body = await request.json() as any;
-    const { base_usd_cents, user_status } = body;
-
-    if (!base_usd_cents || !user_status) {
-      return NextResponse.json(
-        { error: 'base_usd_cents and user_status are required' },
-        { status: 400 }
-      );
+    const user = await getUserId(auth);
+    
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
+    
+    // Verify authorization (club owner or system admin)
+    const { isAuthorized } = await verifyClubAccess(user.id, clubId);
+    if (!isAuthorized) {
+      return NextResponse.json({ 
+        error: 'Access denied: Only club owners and system administrators can test pricing calculations' 
+      }, { status: 403 });
+    }
+
+    // Validate request body with Zod
+    const body = await request.json() as any;
+    const { base_usd_cents, user_status } = TestPricingSchema.parse(body);
 
     // Use the database function to calculate display price
     const { data: displayPrice, error: priceError } = await supabase
@@ -233,6 +310,14 @@ export async function POST(
 
   } catch (error) {
     console.error('Error calculating test price:', error);
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+    
     return NextResponse.json({ error: 'Failed to calculate test price' }, { status: 500 });
   }
 }

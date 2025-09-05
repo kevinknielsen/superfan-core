@@ -273,8 +273,8 @@ export default function UnlockManagement({ onStatsUpdate }: UnlockManagementProp
                       <SelectValue placeholder="Select club..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {activeClubs.map((club, index) => (
-                        <SelectItem key={club.id || `club-${index}`} value={club.id}>
+                      {activeClubs.filter(club => club.id && typeof club.id === 'string').map((club) => (
+                        <SelectItem key={club.id} value={club.id}>
                           {club.name}
                         </SelectItem>
                       ))}
