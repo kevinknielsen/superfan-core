@@ -74,7 +74,7 @@ export default function QRManagement() {
         throw new Error('Failed to load QR codes');
       }
 
-      const data = await response.json();
+      const data = await response.json() as { qr_codes?: QRCode[] };
       setGeneratedQRs(data.qr_codes || []);
       
     } catch (error) {
@@ -278,8 +278,8 @@ export default function QRManagement() {
                   <div className="space-y-4">
                     {/* Header with badges */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <h4 className="font-medium text-lg">
-                        {qr.qr_data.source.replace(/_/g, ' ').toUpperCase()}
+                      <h4 className="font-medium text-lg uppercase">
+                        {String(qr.qr_data?.source ?? 'QR').replace(/_/g, ' ')}
                       </h4>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="outline" className="text-xs">

@@ -6,8 +6,7 @@ export async function isAdmin(userId: string | undefined): Promise<boolean> {
 
   // Only run on server-side to prevent exposing admin data to client
   if (typeof window !== "undefined" || process.env.NEXT_RUNTIME === 'edge') {
-    console.warn('isAdmin called from client-side or edge runtime');
-    return false;
+    throw new Error('isAdmin must only be called from server-side code');
   }
 
   try {
@@ -18,7 +17,7 @@ export async function isAdmin(userId: string | undefined): Promise<boolean> {
     }
     const supabase = cachedServiceClient;
     
-    console.log(`[Admin Check] Looking up user with privy_id: ${userId}`);
+    debugLog(`[Admin Check] Looking up user with privy_id: ${userId}`);
     
     // Look up user by privy_id (since userId from auth is the Privy DID)
     const { data: user, error } = await supabase
@@ -27,20 +26,19 @@ export async function isAdmin(userId: string | undefined): Promise<boolean> {
       .eq('privy_id', userId)
       .single();
     
-    console.log(`[Admin Check] Database query result:`, { user, error });
+    debugLog(`[Admin Check] Database query result:`, { user, error });
     
     if (error) {
-      console.error('Error looking up user for admin check:', error);
-      console.error('Error details:', error);
+      errorLog('Error looking up user for admin check:', error);
       return false;
     }
     
     const isUserAdmin = user?.role === 'admin';
-    console.log(`[Admin Check] User ${userId} found with role: ${user?.role}, isAdmin: ${isUserAdmin}`);
+    debugLog(`[Admin Check] User ${userId} found with role: ${user?.role}, isAdmin: ${isUserAdmin}`);
     
     return isUserAdmin;
   } catch (error) {
-    console.error('Error checking admin status:', error);
+    errorLog('Error checking admin status:', error);
     return false;
   }
 }
