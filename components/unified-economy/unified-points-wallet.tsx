@@ -5,20 +5,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
   TrendingUp, 
-  Shield, 
   ArrowUpRight, 
   ArrowDownRight, 
-  Users, 
-  History,
-  Info,
-  ChevronDown,
-  ChevronUp
+  Users
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { getAccessToken } from '@privy-io/react-auth';
@@ -43,7 +36,6 @@ export default function UnifiedPointsWallet({
   showTransferOptions = false,
   className = ""
 }: UnifiedPointsWalletProps) {
-  const [showDetails, setShowDetails] = useState(false);
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
 
@@ -143,15 +135,10 @@ export default function UnifiedPointsWallet({
   return (
     <Card className={`${className} overflow-hidden`}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Wallet className="h-5 w-5" />
-            Points Wallet
-          </CardTitle>
-          <Badge variant="secondary" className={`${statusInfo.color} text-white`}>
-            {statusInfo.icon} {statusInfo.label}
-          </Badge>
-        </div>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Wallet className="h-5 w-5" />
+          {clubName}
+        </CardTitle>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -228,98 +215,7 @@ export default function UnifiedPointsWallet({
             </Button>
           )}
 
-          <Button 
-            variant="ghost" 
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDetails(!showDetails);
-            }}
-          >
-            <Info className="h-4 w-4 mr-2" />
-            Details
-            {showDetails ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />}
-          </Button>
         </div>
-
-        {/* Detailed Breakdown */}
-        <AnimatePresence>
-          {showDetails && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="space-y-4 overflow-hidden"
-            >
-              <Separator />
-              
-              {/* Spending Power Breakdown */}
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  Spending Power
-                </h4>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Available to spend:</span>
-                      <span className="font-medium">{spending_power.total_spendable.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">• Purchased:</span>
-                      <span className="text-green-600">{spending_power.purchased_available.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">• Earned (flexible):</span>
-                      <span className="text-blue-600">{spending_power.earned_available.toLocaleString()}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Protected for status:</span>
-                      <span className="font-medium">{spending_power.earned_locked_for_status.toLocaleString()}</span>
-                    </div>
-                    {spending_power.escrowed > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Escrowed:</span>
-                        <span className="text-orange-600">{spending_power.escrowed.toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Transaction History Preview */}
-              {breakdown.recent_activity && breakdown.recent_activity.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="font-medium text-sm flex items-center gap-2">
-                    <History className="h-4 w-4" />
-                    Recent Activity
-                  </h4>
-                  
-                  <div className="space-y-2">
-                    {breakdown.recent_activity.slice(0, 3).map((tx, index) => (
-                      <div key={tx.id || `tx-${index}-${tx.created_at || Date.now()}`} className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">
-                          {tx.source === 'earned' ? '🎯 Earned' :
-                           tx.source === 'purchased' ? '💳 Purchased' :
-                           tx.source === 'spent' ? '🛒 Spent' :
-                           tx.source === 'transferred' ? '👥 Transfer' : '📝 Transaction'}
-                        </span>
-                        <span className={`font-medium ${
-                          tx.type === 'PURCHASE' ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {tx.type === 'PURCHASE' ? '+' : '-'}{tx.pts.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </CardContent>
 
       {/* Spend Points Modal */}

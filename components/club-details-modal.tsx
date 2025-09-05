@@ -568,8 +568,7 @@ export default function ClubDetailsModal({
             </button>
             
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-2">Boost Your Status</h2>
-              <p className="text-gray-300 mb-6">Purchase points to level up faster and unlock more perks!</p>
+              <h2 className="text-2xl font-bold text-white mb-6">Wallet</h2>
               
               <UnifiedPointsWallet 
                 clubId={club.id}

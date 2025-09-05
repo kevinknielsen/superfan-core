@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Get community details (simplified for unified peg)
     const { data: community, error: communityError } = await supabase
       .from('clubs')
-      .select('id, name')
+      .select('id, name, is_active')
       .eq('id', communityId)
       .single();
 
@@ -38,6 +38,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Community not found' },
         { status: 404 }
+      );
+    }
+    
+    if (community.is_active === false) {
+      return NextResponse.json(
+        { error: 'Community is inactive' },
+        { status: 403 }
       );
     }
 

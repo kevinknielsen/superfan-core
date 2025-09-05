@@ -203,8 +203,8 @@ export default function QRManagement() {
                 <SelectValue placeholder="Choose a club..." />
               </SelectTrigger>
               <SelectContent>
-                {activeClubs.map((club) => (
-                  <SelectItem key={club.id} value={club.id}>
+                {activeClubs.map((club, index) => (
+                  <SelectItem key={club.id || `club-${index}`} value={club.id}>
                     <div className="flex items-center gap-2">
                       <span>{club.name}</span>
                       {club.city && (
@@ -268,7 +268,7 @@ export default function QRManagement() {
               <div className="space-y-4">
                 {generatedQRs.map((qr, index) => (
                 <motion.div
-                  key={qr.qr_id}
+                  key={qr.qr_id || `qr-${index}`}
                   className="border rounded-lg p-4"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}

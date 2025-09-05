@@ -62,8 +62,12 @@ export default function WalletSettings() {
     error: pointsError
   } = useQuery<GlobalPointsData>({
     queryKey: ['global-points-balance'],
-    queryFn: async () => {
+    queryFn: async (): Promise<GlobalPointsData> => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Authentication required');
+      }
+      
       const response = await fetch('/api/points/global-balance', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -74,7 +78,7 @@ export default function WalletSettings() {
         throw new Error('Failed to fetch global balance');
       }
       
-      return response.json();
+      return response.json() as Promise<GlobalPointsData>;
     },
     staleTime: 30000, // 30 seconds
     refetchOnWindowFocus: false,
@@ -237,8 +241,8 @@ export default function WalletSettings() {
                   <div className="mb-4">
                     <h4 className="text-sm font-medium mb-2">Points by Club</h4>
                     <div className="space-y-2">
-                      {globalPointsData.club_breakdown.slice(0, 3).map((club) => (
-                        <div key={club.club_id} className="flex justify-between items-center text-sm">
+                      {globalPointsData.club_breakdown.slice(0, 3).map((club, index) => (
+                        <div key={club.club_id || `club-${index}`} className="flex justify-between items-center text-sm">
                           <span className="text-muted-foreground">{club.club_name}</span>
                           <span className="font-medium">{club.balance_pts.toLocaleString()}</span>
                         </div>

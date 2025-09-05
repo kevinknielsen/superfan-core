@@ -37,17 +37,29 @@ export async function GET(request: NextRequest) {
       .eq('clubs.is_active', true); // Only active clubs
 
     if (globalError) {
+      console.error('Global points query error:', globalError);
       throw globalError;
     }
 
+    // Debug logging for admin users
+    console.log(`[Global Balance] User ${user.id} has ${(globalData || []).length} point wallets`);
+    if ((globalData || []).length === 0) {
+      console.log('[Global Balance] No point wallets found - user may need to join clubs first');
+    }
+
     // Calculate totals
-    const totals = (globalData || []).reduce((acc, wallet) => {
+    const totals = (globalData || []).reduce((acc, wallet: any) => {
+      const balance = wallet.balance_pts ?? 0;
+      const earned = wallet.earned_pts ?? 0;
+      const purchased = wallet.purchased_pts ?? 0;
+      const spent = wallet.spent_pts ?? 0;
+      const escrowed = wallet.escrowed_pts ?? 0;
       return {
-        total_balance: acc.total_balance + wallet.balance_pts,
-        total_earned: acc.total_earned + wallet.earned_pts,
-        total_purchased: acc.total_purchased + wallet.purchased_pts,
-        total_spent: acc.total_spent + wallet.spent_pts,
-        total_escrowed: acc.total_escrowed + wallet.escrowed_pts,
+        total_balance: acc.total_balance + balance,
+        total_earned: acc.total_earned + earned,
+        total_purchased: acc.total_purchased + purchased,
+        total_spent: acc.total_spent + spent,
+        total_escrowed: acc.total_escrowed + escrowed,
       };
     }, {
       total_balance: 0,
@@ -58,12 +70,12 @@ export async function GET(request: NextRequest) {
     });
 
     // Get club breakdown
-    const club_breakdown = (globalData || []).map(wallet => ({
+    const club_breakdown = (globalData || []).map((wallet: any) => ({
       club_id: wallet.club_id,
-      club_name: wallet.clubs.name,
-      balance_pts: wallet.balance_pts,
-      earned_pts: wallet.earned_pts,
-      purchased_pts: wallet.purchased_pts,
+      club_name: wallet.clubs?.name || 'Unknown Club',
+      balance_pts: wallet.balance_pts ?? 0,
+      earned_pts: wallet.earned_pts ?? 0,
+      purchased_pts: wallet.purchased_pts ?? 0,
     })).filter(club => club.balance_pts > 0); // Only show clubs with points
 
     // Calculate USD equivalent (unified peg: 100 points = $1)
