@@ -1,12 +1,30 @@
 // SERVER-ONLY security utilities - never imported on client side
-// Environment-based admin checking (server-side only)
-export function isAdmin(userId: string | undefined): boolean {
+// Database-based admin checking (server-side only)
+export async function isAdmin(userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
   
-  const adminIds = process.env.ADMIN_USER_IDS?.split(',')
-    .map(id => id.trim()) // Remove whitespace to avoid mismatches
-    .filter(Boolean) || [];
-  return adminIds.includes(userId);
+  try {
+    // Use service client to bypass any RLS policies
+    const { createServiceClient } = await import('@/app/api/supabase');
+    const supabase = createServiceClient();
+    
+    // Look up user by privy_id (since userId from auth is the Privy DID)
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('role')
+      .eq('privy_id', userId)
+      .single();
+    
+    if (error) {
+      console.error('Error looking up user for admin check:', error);
+      return false;
+    }
+    
+    return user?.role === 'admin';
+  } catch (error) {
+    console.error('Error checking admin status:', error);
+    return false;
+  }
 }
 
 // Structured error logging for better log aggregation

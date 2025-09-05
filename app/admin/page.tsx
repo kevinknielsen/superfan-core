@@ -62,8 +62,22 @@ export default function AdminDashboard() {
 
   const checkAdminStatus = async () => {
     try {
-      // Use the API endpoint to check admin status (works on both local and remote)
-      const response = await fetch('/api/auth/admin-status');
+      // Get the auth token for the API call
+      const { getAccessToken } = await import('@privy-io/react-auth');
+      const accessToken = await getAccessToken();
+      
+      if (!accessToken) {
+        throw new Error("User not logged in");
+      }
+
+      // Use the API endpoint to check admin status with proper auth headers
+      const response = await fetch('/api/auth/admin-status', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
       const { isAdmin: userIsAdmin } = await response.json();
       
       console.log('[Admin Check] API Response:', {

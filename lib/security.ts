@@ -1,15 +1,47 @@
-// Environment-based admin checking (server-side only)
-export function isAdmin(userId: string | undefined): boolean {
+// Database-based admin checking (server-side only)
+export async function isAdmin(userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
 
-  // Only run on server-side to prevent exposing admin IDs to client
+  // Only run on server-side to prevent exposing admin data to client
   if (typeof window !== "undefined") return false;
 
-  const adminIds =
-    process.env.ADMIN_USER_IDS?.split(",")
-      .map((id) => id.trim()) // Remove whitespace to avoid mismatches
-      .filter(Boolean) || [];
-  return adminIds.includes(userId);
+  try {
+    // Use service client to bypass any RLS policies
+    const { createServiceClient } = await import('@/app/api/supabase');
+    const supabase = createServiceClient();
+    
+    console.log(`[Admin Check] Looking up user with privy_id: ${userId}`);
+    
+    // Look up user by privy_id (since userId from auth is the Privy DID)
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, privy_id, role, email')
+      .eq('privy_id', userId)
+      .single();
+    
+    console.log(`[Admin Check] Database query result:`, { user, error });
+    
+    if (error) {
+      console.error('Error looking up user for admin check:', error);
+      console.error('Error details:', error);
+      return false;
+    }
+    
+    const isUserAdmin = user?.role === 'admin';
+    console.log(`[Admin Check] User ${userId} found with role: ${user?.role}, isAdmin: ${isUserAdmin}`);
+    
+    return isUserAdmin;
+  } catch (error) {
+    console.error('Error checking admin status:', error);
+    return false;
+  }
+}
+
+// Synchronous version for compatibility (will be deprecated)
+export function isAdminSync(userId: string | undefined): boolean {
+  // Fallback to false for now - components should use the async version
+  console.warn('isAdminSync is deprecated, use isAdmin instead');
+  return false;
 }
 
 // Text truncation (React handles XSS protection automatically)

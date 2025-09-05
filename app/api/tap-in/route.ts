@@ -119,11 +119,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to fetch membership" }, { status: 500 });
     }
 
+    // Get or create point wallet (unified system)
+    let { data: wallet, error: walletError } = await supabase
+      .from('point_wallets')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('club_id', tapInData.club_id)
+      .single();
+
+    if (walletError && walletError.code === 'PGRST116') {
+      // Create wallet if it doesn't exist
+      const { data: newWallet, error: createWalletError } = await supabase
+        .from('point_wallets')
+        .insert({
+          user_id: user.id,
+          club_id: tapInData.club_id,
+          balance_pts: 0,
+          earned_pts: 0,
+          purchased_pts: 0,
+          spent_pts: 0,
+          escrowed_pts: 0
+        })
+        .select()
+        .single();
+
+      if (createWalletError) {
+        console.error("[Tap-in API] Error creating wallet:", createWalletError);
+        return NextResponse.json({ error: "Failed to create wallet" }, { status: 500 });
+      }
+
+      wallet = newWallet;
+    } else if (walletError) {
+      console.error("[Tap-in API] Error fetching wallet:", walletError);
+      return NextResponse.json({ error: "Failed to fetch wallet" }, { status: 500 });
+    }
+
     // Determine points to award
     const pointsToAward = tapInData.points_earned || 
       (tapInData.source in POINT_VALUES ? POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] : POINT_VALUES.default);
-    const newTotalPoints = membership.points + pointsToAward;
-    const newStatus = calculateStatus(newTotalPoints);
+    
+    // Use wallet earned points for status calculation
+    const newEarnedPoints = wallet.earned_pts + pointsToAward;
+    const newTotalPoints = wallet.balance_pts + pointsToAward;
+    const newStatus = calculateStatus(newEarnedPoints); // Status based on earned points only
     const oldStatus = membership.current_status;
 
     // Start transaction
@@ -145,11 +183,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create tap-in" }, { status: 500 });
     }
 
-    // Update membership points and status
+    // Update point wallet (unified system)
+    const { data: updatedWallet, error: walletUpdateError } = await supabase
+      .from('point_wallets')
+      .update({
+        balance_pts: newTotalPoints,
+        earned_pts: newEarnedPoints,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', user.id)
+      .eq('club_id', tapInData.club_id)
+      .select()
+      .single();
+
+    if (walletUpdateError) {
+      console.error("[Tap-in API] Error updating wallet:", walletUpdateError);
+      return NextResponse.json({ error: "Failed to update wallet" }, { status: 500 });
+    }
+
+    // Update membership status and activity
     const { data: updatedMembership, error: updateError } = await supabase
       .from('club_memberships')
       .update({
-        points: newTotalPoints,
         current_status: newStatus,
         last_activity_at: new Date().toISOString()
       })
@@ -163,20 +218,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to update membership" }, { status: 500 });
     }
 
-    // Add to points ledger
-    const { error: ledgerError } = await supabase
-      .from('points_ledger')
+    // Add to point transactions (unified system)
+    const { error: transactionError } = await supabase
+      .from('point_transactions')
       .insert({
-        user_id: user.id,
-        club_id: tapInData.club_id,
-        delta: pointsToAward,
-        reason: 'tap_in',
-        reference_id: tapIn.id
+        wallet_id: wallet.id,
+        type: 'BONUS', // Earned points from tap-in
+        source: 'earned',
+        pts: pointsToAward,
+        ref: tapIn.id
       });
 
-    if (ledgerError) {
-      console.error("[Tap-in API] Error creating ledger entry:", ledgerError);
-      // Note: Continue despite ledger error as main operations succeeded
+    if (transactionError) {
+      console.error("[Tap-in API] Error creating transaction:", transactionError);
+      // Note: Continue despite transaction error as main operations succeeded
     }
 
     // Return success with status change info
