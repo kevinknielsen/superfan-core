@@ -13,6 +13,25 @@ import { useProjects } from "@/hooks/use-projects";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { useBalance } from "wagmi";
 import { Address } from "viem";
+import { useQuery } from '@tanstack/react-query';
+import { getAccessToken } from '@privy-io/react-auth';
+import { Globe, TrendingUp, DollarSign, ArrowUpRight } from 'lucide-react';
+
+interface GlobalPointsData {
+  global_balance: {
+    total_points: number;
+    total_earned_points: number;
+    total_purchased_points: number;
+    total_spent_points: number;
+    total_usd_value: number;
+    active_clubs_count: number;
+  };
+  club_breakdown: Array<{
+    club_id: string;
+    club_name: string;
+    balance_pts: number;
+  }>;
+}
 
 export default function WalletSettings() {
   const { toast } = useToast();
@@ -36,6 +55,40 @@ export default function WalletSettings() {
   // USDC contract address on Base
   const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
   
+  // Get global points balance
+  const {
+    data: globalPointsData,
+    isLoading: isLoadingPoints,
+    error: pointsError
+  } = useQuery<GlobalPointsData>({
+    queryKey: ['global-points-balance', user?.id || 'anonymous'], // Scope cache by user ID
+    queryFn: async (context): Promise<GlobalPointsData> => {
+      const accessToken = await getAccessToken();
+      
+      // Support wallet-app flows that don't use Privy tokens
+      if (!accessToken && !isInWalletApp) {
+        throw new Error('Authentication required');
+      }
+      
+      const response = await fetch('/api/points/global-balance', {
+        headers: accessToken ? {
+          'Authorization': `Bearer ${accessToken}`,
+        } : {}, // Let unified auth handle wallet-app authentication
+        signal: context.signal, // Support query cancellation
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch global balance (${response.status}): ${errorText}`);
+      }
+      
+      return response.json() as Promise<GlobalPointsData>;
+    },
+    staleTime: 30000, // 30 seconds
+    refetchOnWindowFocus: false,
+    enabled: !!user && (authenticated || isInWalletApp),
+  });
+
   // Get USDC balance of the connected wallet (in wallet apps)
   const { data: connectedWalletUsdcBalance } = useBalance({
     address: walletAddress as Address,
@@ -59,6 +112,21 @@ export default function WalletSettings() {
     holderBalance: holder?.usdcBalance,
     finalBalance: balance,
     balanceSource: isInWalletApp ? "connected wallet" : "metal holder"
+  });
+
+  // Debug global points data
+  console.log("[WalletSettings] Global points debug:", {
+    isLoadingPoints,
+    pointsError: pointsError?.message,
+    globalPointsData: globalPointsData ? {
+      total_points: globalPointsData.global_balance.total_points,
+      active_clubs_count: globalPointsData.global_balance.active_clubs_count,
+      club_breakdown_count: globalPointsData.club_breakdown.length,
+      clubs: globalPointsData.club_breakdown.map(c => ({
+        name: c.club_name,
+        balance: c.balance_pts
+      }))
+    } : 'No data'
   });
 
   // Removed presales - part of legacy funding system
@@ -117,38 +185,111 @@ export default function WalletSettings() {
         <h2 className="mb-4 text-xl font-semibold">Wallet Settings</h2>
 
         <div className="space-y-6">
-          {/* Balance Section */}
+          {/* Global Points Balance Section */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-medium">Balance</h3>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                <h3 className="text-base font-medium">Global Points Balance</h3>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                100 points = $1 USD
+              </div>
             </div>
 
-            <div className="mb-4">
-              <h4 className="text-3xl font-bold">
-                {!balance && balance !== 0 ? (
-                  <span className="text-muted-foreground">Loading...</span>
-                ) : (
-                  `${Number(balance).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })} USDC`
+            {isLoadingPoints ? (
+              <div className="mb-4">
+                <div className="text-3xl font-bold text-muted-foreground">Loading...</div>
+              </div>
+            ) : pointsError || !globalPointsData ? (
+              <div className="mb-4">
+                <div className="text-3xl font-bold text-muted-foreground">Unable to load</div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {pointsError instanceof Error ? pointsError.message : 'Failed to load points balance'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-4">
+                  <div className="text-3xl font-bold">
+                    {(globalPointsData?.global_balance?.total_points ?? 0).toLocaleString()} Points
+                  </div>
+                  <div className="text-lg text-primary font-medium">
+                    ${(globalPointsData?.global_balance?.total_usd_value ?? 0).toFixed(2)} USD Value
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Across {(globalPointsData?.global_balance?.active_clubs_count ?? 0)} active club{(globalPointsData?.global_balance?.active_clubs_count ?? 0) !== 1 ? 's' : ''}
+                  </div>
+                </div>
+
+                {/* Points Breakdown */}
+                <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-muted/30 rounded-lg">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <TrendingUp className="h-3 w-3 text-green-500" />
+                      <span className="text-xs font-medium">Earned</span>
+                    </div>
+                    <div className="text-sm font-bold text-green-600">
+                      {(globalPointsData?.global_balance?.total_earned_points ?? 0).toLocaleString()}
+                    </div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <DollarSign className="h-3 w-3 text-blue-500" />
+                      <span className="text-xs font-medium">Purchased</span>
+                    </div>
+                    <div className="text-sm font-bold text-blue-600">
+                      {(globalPointsData?.global_balance?.total_purchased_points ?? 0).toLocaleString()}
+                    </div>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <ArrowUpRight className="h-3 w-3 text-orange-500" />
+                      <span className="text-xs font-medium">Spent</span>
+                    </div>
+                    <div className="text-sm font-bold text-orange-600">
+                      {(globalPointsData?.global_balance?.total_spent_points ?? 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Club Breakdown */}
+                {(globalPointsData?.club_breakdown?.length ?? 0) > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium mb-2">Points by Club</h4>
+                    <div className="space-y-2">
+                      {(globalPointsData?.club_breakdown || []).slice(0, 3).map((club, index) => (
+                        <div key={club?.club_id || `club-${index}`} className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">{club?.club_name || 'Unknown Club'}</span>
+                          <span className="font-medium">{(club?.balance_pts ?? 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                      {(globalPointsData?.club_breakdown?.length ?? 0) > 3 && (
+                        <div className="text-xs text-muted-foreground text-center">
+                          +{(globalPointsData?.club_breakdown?.length ?? 0) - 3} more clubs
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
-              </h4>
-            </div>
+              </>
+            )}
 
             <div className="flex space-x-3">
               <button
                 onClick={handleFund}
-                className="bg-black text-white px-4 py-2 rounded-md hover:bg-gray-900"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
               >
-                Fund
+                Buy Points
               </button>
-              {/* <button
-                onClick={handleWithdraw}
-                className="bg-background border border-border text-white px-4 py-2 rounded-md hover:bg-accent/10"
+              <button
+                onClick={() => toast({ title: "Coming Soon", description: "Point transfer feature coming soon!" })}
+                className="bg-background border border-border text-foreground px-4 py-2 rounded-md hover:bg-accent/10 transition-colors"
               >
-                Withdraw
-              </button> */}
+                Transfer
+              </button>
             </div>
           </div>
         </div>

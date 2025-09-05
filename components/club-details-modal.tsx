@@ -386,7 +386,7 @@ export default function ClubDetailsModal({
                     onClick={() => setShowPurchaseOverlay(true)}
                     className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg hover:bg-primary/90 transition-colors"
                   >
-                    Boost Your Status
+                    Open Wallet
                   </button>
                 </div>
 
@@ -538,7 +538,7 @@ export default function ClubDetailsModal({
                 onClick={() => setShowPurchaseOverlay(true)}
                 className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
               >
-                Boost Your Status
+                Open Wallet
               </button>
             )}
           </div>
@@ -568,8 +568,7 @@ export default function ClubDetailsModal({
             </button>
             
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-2">Boost Your Status</h2>
-              <p className="text-gray-300 mb-6">Purchase points to level up faster and unlock more perks!</p>
+              <h2 className="text-2xl font-bold text-white mb-6">Wallet</h2>
               
               <UnifiedPointsWallet 
                 clubId={club.id}

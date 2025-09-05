@@ -12,8 +12,8 @@ import { useState, useEffect } from "react";
 import dynamic from 'next/dynamic';
 import Logo from "./logo";
 
-// Dynamic import for QR scanner to prevent SSR issues
-const QRScanner = dynamic(() => import('./qr-scanner'), {
+// Dynamic import for scanner-wallet toggle to prevent SSR issues
+const ScannerWalletToggle = dynamic(() => import('./scanner-wallet-toggle'), {
   ssr: false,
   loading: () => null
 });
@@ -27,7 +27,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   const { logout, user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
   const enableMembership = useFeatureFlag('enableMembership');
-  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [showScannerWallet, setShowScannerWallet] = useState(false);
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -47,13 +47,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
 
   const handleCheckInClick = () => {
     requireAuth('checkin', () => {
-      // Check if we're in a browser environment that supports QR scanning
-      if (typeof window !== 'undefined' && navigator.mediaDevices) {
-        setShowQRScanner(true);
-      } else {
-        // Fallback for environments without camera support
-        console.log('QR scanning not available in this environment');
-      }
+      setShowScannerWallet(true);
     });
   };
 
@@ -140,11 +134,12 @@ export default function Header({ showBackButton = false }: HeaderProps) {
         </div>
       </motion.header>
 
-      {/* QR Scanner Modal - only render on client */}
+      {/* Scanner/Wallet Modal - only render on client */}
       {isClient && (
-        <QRScanner
-          isOpen={showQRScanner}
-          onClose={() => setShowQRScanner(false)}
+        <ScannerWalletToggle
+          isOpen={showScannerWallet}
+          onClose={() => setShowScannerWallet(false)}
+          defaultMode="scanner"
         />
       )}
     </>

@@ -10,10 +10,11 @@ interface QRScannerProps {
   isOpen: boolean;
   onClose: () => void;
   onScan?: (data: string) => void;
+  embedded?: boolean; // New prop to indicate if this is embedded in another component
 }
 
 // QR Scanner using device camera
-export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
+export default function QRScanner({ isOpen, onClose, onScan, embedded = false }: QRScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,19 +41,29 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   // Start camera when scanner opens
   useEffect(() => {
     if (isOpen && isClient) {
-      startCamera();
+      // Add a small delay to ensure DOM is fully ready
+      const timer = setTimeout(() => {
+        startCamera();
+      }, 100);
+      
+      return () => {
+        clearTimeout(timer);
+        stopCamera();
+      };
     } else {
       stopCamera();
     }
-
-    return () => {
-      stopCamera();
-    };
   }, [isOpen, isClient]);
 
   const startCamera = async () => {
+    // Add a small delay to ensure video element is ready
     if (!videoRef.current) {
-      console.log('Video element not ready');
+      console.log('Video element not ready, retrying in 200ms...');
+      setTimeout(() => {
+        if (videoRef.current) {
+          startCamera();
+        }
+      }, 200);
       return;
     }
 
@@ -68,6 +79,13 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
           height: { ideal: 720 }
         }
       });
+
+      // Double-check video element is still available
+      if (!videoRef.current) {
+        console.log('Video element became null during camera setup');
+        mediaStream.getTracks().forEach(track => track.stop());
+        return;
+      }
 
       // Set up video stream
       videoRef.current.srcObject = mediaStream;
@@ -420,6 +438,125 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
   
   if (!isOpen) return null;
 
+  // If embedded, return just the scanner content without modal wrapper
+  if (embedded) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-4 bg-black">
+        {/* Flash Control - positioned below header to avoid overlap */}
+        <div className="absolute top-20 left-4 z-10">
+          {isScanning && (
+            <button
+              onClick={toggleFlash}
+              className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors"
+            >
+              {flashEnabled ? (
+                <FlashlightOff className="h-5 w-5" />
+              ) : (
+                <Flashlight className="h-5 w-5" />
+              )}
+            </button>
+          )}
+        </div>
+
+        {hasPermission === false || error ? (
+          <div className="text-center max-w-sm">
+            <div className="mb-6">
+              <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-white mb-2">
+                {error?.includes('not available') ? 'QR Scanner Unavailable' : 'Camera Access Required'}
+              </h3>
+              <p className="text-gray-400">
+                {error || "Please allow camera access to scan QR codes"}
+              </p>
+            </div>
+            
+            {!error?.includes('not available') && !error?.includes('library') ? (
+              <button
+                onClick={requestPermission}
+                className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                Enable Camera
+              </button>
+            ) : (
+              <div className="text-sm text-gray-500">
+                <p>Camera QR scanning is temporarily unavailable.</p>
+                <p>Look for QR codes at events and tap them directly.</p>
+                <p className="mt-2 text-xs">QR codes will redirect to the tap-in page automatically.</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Camera Feed */}
+            <div className="relative w-full max-w-sm aspect-square">
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover rounded-lg"
+                playsInline
+                muted
+              />
+              
+              {/* Scanning Overlay */}
+              <div className="absolute inset-0 border-2 border-white/30 rounded-lg">
+                {/* Corner markers */}
+                <div className="absolute top-2 left-2 w-6 h-6 border-l-2 border-t-2 border-primary"></div>
+                <div className="absolute top-2 right-2 w-6 h-6 border-r-2 border-t-2 border-primary"></div>
+                <div className="absolute bottom-2 left-2 w-6 h-6 border-l-2 border-b-2 border-primary"></div>
+                <div className="absolute bottom-2 right-2 w-6 h-6 border-r-2 border-b-2 border-primary"></div>
+                
+                {/* Scanning line animation */}
+                {isScanning && (
+                  <motion.div
+                    className="absolute left-0 right-0 h-0.5 bg-primary shadow-lg shadow-primary/50"
+                    animate={{ y: ['0%', '100%'] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                  />
+                )}
+              </div>
+              
+              {!isScanning && hasPermission === true && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                  <div className="text-center">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    >
+                      <Zap className="h-8 w-8 text-primary mx-auto mb-2" />
+                    </motion.div>
+                    <p className="text-white text-sm">Starting camera...</p>
+                  </div>
+                </div>
+              )}
+              
+              {/* Hidden canvas for QR detection */}
+              <canvas
+                ref={canvasRef}
+                className="hidden"
+                width="640"
+                height="480"
+              />
+            </div>
+            
+            {/* Instructions */}
+            <div className="mt-6 text-center max-w-sm">
+              <p className="text-gray-400 text-sm">
+                {isProcessing ? "Processing QR code..." : "Position the QR code within the frame"}
+              </p>
+              <p className="text-gray-500 text-xs mt-2">
+                Automatic detection is active - hold steady for best results
+              </p>
+              <div className="mt-4 p-3 bg-green-500/20 rounded-lg border border-green-500/30">
+                <p className="text-green-400 text-xs">
+                  ✨ QR codes will be detected automatically and award points instantly
+                </p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <AnimatePresence>
       <motion.div
@@ -436,36 +573,20 @@ export default function QRScanner({ isOpen, onClose, onScan }: QRScannerProps) {
           exit={{ scale: 0.95, opacity: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-black/80 to-transparent">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <QrCode className="h-6 w-6 text-white mr-2" />
-                <h2 className="text-lg font-semibold text-white">Scan QR Code</h2>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                {isScanning && (
-                  <button
-                    onClick={toggleFlash}
-                    className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors"
-                  >
-                    {flashEnabled ? (
-                      <FlashlightOff className="h-5 w-5" />
-                    ) : (
-                      <Flashlight className="h-5 w-5" />
-                    )}
-                  </button>
+          {/* Flash Control - positioned for nested use */}
+          <div className="absolute top-4 right-4 z-10">
+            {isScanning && (
+              <button
+                onClick={toggleFlash}
+                className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors"
+              >
+                {flashEnabled ? (
+                  <FlashlightOff className="h-5 w-5" />
+                ) : (
+                  <Flashlight className="h-5 w-5" />
                 )}
-                
-                <button
-                  onClick={onClose}
-                  className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
+              </button>
+            )}
           </div>
 
           {/* Scanner Content */}

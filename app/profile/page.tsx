@@ -9,6 +9,13 @@ import ProfileSettings from "@/components/profile-settings";
 import WalletSettings from "@/components/wallet-settings";
 import { User, Wallet, Crown, Settings } from "lucide-react";
 import { Suspense } from "react";
+import dynamic from 'next/dynamic';
+
+// Dynamic import for scanner-wallet toggle
+const ScannerWalletToggle = dynamic(() => import('@/components/scanner-wallet-toggle'), {
+  ssr: false,
+  loading: () => null
+});
 
 function ProfilePageContent() {
   const router = useRouter();
@@ -16,6 +23,7 @@ function ProfilePageContent() {
   const { isAuthenticated, isLoading, isInWalletApp } = useUnifiedAuth();
   // Default to wallet tab as requested
   const [activeTab, setActiveTab] = useState("wallet");
+  const [showBillfoldWallet, setShowBillfoldWallet] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isInWalletApp) {
@@ -107,7 +115,39 @@ function ProfilePageContent() {
           transition={{ duration: 0.2 }}
         >
           {activeTab === "profile" && <ProfileSettings />}
-          {activeTab === "wallet" && <WalletSettings />}
+          {activeTab === "wallet" && (
+            <div className="space-y-6">
+              {/* Billfold Wallet Button */}
+              <div className="rounded-lg border border-border bg-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-medium">Your Payment QR</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Show vendors your QR code for Billfold payments
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowBillfoldWallet(true)}
+                  className="w-full p-4 bg-primary/10 hover:bg-primary/20 border-2 border-dashed border-primary/30 rounded-lg transition-colors group"
+                >
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Wallet className="h-8 w-8 text-primary" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-medium text-primary">Open Your Wallet</p>
+                      <p className="text-xs text-muted-foreground">
+                        View QR code & balances
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+              
+              <WalletSettings />
+            </div>
+          )}
           {activeTab === "membership" && (
             <div className="rounded-xl border border-gray-800 p-6">
               <h3 className="text-lg font-semibold mb-4">Club Membership Preferences</h3>
@@ -165,6 +205,13 @@ function ProfilePageContent() {
           )}
         </motion.div>
       </main>
+
+      {/* Billfold Wallet Modal */}
+      <ScannerWalletToggle
+        isOpen={showBillfoldWallet}
+        onClose={() => setShowBillfoldWallet(false)}
+        defaultMode="wallet"
+      />
     </motion.div>
   );
 }

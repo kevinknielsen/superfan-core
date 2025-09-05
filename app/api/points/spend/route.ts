@@ -69,9 +69,9 @@ export async function POST(request: NextRequest) {
 
     const currentStatus = membership?.current_status || 'cadet';
 
-    // Use database function for safe spending with status protection
+    // Use unified database function for safe spending with status protection
     const { data: spendResult, error: spendError } = await supabase
-      .rpc('spend_points_with_protection', {
+      .rpc('spend_points_unified', {
         p_wallet_id: wallet.id,
         p_points_to_spend: pointsToSpend,
         p_preserve_status: preserveStatus,
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
       try {
         // Attempt to reverse the spending by calling the database function again
         const { data: compensationResult, error: compensationError } = await supabase
-          .rpc('spend_points_with_protection', {
+          .rpc('spend_points_unified', {
             p_wallet_id: wallet.id,
             p_points_to_spend: -pointsToSpend, // Negative amount to reverse
             p_preserve_status: false, // Don't preserve status during compensation
