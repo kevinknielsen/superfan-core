@@ -1,5 +1,5 @@
-// Re-export server-side admin function to maintain single source of truth
-export { isAdmin } from './security.server';
+// Client-safe security utilities only
+// Import isAdmin from './security.server' in server-only files
 
 /** @deprecated Use the async isAdmin() instead. */
 export function isAdminSync(userId: string | undefined): boolean {

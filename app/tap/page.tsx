@@ -46,6 +46,7 @@ function TapPageContent() {
   
   const confettiRef = useRef<HTMLCanvasElement>(null);
   const processingStarted = useRef(false);
+  const autoLoginTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Extract QR parameters
   const qrId = searchParams.get('qr');
@@ -57,14 +58,25 @@ function TapPageContent() {
   // Load club information first (even for unauthenticated users)
   const [clubInfo, setClubInfo] = useState<any>(null);
   
+  // Reset processing when URL parameters change
   useEffect(() => {
+    processingStarted.current = false;
+    setTapResult(null);
+    setError(null);
+    
+    // Clear any pending auto-login timer
+    if (autoLoginTimerRef.current) {
+      clearTimeout(autoLoginTimerRef.current);
+      autoLoginTimerRef.current = null;
+    }
+    
     // Always load club info first
     if (clubId) {
       loadClubInfo();
     } else {
       setError("Invalid QR code - missing club information");
     }
-  }, [clubId]);
+  }, [qrId, clubId, source]);
 
   // Process tap-in only after authentication
   useEffect(() => {
@@ -81,6 +93,27 @@ function TapPageContent() {
 
   const handleAuthAndTapIn = async () => {
     try {
+      // Clear auto-login timer if user clicks manually
+      if (autoLoginTimerRef.current) {
+        clearTimeout(autoLoginTimerRef.current);
+        autoLoginTimerRef.current = null;
+      }
+
+      // If already authenticated, process tap-in directly
+      if (isAuthenticated && user && clubInfo) {
+        if (!processingStarted.current) {
+          processingStarted.current = true;
+          processTapIn();
+        }
+        return;
+      }
+
+      // Skip Privy login in wallet app context
+      if (isInWalletApp) {
+        console.warn("Cannot trigger Privy login in wallet app context");
+        return;
+      }
+
       await login();
       // After login, the useEffect will automatically process the tap-in
     } catch (error) {
@@ -91,15 +124,29 @@ function TapPageContent() {
 
   // Auto-trigger Privy login modal when club info loads for unauthenticated users
   useEffect(() => {
-    if (!authLoading && !isAuthenticated && clubInfo && !processingStarted.current) {
+    if (!authLoading && !isAuthenticated && !isInWalletApp && clubInfo && !processingStarted.current) {
       // Small delay to let the user see the club preview first
-      const timer = setTimeout(() => {
+      autoLoginTimerRef.current = setTimeout(() => {
         handleAuthAndTapIn();
       }, 5000); // 5 second delay to show the club preview
       
-      return () => clearTimeout(timer);
+      return () => {
+        if (autoLoginTimerRef.current) {
+          clearTimeout(autoLoginTimerRef.current);
+          autoLoginTimerRef.current = null;
+        }
+      };
     }
-  }, [authLoading, isAuthenticated, clubInfo]);
+  }, [authLoading, isAuthenticated, isInWalletApp, clubInfo]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoLoginTimerRef.current) {
+        clearTimeout(autoLoginTimerRef.current);
+      }
+    };
+  }, []);
 
   const loadClubInfo = async () => {
     try {

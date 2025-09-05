@@ -304,7 +304,7 @@ export default function QRManagement() {
                         <Badge variant="outline" className="text-xs">
                           {qr.club_name}
                         </Badge>
-                        {qr.qr_data.points != null && (
+                        {qr.qr_data?.points != null && (
                           <Badge variant="secondary" className="text-xs">
                             +{qr.qr_data.points} points
                           </Badge>
@@ -314,7 +314,7 @@ export default function QRManagement() {
                     
                     {/* Details - stack on mobile */}
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
-                      {qr.qr_data.location && (
+                      {qr.qr_data?.location && (
                         <div className="flex items-center gap-1">
                           <MapPin className="h-3 w-3" />
                           {qr.qr_data.location}

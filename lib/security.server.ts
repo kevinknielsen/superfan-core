@@ -1,5 +1,10 @@
 // SERVER-ONLY security utilities - never imported on client side
 
+// Module-level guard against client-side imports
+if (typeof window !== "undefined" || typeof document !== "undefined" || typeof self !== "undefined") {
+  throw new Error("security.server.ts may only be imported on the server");
+}
+
 import type { SupabaseClient } from '@supabase/supabase-js';
 let cachedServiceClient: SupabaseClient | null = null;
 

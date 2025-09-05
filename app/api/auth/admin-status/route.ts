@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { createServiceClient } from '@/app/api/supabase';
+import { isAdmin } from '@/lib/security.server';
 
 /**
  * Check if the current user has admin access
