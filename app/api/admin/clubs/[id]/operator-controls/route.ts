@@ -28,7 +28,7 @@ const StatusMultipliersSchema = z.array(z.object({
 }));
 
 const TestPricingSchema = z.object({
-  base_usd_cents: z.number().min(0),
+  base_usd_cents: z.coerce.number().int().nonnegative(),
   user_status: z.enum(['cadet', 'resident', 'headliner', 'superfan'])
 });
 
@@ -299,13 +299,26 @@ export async function POST(
       throw priceError;
     }
 
+    // Validate displayPrice result
+    if (displayPrice === null || displayPrice === undefined || !Number.isFinite(displayPrice)) {
+      return NextResponse.json({
+        error: 'Invalid pricing calculation result',
+        details: `Database function returned invalid price: ${displayPrice}`,
+        base_usd_cents,
+        user_status
+      }, { status: 500 });
+    }
+
+    // Ensure displayPrice is a non-negative integer
+    const validatedDisplayPrice = Math.max(0, Math.floor(displayPrice));
+
     return NextResponse.json({
       base_usd_cents,
       user_status,
-      display_price_points: displayPrice,
-      display_price_usd: `$${(displayPrice / 100).toFixed(2)}`,
-      savings_points: Math.max(0, base_usd_cents - displayPrice),
-      savings_usd: `$${(Math.max(0, base_usd_cents - displayPrice) / 100).toFixed(2)}`,
+      display_price_points: validatedDisplayPrice,
+      display_price_usd: `$${(validatedDisplayPrice / 100).toFixed(2)}`,
+      savings_points: Math.max(0, base_usd_cents - validatedDisplayPrice),
+      savings_usd: `$${(Math.max(0, base_usd_cents - validatedDisplayPrice) / 100).toFixed(2)}`,
     });
 
   } catch (error) {
