@@ -117,13 +117,10 @@ export function useUserClubMembership(privyUserId: string | null, clubId: string
         `)
         .eq('user_id', user.id)
         .eq('club_id', clubId)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single to handle 0 results
 
-      if (error) {
-        if (error.code === 'PGRST116') return null; // No membership found
-        throw error;
-      }
-      return data;
+      if (error) throw error;
+      return data; // Will return null if no membership found
     },
     enabled: !!privyUserId && !!clubId,
   });
@@ -157,12 +154,10 @@ export function useUserClubData(privyUserId: string | null, clubId: string | nul
         `)
         .eq('user_id', user.id)
         .eq('club_id', clubId)
-        .single();
+        .maybeSingle(); // Use maybeSingle to handle 0 results gracefully
 
-      if (membershipError) {
-        if (membershipError.code === 'PGRST116') return null; // No membership
-        throw membershipError;
-      }
+      if (membershipError) throw membershipError;
+      if (!membership) return null; // No membership found
 
       // Get unlocks for this club
       const { data: unlocks, error: unlocksError } = await supabase
@@ -191,14 +186,14 @@ export function useUserClubData(privyUserId: string | null, clubId: string | nul
         .select('*')
         .eq('user_id', user.id)
         .eq('club_id', clubId)
-        .single();
+        .maybeSingle(); // Use maybeSingle to handle 0 results gracefully
 
       return {
         membership,
         club: membership.club,
         unlocks: unlocks || [],
         recent_tap_ins: tapIns || [],
-        house_account: houseError?.code === 'PGRST116' ? undefined : houseAccount,
+        house_account: houseAccount || undefined,
       };
     },
     enabled: !!privyUserId && !!clubId,

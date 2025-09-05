@@ -24,10 +24,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import { 
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger 
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useClubs } from "@/hooks/use-clubs";
 import { ClubMediaManager } from "@/components/club-media-manager";
 import type { Club } from "@/types/club.types";
+import { getAccessToken } from "@privy-io/react-auth";
 
 interface ClubManagementProps {
   onStatsUpdate?: () => void;
@@ -38,6 +48,20 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingClub, setEditingClub] = useState<Club | null>(null);
+
+  // Form state for club creation/editing
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    city: '',
+    point_sell_cents: 100, // Default: $1 = 1000 points
+    point_settle_cents: 50,  // Default: 50% of sell price
+    image_url: ''
+  });
 
   // Load clubs data
   const { data: clubs = [], isLoading, refetch } = useClubs();
@@ -49,23 +73,105 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
     club.city?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleCreateClub = async () => {
-    setIsCreating(true);
-    // TODO: Implement club creation modal
-    toast({
-      title: "Coming Soon",
-      description: "Club creation interface will be available soon",
+  // Reset form data
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      description: '',
+      city: '',
+      point_sell_cents: 100,
+      point_settle_cents: 50,
+      image_url: ''
     });
-    setIsCreating(false);
+  };
+
+  const handleCreateClub = async () => {
+    setShowCreateModal(true);
+    resetForm();
   };
 
   const handleEditClub = (club: Club) => {
-    setSelectedClub(club);
-    // TODO: Implement club editing modal
-    toast({
-      title: "Coming Soon", 
-      description: "Club editing interface will be available soon",
+    setEditingClub(club);
+    setFormData({
+      name: club.name,
+      description: club.description || '',
+      city: club.city || '',
+      point_sell_cents: club.point_sell_cents || 100,
+      point_settle_cents: club.point_settle_cents || 50,
+      image_url: club.image_url || ''
     });
+    setShowEditModal(true);
+  };
+
+  const handleSubmitClub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate point prices
+    if (formData.point_settle_cents > formData.point_sell_cents) {
+      toast({
+        title: "Invalid Pricing",
+        description: "Settle price cannot be higher than sell price",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const isEdit = !!editingClub;
+    const setLoading = isEdit ? setIsEditing : setIsCreating;
+    
+    setLoading(true);
+    
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Authentication required');
+      }
+
+      const payload = isEdit 
+        ? { id: editingClub.id, ...formData }
+        : formData;
+
+      const response = await fetch('/api/admin/clubs', {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json() as { error?: string };
+        throw new Error(error.error || `Failed to ${isEdit ? 'update' : 'create'} club`);
+      }
+
+      const club = await response.json() as Club;
+      
+      // Refresh clubs list and stats
+      await refetch();
+      onStatsUpdate?.();
+      
+      // Close modals and reset state
+      setShowCreateModal(false);
+      setShowEditModal(false);
+      setEditingClub(null);
+      resetForm();
+      
+      toast({
+        title: `Club ${isEdit ? 'Updated' : 'Created'}! 🎉`,
+        description: `${club.name} has been ${isEdit ? 'updated' : 'created'} successfully`,
+      });
+
+    } catch (error) {
+      console.error('Club operation error:', error);
+      toast({
+        title: `${isEdit ? 'Update' : 'Creation'} Failed`,
+        description: error instanceof Error ? error.message : 'Please try again',
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleViewClub = (club: Club) => {
@@ -74,8 +180,20 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
 
   const handleToggleActive = async (club: Club) => {
     try {
-      const response = await fetch(`/api/admin/clubs/${club.id}/toggle-active`, {
-        method: 'POST',
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch(`/api/admin/clubs/${club.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          is_active: !club.is_active
+        }),
       });
 
       if (response.ok) {
@@ -86,12 +204,14 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           description: `${club.name} has been ${club.is_active ? 'deactivated' : 'activated'}`,
         });
       } else {
-        throw new Error('Failed to update club');
+        const error = await response.json() as { error?: string };
+        throw new Error(error.error || 'Failed to update club');
       }
     } catch (error) {
+      console.error('Toggle club error:', error);
       toast({
         title: "Error",
-        description: "Failed to update club status",
+        description: error instanceof Error ? error.message : "Failed to update club status",
         variant: "destructive",
       });
     }
@@ -136,10 +256,20 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           {/* Club Info */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                Club Information
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Club Information
+                </CardTitle>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => handleEditClub(selectedClub)}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Details
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -156,6 +286,13 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
                   <MapPin className="h-4 w-4" />
                   {selectedClub.city || 'No location set'}
                 </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Pricing</label>
+                <div className="text-sm space-y-1">
+                  <p>Sell: {selectedClub.point_sell_cents || 100}¢ per 1000 points</p>
+                  <p>Settle: {selectedClub.point_settle_cents || 50}¢ per 1000 points</p>
+                </div>
               </div>
               <div>
                 <label className="text-sm font-medium">Status</label>
@@ -196,10 +333,128 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           />
         </div>
         
-        <Button onClick={handleCreateClub} disabled={isCreating}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Club
-        </Button>
+        <Dialog open={showCreateModal || showEditModal} onOpenChange={(open) => {
+          if (!open) {
+            setShowCreateModal(false);
+            setShowEditModal(false);
+            setEditingClub(null);
+            resetForm();
+          }
+        }}>
+          <DialogTrigger asChild>
+            <Button onClick={handleCreateClub}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Club
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingClub ? 'Edit Club' : 'Create New Club'}</DialogTitle>
+            </DialogHeader>
+            
+            <form onSubmit={handleSubmitClub} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="name">Club Name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="e.g., PHAT Club"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="city">City</Label>
+                  <Input
+                    id="city"
+                    value={formData.city}
+                    onChange={(e) => setFormData({...formData, city: e.target.value})}
+                    placeholder="e.g., Los Angeles"
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  placeholder="Describe the artist, label, or curator community..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="point_sell_cents">Point Sell Price (cents)</Label>
+                  <Input
+                    id="point_sell_cents"
+                    type="number"
+                    value={formData.point_sell_cents}
+                    onChange={(e) => setFormData({...formData, point_sell_cents: parseInt(e.target.value) || 100})}
+                    min="50"
+                    max="500"
+                    placeholder="100"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formData.point_sell_cents}¢ = ${(formData.point_sell_cents / 100).toFixed(2)} for 1000 points
+                  </p>
+                </div>
+                
+                <div>
+                  <Label htmlFor="point_settle_cents">Point Settle Price (cents)</Label>
+                  <Input
+                    id="point_settle_cents"
+                    type="number"
+                    value={formData.point_settle_cents}
+                    onChange={(e) => setFormData({...formData, point_settle_cents: parseInt(e.target.value) || 50})}
+                    min="25"
+                    max="250"
+                    placeholder="50"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Artist gets {formData.point_settle_cents}¢ per 1000 points spent
+                  </p>
+                </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="image_url">Club Logo URL (optional)</Label>
+                <Input
+                  id="image_url"
+                  type="url"
+                  value={formData.image_url}
+                  onChange={(e) => setFormData({...formData, image_url: e.target.value})}
+                  placeholder="https://example.com/logo.png"
+                />
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setShowEditModal(false);
+                    setEditingClub(null);
+                    resetForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isCreating || isEditing}>
+                  {editingClub 
+                    ? (isEditing ? 'Updating...' : 'Update Club')
+                    : (isCreating ? 'Creating...' : 'Create Club')
+                  }
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Stats Summary */}
@@ -321,6 +576,8 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
           ))
         )}
       </div>
+
+
     </div>
   );
 }
