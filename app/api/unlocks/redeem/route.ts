@@ -78,18 +78,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user has enough points for this unlock
-    const requiredPoints = STATUS_POINTS[unlock.required_status] || 0;
+    const requiredPoints = STATUS_POINTS[unlock.min_status] || 0;
     if (membership.points < requiredPoints) {
       return NextResponse.json({ 
-        error: `Insufficient points. You need ${requiredPoints} points for ${unlock.required_status} status.`,
+        error: `Insufficient points. You need ${requiredPoints} points for ${unlock.min_status} status.`,
         required_points: requiredPoints,
         current_points: membership.points
       }, { status: 403 });
     }
 
-    // Check if already redeemed (if we have a redemptions table)
+    // Check if already redeemed
     const { data: existingRedemption, error: redemptionCheckError } = await supabaseAny
-      .from('unlock_redemptions')
+      .from('redemptions')
       .select('id')
       .eq('user_id', user.id)
       .eq('unlock_id', redeemData.unlock_id)
@@ -103,15 +103,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Check capacity limits if specified
-    if (unlock.metadata?.capacity) {
+    if (unlock.rules?.capacity) {
       const { count: redemptionCount, error: countError } = await supabaseAny
-        .from('unlock_redemptions')
+        .from('redemptions')
         .select('*', { count: 'exact', head: true })
         .eq('unlock_id', redeemData.unlock_id);
 
       if (countError) {
         console.error("[Unlock Redeem API] Error checking capacity:", countError);
-      } else if (redemptionCount >= unlock.metadata.capacity) {
+      } else if (redemptionCount >= unlock.rules.capacity) {
         return NextResponse.json({ 
           error: "This unlock has reached its capacity limit" 
         }, { status: 409 });
@@ -119,8 +119,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check expiry date if specified
-    if (unlock.metadata?.expiry_date) {
-      const expiryDate = new Date(unlock.metadata.expiry_date);
+    if (unlock.rules?.expiry_date) {
+      const expiryDate = new Date(unlock.rules.expiry_date);
       if (new Date() > expiryDate) {
         return NextResponse.json({ 
           error: "This unlock has expired" 
@@ -130,17 +130,17 @@ export async function POST(request: NextRequest) {
 
     // Create redemption record
     const { data: redemption, error: createError } = await supabaseAny
-      .from('unlock_redemptions')
+      .from('redemptions')
       .insert({
         user_id: user.id,
         unlock_id: redeemData.unlock_id,
-        club_id: redeemData.club_id,
-        redeemed_at: new Date().toISOString(),
+        status: 'confirmed',
         metadata: {
           unlock_title: unlock.title,
-          unlock_type: unlock.unlock_type,
+          unlock_type: unlock.type,
           user_status_at_redemption: membership.current_status,
-          user_points_at_redemption: membership.points
+          user_points_at_redemption: membership.points,
+          club_id: redeemData.club_id
         }
       })
       .select()
@@ -153,6 +153,29 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Unlock Redeem API] User ${auth.userId} redeemed "${unlock.title}" in club ${redeemData.club_id}`);
 
+    // Send notification (fire and forget)
+    try {
+      const notificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/notifications/perk-redemption`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          redemption_id: redemption.id,
+          unlock_id: redeemData.unlock_id,
+        }),
+      });
+
+      if (!notificationResponse.ok) {
+        console.warn("[Unlock Redeem API] Notification failed, but redemption succeeded");
+      } else {
+        console.log("[Unlock Redeem API] Notification sent successfully");
+      }
+    } catch (notificationError) {
+      console.warn("[Unlock Redeem API] Notification error:", notificationError);
+      // Don't fail the redemption if notification fails
+    }
+
     // Return success with redemption details
     return NextResponse.json({
       success: true,
@@ -160,8 +183,8 @@ export async function POST(request: NextRequest) {
       unlock: {
         title: unlock.title,
         description: unlock.description,
-        unlock_type: unlock.unlock_type,
-        metadata: unlock.metadata
+        unlock_type: unlock.type,
+        metadata: unlock.rules
       },
       message: `Successfully redeemed: ${unlock.title}`
     });

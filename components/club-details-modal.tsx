@@ -22,10 +22,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
+import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
 import UnifiedPointsWallet from "./unified-economy/unified-points-wallet";
 import UnlockRedemption from "./unlock-redemption";
+import PerkRedemptionConfirmation from "./perk-redemption-confirmation";
+import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
@@ -59,8 +62,8 @@ function renderClubImages(club: Club) {
   return (
     <ClubMediaDisplay
       clubId={club.id}
-      className="h-full w-full"
-      showControls={true}
+      className="h-full w-full pointer-events-none"
+      showControls={false}
       autoPlay={false}
       fallbackImage="/placeholder.svg?height=400&width=600&query=music club"
     />
@@ -77,6 +80,19 @@ export default function ClubDetailsModal({
   const { toast } = useToast();
   const modalRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
+  const [redemptionConfirmation, setRedemptionConfirmation] = useState<{
+    redemption: any;
+    unlock: any;
+  } | null>(null);
+  const [perkDetails, setPerkDetails] = useState<{
+    isOpen: boolean;
+    unlock: any;
+    redemption: any;
+  }>({
+    isOpen: false,
+    unlock: null,
+    redemption: null,
+  });
   
   // Get complete club data including unlocks
   const { data: clubData } = useClub(club.id);
@@ -85,12 +101,15 @@ export default function ClubDetailsModal({
   const membership = propMembership || userClubData?.membership;
   const joinClubMutation = useJoinClub();
 
+  // Get unified points data - same as wallet component
+  const { breakdown } = useUnifiedPoints(club.id);
 
   // Status calculations
   const currentStatus = membership?.current_status || 'cadet';
   const currentPoints = membership?.points || 0;
   const nextStatus = getNextStatus(currentStatus);
-  const pointsToNext = getPointsToNext(currentPoints, currentStatus);
+  // Use unified points data if available, fallback to manual calculation
+  const pointsToNext = breakdown?.status.points_to_next || getPointsToNext(currentPoints, currentStatus);
   
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
@@ -224,213 +243,168 @@ export default function ClubDetailsModal({
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6"
+        className="fixed inset-0 z-50 bg-[#0E0E14]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
+        transition={{ duration: 0.3 }}
       >
         <motion.div
           ref={modalRef}
-          className="relative w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#0E0E14] shadow-2xl mb-0 sm:mb-0"
-          initial={{ y: "100%" }}
-          animate={{ y: 0 }}
-          exit={{ y: "100%" }}
+          className="relative w-full h-full overflow-y-auto bg-[#0E0E14]"
+          initial={{ x: "100%" }}
+          animate={{ x: 0 }}
+          exit={{ x: "100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
         >
-          {/* Header Image */}
-          <div className="relative h-80 w-full overflow-hidden rounded-t-2xl">
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90" />
+          {/* Header with Blurred Background */}
+          <div className="relative h-80 w-full overflow-hidden">
+            {/* Blurred background image */}
+            <div className="absolute inset-0 scale-110 blur-lg opacity-95">
+              {renderClubImages(club)}
+            </div>
             
-            {renderClubImages(club)}
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/10 to-black/40" />
 
-            {/* Close button */}
+            {/* Back button */}
             <button
-              onClick={onClose}
-              className="absolute right-3 top-3 rounded-full bg-black/40 backdrop-blur-sm p-2 text-white hover:bg-black/60 transition-colors"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Back button clicked');
+                onClose();
+              }}
+              className="absolute left-4 top-12 rounded-full bg-black/40 backdrop-blur-sm p-3 text-white hover:bg-black/60 transition-colors z-30"
             >
-              <X className="h-5 w-5" />
+              <ChevronLeft className="h-6 w-6" />
             </button>
 
-            {/* Action buttons */}
-            <div className="absolute right-3 top-16 flex flex-col gap-3">
-              <button
-                className="rounded-full bg-black/40 backdrop-blur-sm p-2 text-white hover:bg-black/60 transition-colors"
-                onClick={async () => {
-                  if (!club) return;
-                  const url = "https://superfan.one";
-                  try {
-                    await navigator.clipboard.writeText(url);
-                    toast({
-                      title: "Link copied!",
-                      description: "Share this club with others.",
-                    });
-                  } catch (err) {
-                    toast({
-                      variant: "destructive",
-                      title: "Failed to copy",
-                      description:
-                        "Your browser blocked clipboard access. You can still copy the URL from the address bar.",
-                    });
-                  }
-                }}
-                title="Copy shareable link"
-              >
-                <Share2 className="h-5 w-5" />
-              </button>
-            </div>
+            {/* Share button */}
+            <button
+              className="absolute right-4 top-12 rounded-full bg-black/40 backdrop-blur-sm p-3 text-white hover:bg-black/60 transition-colors z-30"
+              onClick={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Share button clicked');
+                if (!club) return;
+                const url = "https://superfan.one";
+                try {
+                  await navigator.clipboard.writeText(url);
+                  toast({
+                    title: "Link copied!",
+                    description: "Share this club with others.",
+                  });
+                } catch (err) {
+                  toast({
+                    variant: "destructive",
+                    title: "Failed to copy",
+                    description:
+                      "Your browser blocked clipboard access. You can still copy the URL from the address bar.",
+                  });
+                }
+              }}
+              title="Copy shareable link"
+            >
+              <Share2 className="h-5 w-5" />
+            </button>
 
-            {/* Club info (matches project modal artist info) */}
-            <div className="absolute bottom-4 left-4 right-4">
-              <h1 className="text-3xl font-bold text-white">
+            {/* Centered Club Profile */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none z-10">
+              {/* Circular Avatar */}
+              <div className="relative mb-4">
+                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl">
+                  {renderClubImages(club)}
+                </div>
+              </div>
+
+              {/* Club Name */}
+              <h1 className="text-3xl font-bold text-white mb-2">
                 {club.name}
               </h1>
-              <p className="text-lg text-white/80 flex items-center">
-                {club.city && (
-                  <>
-                    <MapPin className="h-4 w-4 mr-1" />
-                    {club.city}
-                  </>
-                )}
-              </p>
+
+              {/* Location */}
+              {club.city && (
+                <p className="text-lg text-white/80 flex items-center">
+                  <MapPin className="h-4 w-4 mr-1" />
+                  {club.city}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Social links (adapted for club search) */}
-          <div className="flex justify-center gap-6 border-b border-gray-800 py-4">
-            {(() => {
-              const searchTerm = club.name ?? "";
-              return (
-                <>
-                  <button
-                    onClick={(e) => handleExternalLink(`https://www.google.com/search?q=${encodeURIComponent(
-                      searchTerm + " music"
-                    )}`, e)}
-                    className="text-white/70 hover:text-white transition-colors"
-                    aria-label={`Search ${searchTerm} on Google`}
-                    title={`Search for ${searchTerm} on Google`}
-                  >
-                    <Globe className="h-6 w-6" />
-                  </button>
-                  <button
-                    onClick={(e) => handleExternalLink(`https://open.spotify.com/search/${encodeURIComponent(
-                      searchTerm
-                    )}`, e)}
-                    className="text-white/70 hover:text-white transition-colors"
-                    aria-label={`Search ${searchTerm} on Spotify`}
-                    title={`Search for ${searchTerm} on Spotify`}
-                  >
-                    <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current">
-                      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.6 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.36.12-.78-.12-.9-.48-.12-.36.12-.78.48-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.48.66.36 1.021zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.24 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => handleExternalLink(`https://www.instagram.com/explore/tags/${encodeURIComponent(
-                      searchTerm.replace(/\s+/g, "")
-                    )}`, e)}
-                    className="text-white/70 hover:text-white transition-colors"
-                    aria-label={`Search ${searchTerm} on Instagram`}
-                    title={`Search for ${searchTerm} on Instagram`}
-                  >
-                    <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current">
-                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.057-1.644.069-4.85.069-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.073-1.689-.073-4.849 0-3.259.014-3.668.072-4.948.2-4.358 2.618-6.78 6.98-6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => handleExternalLink(`https://www.tiktok.com/search?q=${encodeURIComponent(
-                      searchTerm
-                    )}`, e)}
-                    className="text-white/70 hover:text-white transition-colors"
-                    aria-label={`Search ${searchTerm} on TikTok`}
-                    title={`Search for ${searchTerm} on TikTok`}
-                  >
-                    <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current">
-                      <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
-                    </svg>
-                  </button>
-                </>
-              );
-            })()}
-          </div>
 
           {/* Club details */}
-          <div className="px-4 py-5">
+          <div className="px-6 py-6">
             {/* Description */}
-            <div className="mb-6">
-              <h3 className="mb-2 text-lg font-semibold">About</h3>
-              <p className="text-gray-300">
+            <div className="mb-8">
+              <h3 className="mb-3 text-xl font-semibold">About</h3>
+              <p className="text-gray-300 text-base leading-relaxed">
                 {club.description ||
                   "Add membership to this exclusive club for unique music experiences and perks."}
               </p>
             </div>
 
-            {/* Membership Status and Points Wallet */}
-            {membership ? (
-              <div className="mb-6 space-y-4">
-                {/* Status Section */}
-                <div className="rounded-xl border border-gray-800 p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-full ${STATUS_COLORS[currentStatus]} bg-current/20`}>
-                      <StatusIcon className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-medium">
-                        {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
-                      </h4>
-                      <p className="text-sm text-gray-400">
-                        {currentPoints} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
-                      </p>
+            {/* Latest Section - Club Media */}
+            <div className="mb-8">
+              <h3 className="mb-4 text-xl font-semibold">Latest</h3>
+              {/* Container with responsive sizing */}
+              <div className="flex justify-center">
+                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl">
+                  <div className="relative aspect-video md:aspect-[4/3]">
+                    <ClubMediaDisplay
+                      clubId={club.id}
+                      className="w-full h-full"
+                      showControls={true}
+                      autoPlay={false}
+                      fallbackImage="/placeholder.svg?height=400&width=600&query=music club"
+                    />
+                  {/* Subtle overlay for better text contrast */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                  
+                  {/* Enhanced play button */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                    <div className="w-20 h-20 bg-white/95 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-sm border border-white/20">
+                      <svg className="w-8 h-8 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowPurchaseOverlay(true)}
-                    className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg hover:bg-primary/90 transition-colors"
-                  >
-                    Open Wallet
-                  </button>
                 </div>
-
-
+                
+                {/* Enhanced content section */}
+                <div className="p-5 bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-sm">
+                  <h4 className="font-bold text-white text-lg mb-3">Behind-the-Scenes from {club.name}</h4>
+                  
+                  {/* Cool accent line */}
+                  <div className="w-12 h-0.5 bg-gradient-to-r from-primary to-purple-400 rounded-full"></div>
+                </div>
+                
+                {/* Subtle glow effect */}
+                <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-primary/10 via-transparent to-purple-500/10 pointer-events-none"></div>
+                </div>
               </div>
-            ) : (
-              <div className="mb-6 rounded-xl border border-gray-800 p-4 text-center">
-                <h4 className="font-medium mb-2">Add Membership</h4>
-                <p className="text-sm text-gray-400 mb-3">
-                  Become a member to earn points, unlock perks, and access the community.
-                </p>
-                <button
-                  onClick={handleJoinClub}
-                  disabled={joinClubMutation.isPending || !isAuthenticated}
-                  className="inline-flex items-center space-x-2 rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {joinClubMutation.isPending ? (
-                    <Spinner size="sm" />
-                  ) : (
-                    <Users className="h-4 w-4" />
-                  )}
-                  <span>{joinClubMutation.isPending ? "Adding..." : "Add Membership"}</span>
-                </button>
-              </div>
-            )}
+            </div>
 
-            {/* Club stats (replaces project stats) */}
-            <div className="mb-6 grid grid-cols-2 gap-4">
-              <div className="rounded-xl border border-gray-800 p-3">
-                <div className="flex items-center gap-2">
+
+            {/* Club Details Grid */}
+            <div className="mb-8 grid grid-cols-2 gap-4">
+              <div className="rounded-xl border border-gray-800 p-4 bg-gray-900/30">
+                <div className="flex items-center gap-2 mb-2">
                   <Calendar className="h-5 w-5 text-primary" />
                   <span className="text-sm text-gray-400">Founded</span>
                 </div>
-                <div className="mt-1 font-medium">
+                <div className="font-medium text-white">
                   {formatDate(club.created_at)}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-800 p-3">
-                <div className="flex items-center gap-2">
+              <div className="rounded-xl border border-gray-800 p-4 bg-gray-900/30">
+                <div className="flex items-center gap-2 mb-2">
                   <Users className="h-5 w-5 text-primary" />
                   <span className="text-sm text-gray-400">Status</span>
                 </div>
-                <div className="mt-1 font-medium">
+                <div className="font-medium text-white">
                   {membership ? (
                     <span className={STATUS_COLORS[currentStatus]}>
                       {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
@@ -441,40 +415,32 @@ export default function ClubDetailsModal({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-800 p-3">
-                <div className="flex items-center gap-2">
+              <div className="rounded-xl border border-gray-800 p-4 bg-gray-900/30">
+                <div className="flex items-center gap-2 mb-2">
                   <MapPin className="h-5 w-5 text-primary" />
                   <span className="text-sm text-gray-400">Location</span>
                 </div>
-                <div className="mt-1 font-medium">{club.city || "Everywhere"}</div>
+                <div className="font-medium text-white">{club.city || "Everywhere"}</div>
               </div>
 
-              <div className="rounded-xl border border-gray-800 p-3">
-                <div className="flex items-center gap-2">
+              <div className="rounded-xl border border-gray-800 p-4 bg-gray-900/30">
+                <div className="flex items-center gap-2 mb-2">
                   <Shield className="h-5 w-5 text-primary" />
                   <span className="text-sm text-gray-400">Club Type</span>
                 </div>
-                <div className="mt-1 font-medium">
+                <div className="font-medium text-white">
                   <span className="text-green-400">Verified</span>
                 </div>
               </div>
             </div>
 
-            {/* Unlocks Section (Status-based) */}
+            {/* Available Perks Section - Grid Layout */}
             {membership && (
-              <div className="mb-6">
-                <h3 className="mb-4 text-lg font-semibold flex items-center gap-2">
-                  <Gift className="h-5 w-5 text-primary" />
-                  Available Perks
-                </h3>
-                {/* Temporarily disabled to fix React key conflicts */}
-                <div className="p-4 border border-dashed border-gray-300 rounded-lg text-center text-gray-500">
-                  <Gift className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>Unlocks system being upgraded for unified economy</p>
-                  <p className="text-sm">Coming back soon with enhanced features!</p>
-                </div>
-                {/* <UnlockRedemption
+              <div className="mb-8">
+                <h3 className="mb-4 text-xl font-semibold">Available Perks</h3>
+                <UnlockRedemption
                   clubId={club.id}
+                  clubName={club.name}
                   userStatus={currentStatus}
                   userPoints={currentPoints}
                   onRedemption={() => {
@@ -484,63 +450,121 @@ export default function ClubDetailsModal({
                       description: "Check your email for details",
                     });
                   }}
-                /> */}
+                  onShowRedemptionConfirmation={(redemption, unlock) => {
+                    setRedemptionConfirmation({ redemption, unlock });
+                  }}
+                  onShowPerkDetails={(unlock, redemption) => {
+                    setPerkDetails({ isOpen: true, unlock, redemption });
+                  }}
+                />
               </div>
             )}
 
 
 
-            {/* Status progress (replaces funding progress) */}
-            {membership && (
+            {/* Membership Status Section - Moved to Bottom */}
+            {membership ? (
               <div className="mb-8">
-                <div className="mb-2 flex justify-between">
-                  <span className="text-sm font-medium">
-                    {currentPoints.toLocaleString()} points
-                  </span>
-                  <span className="text-sm text-gray-400">
-                    {nextStatus 
-                      ? `${pointsToNext} to ${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}`
-                      : "Max Status!"
-                    }
-                  </span>
+                <h3 className="mb-4 text-xl font-semibold">Your Status</h3>
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className={`flex h-16 w-16 items-center justify-center rounded-full ${STATUS_COLORS[currentStatus]} bg-current/20`}>
+                      <StatusIcon className="h-8 w-8" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xl font-semibold text-white mb-1">
+                        {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
+                      </h4>
+                      <p className="text-gray-400">
+                        {currentPoints.toLocaleString()} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Status Progress - Same as Unified Wallet */}
+                  {nextStatus && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Progress to {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}</span>
+                        <span>{pointsToNext} points needed</span>
+                      </div>
+                      <div className="w-full bg-gray-800 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            currentStatus === 'superfan' ? 'bg-yellow-500' : 'bg-primary'
+                          }`}
+                          style={{
+                            width: `${
+                              breakdown?.status.progress_to_next 
+                                ? `${breakdown.status.progress_to_next}%`
+                                : `${Math.min(((currentPoints - STATUS_THRESHOLDS[currentStatus]) / (STATUS_THRESHOLDS[nextStatus] - STATUS_THRESHOLDS[currentStatus])) * 100, 100)}%`
+                            }`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-800">
-                  <div
-                    className={`h-full ${
-                      currentStatus === 'superfan' ? 'bg-yellow-500' : 'bg-primary'
-                    }`}
-                    style={{
-                      width: nextStatus 
-                        ? `${((currentPoints - STATUS_THRESHOLDS[currentStatus]) / (STATUS_THRESHOLDS[nextStatus] - STATUS_THRESHOLDS[currentStatus])) * 100}%`
-                        : "100%",
-                    }}
-                  />
+              </div>
+            ) : (
+              <div className="mb-8">
+                <h3 className="mb-4 text-xl font-semibold">Join Club</h3>
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+                  <h4 className="font-semibold text-white mb-2">Add Membership</h4>
+                  <p className="text-gray-400">
+                    Become a member to earn points, unlock perks, and access the community.
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* Action buttons */}
-            {!membership ? (
-              <button
-                onClick={handleJoinClub}
-                disabled={joinClubMutation.isPending || !isAuthenticated}
-                className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label={
-                  !isAuthenticated
-                    ? "Sign in required to add memberships"
-                    : undefined
-                }
-              >
-                {joinClubMutation.isPending ? "Adding Membership..." : "Add Membership"}
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowPurchaseOverlay(true)}
-                className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
-              >
-                Open Wallet
-              </button>
-            )}
+            {/* Bottom spacing for anchored button */}
+            <div className="h-20" />
+          </div>
+
+          {/* Anchored Action Button - Always Visible */}
+          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent z-50">
+            <div className="flex justify-center">
+              <div className="w-full max-w-md">
+                {membership ? (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('Open Wallet clicked');
+                      setShowPurchaseOverlay(true);
+                    }}
+                    className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
+                  >
+                    Open Wallet
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('Join Club clicked');
+                      handleJoinClub();
+                    }}
+                    disabled={joinClubMutation.isPending || !isAuthenticated}
+                    className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    aria-label={
+                      !isAuthenticated
+                        ? "Sign in required to add memberships"
+                        : undefined
+                    }
+                  >
+                    {joinClubMutation.isPending ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <Users className="h-5 w-5" />
+                    )}
+                    <span>{joinClubMutation.isPending ? "Adding Membership..." : "Add Membership"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </motion.div>
       </motion.div>
@@ -580,6 +604,26 @@ export default function ClubDetailsModal({
           </motion.div>
         </div>
       )}
+      
+      {/* Perk Redemption Confirmation */}
+      {redemptionConfirmation && (
+        <PerkRedemptionConfirmation
+          isOpen={!!redemptionConfirmation}
+          onClose={() => setRedemptionConfirmation(null)}
+          redemption={redemptionConfirmation.redemption}
+          unlock={redemptionConfirmation.unlock}
+          clubName={club.name}
+        />
+      )}
+
+      {/* Persistent Perk Details Modal */}
+      <PerkDetailsModal
+        isOpen={perkDetails.isOpen}
+        onClose={() => setPerkDetails({ isOpen: false, unlock: null, redemption: null })}
+        perk={perkDetails.unlock}
+        redemption={perkDetails.redemption}
+        clubName={club.name}
+      />
     </AnimatePresence>
   );
 }

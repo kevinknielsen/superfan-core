@@ -50,9 +50,12 @@ interface Unlock {
 
 interface UnlockRedemptionProps {
   clubId: string;
+  clubName: string;
   userStatus: string;
   userPoints: number;
   onRedemption?: () => void;
+  onShowRedemptionConfirmation?: (redemption: any, unlock: Unlock) => void;
+  onShowPerkDetails?: (unlock: Unlock, redemption: any) => void;
 }
 
 const UNLOCK_TYPE_ICONS: Record<string, any> = {
@@ -75,21 +78,25 @@ const STATUS_POINTS: Record<string, number> = {
 
 export default function UnlockRedemption({ 
   clubId, 
+  clubName,
   userStatus, 
   userPoints, 
-  onRedemption 
+  onRedemption,
+  onShowRedemptionConfirmation,
+  onShowPerkDetails
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
+  const [redemptions, setRedemptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUnlock, setSelectedUnlock] = useState<Unlock | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
 
   useEffect(() => {
-    loadUnlocks();
+    loadData();
   }, [clubId]);
 
-  const loadUnlocks = async () => {
+  const loadData = async () => {
     try {
       // Get auth token
       const accessToken = await getAccessToken();
@@ -97,18 +104,33 @@ export default function UnlockRedemption({
         throw new Error('User not authenticated');
       }
 
-      const response = await fetch(`/api/unlocks?club_id=${clubId}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setUnlocks(data);
+      // Load unlocks and redemptions in parallel
+      const [unlocksResponse, redemptionsResponse] = await Promise.all([
+        fetch(`/api/unlocks?club_id=${clubId}`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        }),
+        fetch(`/api/unlocks/redemptions?clubId=${clubId}`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        })
+      ]);
+
+      if (unlocksResponse.ok) {
+        const unlocksData = await unlocksResponse.json();
+        setUnlocks(unlocksData);
+      }
+
+      if (redemptionsResponse.ok) {
+        const redemptionsData = await redemptionsResponse.json();
+        setRedemptions(redemptionsData.redemptions || []);
+      } else {
+        // If redemptions API doesn't exist yet, just log and continue
+        console.warn('Redemptions API not available yet');
+        setRedemptions([]);
       }
     } catch (error) {
-      console.error('Error loading unlocks:', error);
+      console.error('Error loading data:', error);
+      setUnlocks([]);
+      setRedemptions([]);
     } finally {
       setIsLoading(false);
     }
@@ -117,6 +139,14 @@ export default function UnlockRedemption({
   const isUnlockAvailable = (unlock: Unlock) => {
     const requiredPoints = STATUS_POINTS[unlock.min_status] || 0;
     return userPoints >= requiredPoints;
+  };
+
+  const getUnlockRedemption = (unlock: Unlock) => {
+    return redemptions.find(redemption => redemption.unlock_id === unlock.id);
+  };
+
+  const isUnlockRedeemed = (unlock: Unlock) => {
+    return !!getUnlockRedemption(unlock);
   };
 
   const getStatusProgress = (requiredStatus: string) => {
@@ -157,20 +187,15 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        // Trigger celebration
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#FFD700', '#FFA500', '#FF69B4', '#9370DB'],
-        });
-
-        toast({
-          title: "Unlock Redeemed! 🎉",
-          description: unlock.title,
-        });
-
+        const redemptionData = await response.json();
+        
+        // Close current modal
         setSelectedUnlock(null);
+        
+        // Show full-screen confirmation
+        onShowRedemptionConfirmation?.(redemptionData.redemption, unlock);
+        
+        // Callback for parent component
         onRedemption?.();
       } else {
         const errorData = await response.json();
@@ -233,82 +258,106 @@ export default function UnlockRedemption({
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
         {unlocks.map((unlock, index) => {
           const IconComponent = getUnlockIcon(unlock.type);
-          const StatusIconComponent = getStatusIcon(unlock.min_status);
           const isAvailable = isUnlockAvailable(unlock);
           const progress = getStatusProgress(unlock.min_status);
 
           return (
             <motion.div
               key={unlock.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
+              className="flex-shrink-0"
             >
-              <Card 
-                className={`cursor-pointer transition-all hover:shadow-md ${
-                  isAvailable ? 'border-primary/50 hover:border-primary' : 'opacity-75'
+              <div 
+                className={`relative w-48 rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 cursor-pointer transition-all hover:border-gray-600 shadow-xl backdrop-blur-sm ${
+                  !isAvailable ? 'opacity-75' : ''
                 }`}
-                onClick={() => setSelectedUnlock(unlock)}
+                onClick={() => {
+                  const redemption = getUnlockRedemption(unlock);
+                  if (redemption) {
+                    // Already redeemed - show persistent details modal
+                    onShowPerkDetails?.(unlock, redemption);
+                  } else {
+                    // Not redeemed - show redemption modal
+                    setSelectedUnlock(unlock);
+                  }
+                }}
+                style={{ aspectRatio: '3/4' }} // Tall poster aspect ratio like screenshot
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <IconComponent className={`h-6 w-6 ${isAvailable ? 'text-primary' : 'text-muted-foreground'}`} />
-                    {isAvailable ? (
-                      <Badge variant="default">Available</Badge>
+                {/* Background Image/Icon Area */}
+                <div className="absolute inset-0">
+                  <div className="relative w-full h-full bg-gradient-to-br from-primary/30 via-purple-600/20 to-pink-500/30 flex items-center justify-center">
+                    <IconComponent className={`h-20 w-20 ${isAvailable ? 'text-white/90' : 'text-gray-400'}`} />
+                    
+                    {/* Gradient overlay for text readability */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  </div>
+                  
+                  {/* Status Badge */}
+                  <div className="absolute top-3 right-3">
+                    {isUnlockRedeemed(unlock) ? (
+                      <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
+                    ) : isAvailable ? (
+                      <Badge variant="default" className="bg-green-600/90 backdrop-blur-sm">Available</Badge>
                     ) : (
-                      <Badge variant="secondary" className="flex items-center gap-1">
+                      <Badge variant="secondary" className="flex items-center gap-1 bg-gray-800/90 backdrop-blur-sm">
                         <Lock className="h-3 w-3" />
                         Locked
                       </Badge>
                     )}
                   </div>
-                  <CardTitle className="text-base">{unlock.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {unlock.description}
-                  </p>
                   
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-1">
-                        <StatusIconComponent className={`h-3 w-3 ${getStatusColor(unlock.min_status)}`} />
-                        Requires {unlock.min_status}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {STATUS_POINTS[unlock.min_status]}+ pts
-                      </span>
-                    </div>
-                    
-                    {!isAvailable && (
-                      <div className="space-y-1">
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div 
-                            className="bg-primary h-2 rounded-full transition-all"
-                            style={{ width: `${progress}%` }}
-                          />
-                        </div>
-                        <div className="text-xs text-muted-foreground text-center">
-                          {userPoints} / {STATUS_POINTS[unlock.min_status]} points
-                        </div>
+                  {/* Progress bar for locked items */}
+                  {!isAvailable && (
+                    <div className="absolute top-14 left-3 right-3">
+                      <div className="w-full bg-gray-800/70 rounded-full h-1">
+                        <div 
+                          className="bg-primary h-1 rounded-full transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
                       </div>
-                    )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Bottom Content - Like poster titles */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
+                  <h4 className="font-bold text-white text-lg mb-1 line-clamp-2">
+                    {unlock.title}
+                  </h4>
+                  
+                  {/* Requirements info */}
+                  <div className="text-xs text-gray-300 mb-3">
+                    Requires {unlock.min_status} • {STATUS_POINTS[unlock.min_status]}+ pts
                   </div>
                   
-                  <div className="mt-4">
-                    <Button 
-                      className="w-full" 
-                      variant={isAvailable ? "default" : "secondary"}
-                      disabled={!isAvailable}
-                    >
-                      {isAvailable ? 'Redeem' : 'Locked'}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                  {/* Action Button - Like screenshot */}
+                  <button
+                    className={`w-full py-2.5 px-4 rounded-full text-sm font-semibold transition-colors ${
+                      isUnlockRedeemed(unlock)
+                        ? 'bg-green-600 text-white hover:bg-green-700'
+                        : isAvailable 
+                          ? 'bg-white text-gray-900 hover:bg-gray-100' 
+                          : 'bg-gray-700/80 text-gray-400 cursor-not-allowed'
+                    }`}
+                    disabled={!isAvailable && !isUnlockRedeemed(unlock)}
+                  >
+                    {isUnlockRedeemed(unlock) 
+                      ? 'Open Details' 
+                      : isAvailable 
+                        ? 'Redeem Now' 
+                        : 'Locked'
+                    }
+                  </button>
+                </div>
+                
+                {/* Subtle glow effect */}
+                <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 pointer-events-none"></div>
+              </div>
             </motion.div>
           );
         })}
