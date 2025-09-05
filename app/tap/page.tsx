@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Star, Trophy, Crown, Users, Zap, Sparkles } from "lucide-react";
+import { CheckCircle, Star, Trophy, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
 import confetti from "canvas-confetti";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +29,17 @@ interface TapInResponse {
   membership: any;
 }
 
+// Point values for different tap-in sources (from memo)
+const POINT_VALUES = {
+  qr_code: 20,
+  nfc: 20,
+  link: 10,
+  show_entry: 100,
+  merch_purchase: 50,
+  presave: 40,
+  default: 10
+};
+
 function TapPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -52,23 +63,75 @@ function TapPageContent() {
   const data = searchParams.get('data');
   const location = searchParams.get('location');
 
-  // Process tap-in when page loads
+  // Load club information first (even for unauthenticated users)
+  const [clubInfo, setClubInfo] = useState<any>(null);
+  const [showClubModal, setShowClubModal] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const { login } = usePrivy();
+  
   useEffect(() => {
-    if (!authLoading && isAuthenticated && user && !processingStarted.current) {
-      if (!clubId || !source) {
-        setError("Invalid QR code - missing club or source information");
+    // Always load club info first
+    if (clubId) {
+      loadClubInfo();
+    } else {
+      setError("Invalid QR code - missing club information");
+    }
+  }, [clubId]);
+
+  // Process tap-in only after authentication
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && user && clubInfo && !processingStarted.current) {
+      if (!source) {
+        setError("Invalid QR code - missing source information");
         return;
       }
       
       processingStarted.current = true;
+      setShowClubModal(false); // Close modal before processing
       processTapIn();
-    } else if (!authLoading && !isAuthenticated) {
-      // Show auth modal instead of redirect
-      const currentUrl = window.location.href;
-      // Import and use the auth modal here when needed
-      router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
+    } else if (!authLoading && !isAuthenticated && clubInfo) {
+      // Show club modal with auth prompt instead of redirecting
+      setShowAuthPrompt(true);
     }
-  }, [authLoading, isAuthenticated, user, clubId, source]);
+  }, [authLoading, isAuthenticated, user, clubInfo, source]);
+
+  const handleAuthAndTapIn = async () => {
+    try {
+      await login();
+      // After login, the useEffect will automatically process the tap-in
+    } catch (error) {
+      console.error("Authentication failed:", error);
+      setError("Authentication failed. Please try again.");
+    }
+  };
+
+  // Auto-trigger Privy login modal when club info loads for unauthenticated users
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && clubInfo && !processingStarted.current) {
+      // Small delay to let the user see the club preview first
+      const timer = setTimeout(() => {
+        handleAuthAndTapIn();
+      }, 5000); // 5 second delay to show the club preview
+      
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading, isAuthenticated, clubInfo]);
+
+  const loadClubInfo = async () => {
+    try {
+      const response = await fetch(`/api/clubs/${clubId}`);
+      if (response.ok) {
+        const club = await response.json();
+        setClubInfo(club);
+        setShowClubModal(true);
+      } else {
+        setError("Club not found");
+      }
+    } catch (error) {
+      console.error("Error loading club:", error);
+      setError("Failed to load club information");
+    }
+  };
 
   // Get authentication headers based on context
   const getAuthHeaders = async (): Promise<{ Authorization: string }> => {
@@ -207,22 +270,280 @@ function TapPageContent() {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
   };
 
+  // Show split-screen club preview for unauthenticated users
+  if (!authLoading && !isAuthenticated && clubInfo) {
+    return (
+      <div className="min-h-screen bg-background flex">
+        {/* Left Side - Club Membership Card (Desktop only) */}
+        <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8 items-center justify-center relative overflow-hidden">
+          {/* Background decorative elements */}
+          <motion.div
+            className="absolute top-20 left-10 w-32 h-32 rounded-full bg-primary/10 blur-3xl"
+            animate={{
+              y: [0, -20, 0],
+              opacity: [0.3, 0.6, 0.3],
+            }}
+            transition={{
+              duration: 4,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+          <motion.div
+            className="absolute bottom-20 right-10 w-40 h-40 rounded-full bg-purple-500/10 blur-3xl"
+            animate={{
+              y: [0, 20, 0],
+              opacity: [0.3, 0.6, 0.3],
+            }}
+            transition={{
+              duration: 5,
+              repeat: Infinity,
+              ease: "easeInOut",
+              delay: 1,
+            }}
+          />
+
+          {/* Membership Card */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="relative"
+            style={{ perspective: "1000px" }}
+          >
+            <motion.div 
+              className="w-80 h-96 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-xl p-6 pb-8 relative overflow-hidden"
+              animate={{
+                rotateY: [0, 3, 0, -3, 0],
+                rotateX: [0, 2, 0, -2, 0],
+                scale: [1, 1.02, 1],
+              }}
+              transition={{
+                duration: 8,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              style={{
+                transformStyle: "preserve-3d",
+                transformOrigin: "center center",
+              }}
+            >
+              {/* Card glow effect */}
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-purple-500/20 opacity-50" />
+              
+              {/* Card content */}
+              <div className="relative z-10 h-full flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-primary" />
+                    </div>
+                    <span className="text-white font-semibold">{clubInfo.name}</span>
+                  </div>
+                  <div className="text-xs text-slate-400">MEMBER</div>
+                </div>
+
+                {/* Club info */}
+                <div className="flex-1 flex flex-col items-center justify-center mb-6">
+                  <motion.div
+                    className="w-24 h-24 rounded-2xl overflow-hidden border border-slate-600 mb-4"
+                    whileHover={{ scale: 1.05 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    {clubInfo.image_url ? (
+                      <img
+                        src={clubInfo.image_url}
+                        alt={clubInfo.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+                        <Crown className="w-12 h-12 text-primary" />
+                      </div>
+                    )}
+                  </motion.div>
+                  <h3 className="text-white font-semibold text-lg mb-2">{clubInfo.name}</h3>
+                  <p className="text-slate-400 text-sm text-center">{clubInfo.description}</p>
+                  {clubInfo.city && (
+                    <div className="flex items-center gap-1 text-slate-400 text-xs mt-2">
+                      <MapPin className="h-3 w-3" />
+                      {clubInfo.city}
+                    </div>
+                  )}
+                </div>
+
+                {/* Status preview */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-sm">Status</span>
+                    <span className="text-purple-400 text-sm">Ready to Join</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400 text-sm">Points</span>
+                    <span className="text-green-400 text-sm">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                  </div>
+                </div>
+
+                {/* QR Code indicator */}
+                <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-slate-400">
+                    <QrCode className="w-4 h-4" />
+                    <span className="text-xs">QR Code Scanned</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+
+        {/* Right Side - Authentication (Mobile full width) */}
+        <div className="w-full lg:w-1/2 bg-background flex items-center justify-center p-8">
+          <motion.div
+            className="w-full max-w-md"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+          >
+            {/* Mobile Club Card - show above title on mobile */}
+            <div className="lg:hidden mb-8">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="mx-auto w-64"
+                style={{ perspective: "1000px" }}
+              >
+                <motion.div 
+                  className="w-full h-80 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-xl p-6 pb-8 relative overflow-hidden"
+                  animate={{
+                    rotateY: [0, 3, 0, -3, 0],
+                    rotateX: [0, 2, 0, -2, 0],
+                    scale: [1, 1.02, 1],
+                  }}
+                  transition={{
+                    duration: 8,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                  style={{
+                    transformStyle: "preserve-3d",
+                    transformOrigin: "center center",
+                  }}
+                >
+                  {/* Card glow effect */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-purple-500/20 opacity-50" />
+                  
+                  {/* Card content */}
+                  <div className="relative z-10 h-full flex flex-col">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                          <Users className="w-4 h-4 text-primary" />
+                        </div>
+                        <span className="text-white font-medium text-sm">{clubInfo.name}</span>
+                      </div>
+                      <div className="text-xs text-slate-400">MEMBER</div>
+                    </div>
+
+                    {/* Club info */}
+                    <div className="flex-1 flex flex-col items-center justify-center mb-6">
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden border border-slate-600 mb-4">
+                        {clubInfo.image_url ? (
+                          <img
+                            src={clubInfo.image_url}
+                            alt={clubInfo.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+                            <Crown className="w-10 h-10 text-primary" />
+                          </div>
+                        )}
+                      </div>
+                      <h3 className="text-white font-medium text-base mb-2">{clubInfo.name}</h3>
+                      <p className="text-slate-400 text-xs text-center leading-relaxed">{clubInfo.description}</p>
+                      {clubInfo.city && (
+                        <div className="flex items-center gap-1 text-slate-400 text-xs mt-2">
+                          <MapPin className="h-3 w-3" />
+                          {clubInfo.city}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Status preview */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400 text-xs">Status</span>
+                        <span className="text-purple-400 text-xs">Ready to Join</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400 text-xs">Points</span>
+                        <span className="text-green-400 text-xs">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            </div>
+
+            {/* Header */}
+            <div className="text-center mb-8">
+              <h1 className="text-2xl font-bold text-foreground mb-2">
+                Join {clubInfo.name}
+              </h1>
+              <p className="text-muted-foreground">
+                Sign in to join and earn points
+              </p>
+            </div>
+
+            {/* Points Preview */}
+            <motion.div
+              className="text-center mb-6"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
+                <span className="text-green-400 font-medium">
+                  +{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} points
+                </span>
+              </div>
+            </motion.div>
+
+            {/* Big Claim Points Button (like Vault's yellow button) */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+            >
+              <button
+                onClick={handleAuthAndTapIn}
+                className="w-full h-16 bg-gradient-to-r from-primary to-purple-500 hover:from-primary/90 hover:to-purple-500/90 text-white rounded-2xl font-bold text-lg transition-all duration-200 flex items-center justify-center shadow-lg"
+              >
+                Claim Points
+              </button>
+            </motion.div>
+
+            {/* Footer */}
+            <div className="mt-8 text-center">
+              <p className="text-xs text-muted-foreground">
+                Secure authentication powered by Privy
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground">Redirecting to login...</p>
         </div>
       </div>
     );
@@ -254,11 +575,12 @@ function TapPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      
-      <div className="container mx-auto px-4 py-12">
-        <div className="max-w-md mx-auto">
+    <>
+      <div className="min-h-screen bg-background">
+        <Header />
+        
+        <div className="container mx-auto px-4 py-12">
+          <div className="max-w-md mx-auto">
           
           {/* Processing State */}
           {isProcessing && (
@@ -436,7 +758,9 @@ function TapPageContent() {
 
         </div>
       </div>
-    </div>
+      </div>
+
+    </>
   );
 }
 
