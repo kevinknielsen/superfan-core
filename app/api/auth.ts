@@ -9,17 +9,24 @@ const privy = new PrivyClient(
 
 export async function verifyPrivyToken(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) return null;
+  if (!authHeader?.startsWith("Bearer ")) {
+    console.log('[Auth] No Bearer token found in header:', authHeader);
+    return null;
+  }
   const token = authHeader.split(" ")[1];
 
+  console.log('[Auth] Attempting to verify Privy token:', {
+    tokenLength: token?.length,
+    hasSecret: !!process.env.PRIVY_APP_SECRET
+  });
+
   try {
-    const claims = await privy.verifyAuthToken(
-      token
-      // process.env.PRIVY_VERIFICATION_KEY
-    );
+    const claims = await privy.verifyAuthToken(token);
+    console.log('[Auth] Privy token claims:', { userId: claims.userId, appId: claims.appId });
     return claims;
   } catch (error) {
     console.error("[Server]: Error verifying Privy token:", error);
+    console.error("[Server]: Token verification failed");
     return null;
   }
 }

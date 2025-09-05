@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Check admin status
-  if (!isAdmin(auth.userId)) {
+  if (!(await isAdmin(auth.userId))) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 

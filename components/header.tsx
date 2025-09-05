@@ -24,7 +24,7 @@ interface HeaderProps {
 
 export default function Header({ showBackButton = false }: HeaderProps) {
   const router = useRouter();
-  const { logout, user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
+  const { logout, user, isAuthenticated, isInWalletApp, isAdmin } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
   const enableMembership = useFeatureFlag('enableMembership');
   const [showScannerWallet, setShowScannerWallet] = useState(false);
@@ -98,6 +98,17 @@ export default function Header({ showBackButton = false }: HeaderProps) {
                     <QrCode className="h-4 w-4" />
                     <span className="hidden sm:inline">Check In</span>
                   </button>
+                )}
+
+                {/* Admin Dashboard Link - show for admin users */}
+                {isAdmin && !showBackButton && (
+                  <Link
+                    href="/admin"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white text-sm font-medium transition-all duration-200"
+                  >
+                    <Star className="h-4 w-4" />
+                    <span className="hidden sm:inline">Admin</span>
+                  </Link>
                 )}
 
                 {/* Profile & Settings button */}

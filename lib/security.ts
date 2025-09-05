@@ -1,15 +1,9 @@
-// Environment-based admin checking (server-side only)
-export function isAdmin(userId: string | undefined): boolean {
-  if (!userId) return false;
+// Client-safe security utilities only
+// Import isAdmin from './security.server' in server-only files
 
-  // Only run on server-side to prevent exposing admin IDs to client
-  if (typeof window !== "undefined") return false;
-
-  const adminIds =
-    process.env.ADMIN_USER_IDS?.split(",")
-      .map((id) => id.trim()) // Remove whitespace to avoid mismatches
-      .filter(Boolean) || [];
-  return adminIds.includes(userId);
+/** @deprecated Use the async isAdmin() instead. */
+export function isAdminSync(userId: string | undefined): boolean {
+  throw new Error('isAdminSync is deprecated and no longer functional. Use the async isAdmin() function instead.');
 }
 
 // Text truncation (React handles XSS protection automatically)

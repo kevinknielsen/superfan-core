@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { usePrivy } from "@privy-io/react-auth";
 
 // Admin Dashboard Components
 import ClubManagement from "@/components/admin/club-management";
@@ -38,6 +39,7 @@ interface AdminStats {
 
 export default function AdminDashboard() {
   const { user, isAuthenticated, isLoading: authLoading } = useUnifiedAuth();
+  const { getAccessToken } = usePrivy();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -62,9 +64,24 @@ export default function AdminDashboard() {
 
   const checkAdminStatus = async () => {
     try {
-      // Use the API endpoint to check admin status (works on both local and remote)
-      const response = await fetch('/api/auth/admin-status');
-      const { isAdmin: userIsAdmin } = await response.json();
+      // Get the auth token from Privy hook
+      const accessToken = await getAccessToken();
+      
+      if (!accessToken) {
+        throw new Error("User not logged in");
+      }
+
+      // Use the API endpoint to check admin status with proper auth headers
+      const response = await fetch('/api/auth/admin-status', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+      
+      const responseData = await response.json() as { isAdmin?: boolean };
+      const userIsAdmin = responseData.isAdmin;
       
       console.log('[Admin Check] API Response:', {
         userId: user?.id,
@@ -97,7 +114,7 @@ export default function AdminDashboard() {
     try {
       const response = await fetch('/api/admin/stats');
       if (response.ok) {
-        const stats = await response.json();
+        const stats = await response.json() as AdminStats;
         setAdminStats(stats);
       }
     } catch (error) {
@@ -140,57 +157,67 @@ export default function AdminDashboard() {
           </p>
         </motion.div>
 
-        {/* Stats Overview */}
-        <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Clubs</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{adminStats.totalClubs.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">Active communities</p>
-            </CardContent>
-          </Card>
+        {/* Stats Overview - only show if we have meaningful data */}
+        {(adminStats.totalClubs > 0 || adminStats.totalMembers > 0 || adminStats.totalTapIns > 0 || adminStats.totalUnlocks > 0) && (
+          <motion.div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            {adminStats.totalClubs > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Clubs</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{adminStats.totalClubs.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground">Active communities</p>
+                </CardContent>
+              </Card>
+            )}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Members</CardTitle>
-              <Crown className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{adminStats.totalMembers.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">Across all clubs</p>
-            </CardContent>
-          </Card>
+            {adminStats.totalMembers > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Members</CardTitle>
+                  <Crown className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{adminStats.totalMembers.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground">Across all clubs</p>
+                </CardContent>
+              </Card>
+            )}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Tap-ins</CardTitle>
-              <Zap className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{adminStats.totalTapIns.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">All-time engagements</p>
-            </CardContent>
-          </Card>
+            {adminStats.totalTapIns > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Tap-ins</CardTitle>
+                  <Zap className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{adminStats.totalTapIns.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground">All-time engagements</p>
+                </CardContent>
+              </Card>
+            )}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Unlocks</CardTitle>
-              <Gift className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{adminStats.totalUnlocks.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">Available perks</p>
-            </CardContent>
-          </Card>
-        </motion.div>
+            {adminStats.totalUnlocks > 0 && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Active Unlocks</CardTitle>
+                  <Gift className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{adminStats.totalUnlocks.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground">Available perks</p>
+                </CardContent>
+              </Card>
+            )}
+          </motion.div>
+        )}
 
         {/* Main Tabs */}
         <motion.div

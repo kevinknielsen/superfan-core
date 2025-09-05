@@ -109,13 +109,38 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
 
     setIsAdminLoading(true);
     
-    fetch('/api/auth/admin-status', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        // The API will use the current session authentication
-      },
-      signal: abortController.signal,
+    // Get the auth token for the API call
+    const getAuthHeaders = async () => {
+      if (isInWalletApp) {
+        // Wallet app: use Farcaster authentication
+        const farcasterUserId = farcasterUser?.fid?.toString();
+        if (!farcasterUserId) {
+          throw new Error("Farcaster user not found in wallet app");
+        }
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Farcaster farcaster:${farcasterUserId}`,
+        };
+      } else {
+        // Web app: use Privy authentication
+        const { getAccessToken } = await import('@privy-io/react-auth');
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          throw new Error("User not logged in");
+        }
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        };
+      }
+    };
+
+    getAuthHeaders().then(headers => {
+      return fetch('/api/auth/admin-status', {
+        method: 'GET',
+        headers,
+        signal: abortController.signal,
+      });
     })
       .then(res => {
         if (abortController.signal.aborted) return;
