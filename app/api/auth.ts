@@ -17,8 +17,6 @@ export async function verifyPrivyToken(req: NextRequest) {
 
   console.log('[Auth] Attempting to verify Privy token:', {
     tokenLength: token?.length,
-    tokenPrefix: token?.substring(0, 20) + '...',
-    appId: process.env.NEXT_PUBLIC_PRIVY_APP_ID,
     hasSecret: !!process.env.PRIVY_APP_SECRET
   });
 
@@ -28,7 +26,7 @@ export async function verifyPrivyToken(req: NextRequest) {
     return claims;
   } catch (error) {
     console.error("[Server]: Error verifying Privy token:", error);
-    console.error("[Server]: Token that failed:", token?.substring(0, 50) + '...');
+    console.error("[Server]: Token verification failed");
     return null;
   }
 }

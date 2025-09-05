@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { usePrivy } from "@privy-io/react-auth";
 
 // Admin Dashboard Components
 import ClubManagement from "@/components/admin/club-management";
@@ -38,6 +39,7 @@ interface AdminStats {
 
 export default function AdminDashboard() {
   const { user, isAuthenticated, isLoading: authLoading } = useUnifiedAuth();
+  const { getAccessToken } = usePrivy();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -62,8 +64,7 @@ export default function AdminDashboard() {
 
   const checkAdminStatus = async () => {
     try {
-      // Get the auth token for the API call
-      const { getAccessToken } = await import('@privy-io/react-auth');
+      // Get the auth token from Privy hook
       const accessToken = await getAccessToken();
       
       if (!accessToken) {
@@ -78,7 +79,9 @@ export default function AdminDashboard() {
           'Authorization': `Bearer ${accessToken}`,
         },
       });
-      const { isAdmin: userIsAdmin } = await response.json();
+      
+      const responseData = await response.json() as { isAdmin?: boolean };
+      const userIsAdmin = responseData.isAdmin;
       
       console.log('[Admin Check] API Response:', {
         userId: user?.id,
@@ -111,7 +114,7 @@ export default function AdminDashboard() {
     try {
       const response = await fetch('/api/admin/stats');
       if (response.ok) {
-        const stats = await response.json();
+        const stats = await response.json() as AdminStats;
         setAdminStats(stats);
       }
     } catch (error) {

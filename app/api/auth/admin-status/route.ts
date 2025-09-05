@@ -15,11 +15,6 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Admin Status] Checking admin for user: ${auth.userId} (type: ${auth.type})`);
     
-    // Check if this is your admin user (temporary for testing)
-    if (auth.userId === 'did:privy:cm9kbrlj900del50mclhziloz') {
-      console.log(`[Admin Status] Recognized admin user: ${auth.userId}`);
-      return NextResponse.json({ isAdmin: true });
-    }
     
     // Direct database check (same as debug test that worked)
     const supabase = createServiceClient();
@@ -31,7 +26,7 @@ export async function GET(request: NextRequest) {
     
     if (error) {
       console.error('[Admin Status] Database error:', error);
-      return NextResponse.json({ isAdmin: false }, { status: 200 });
+      return NextResponse.json({ isAdmin: false, error: 'Database error' }, { status: 500 });
     }
     
     const userIsAdmin = user?.role === 'admin';

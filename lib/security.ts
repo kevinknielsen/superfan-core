@@ -1,14 +1,22 @@
+let cachedServiceClient: any = null;
+
 // Database-based admin checking (server-side only)
 export async function isAdmin(userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
 
   // Only run on server-side to prevent exposing admin data to client
-  if (typeof window !== "undefined") return false;
+  if (typeof window !== "undefined" || process.env.NEXT_RUNTIME === 'edge') {
+    console.warn('isAdmin called from client-side or edge runtime');
+    return false;
+  }
 
   try {
-    // Use service client to bypass any RLS policies
-    const { createServiceClient } = await import('@/app/api/supabase');
-    const supabase = createServiceClient();
+    // Use cached service client to bypass any RLS policies
+    if (!cachedServiceClient) {
+      const { createServiceClient } = await import('@/app/api/supabase');
+      cachedServiceClient = createServiceClient();
+    }
+    const supabase = cachedServiceClient;
     
     console.log(`[Admin Check] Looking up user with privy_id: ${userId}`);
     
@@ -39,9 +47,7 @@ export async function isAdmin(userId: string | undefined): Promise<boolean> {
 
 // Synchronous version for compatibility (will be deprecated)
 export function isAdminSync(userId: string | undefined): boolean {
-  // Fallback to false for now - components should use the async version
-  console.warn('isAdminSync is deprecated, use isAdmin instead');
-  return false;
+  throw new Error('isAdminSync is deprecated and no longer functional. Use the async isAdmin() function instead.');
 }
 
 // Text truncation (React handles XSS protection automatically)
