@@ -1,49 +1,7 @@
-let cachedServiceClient: any = null;
+// Re-export server-side admin function to maintain single source of truth
+export { isAdmin } from './security.server';
 
-// Database-based admin checking (server-side only)
-export async function isAdmin(userId: string | undefined): Promise<boolean> {
-  if (!userId) return false;
-
-  // Only run on server-side to prevent exposing admin data to client
-  if (typeof window !== "undefined" || process.env.NEXT_RUNTIME === 'edge') {
-    throw new Error('isAdmin must only be called from server-side code');
-  }
-
-  try {
-    // Use cached service client to bypass any RLS policies
-    if (!cachedServiceClient) {
-      const { createServiceClient } = await import('@/app/api/supabase');
-      cachedServiceClient = createServiceClient();
-    }
-    const supabase = cachedServiceClient;
-    
-    debugLog(`[Admin Check] Looking up user with privy_id: ${userId}`);
-    
-    // Look up user by privy_id (since userId from auth is the Privy DID)
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, privy_id, role, email')
-      .eq('privy_id', userId)
-      .single();
-    
-    debugLog(`[Admin Check] Database query result:`, { user, error });
-    
-    if (error) {
-      errorLog('Error looking up user for admin check:', error);
-      return false;
-    }
-    
-    const isUserAdmin = user?.role === 'admin';
-    debugLog(`[Admin Check] User ${userId} found with role: ${user?.role}, isAdmin: ${isUserAdmin}`);
-    
-    return isUserAdmin;
-  } catch (error) {
-    errorLog('Error checking admin status:', error);
-    return false;
-  }
-}
-
-// Synchronous version for compatibility (will be deprecated)
+/** @deprecated Use the async isAdmin() instead. */
 export function isAdminSync(userId: string | undefined): boolean {
   throw new Error('isAdminSync is deprecated and no longer functional. Use the async isAdmin() function instead.');
 }

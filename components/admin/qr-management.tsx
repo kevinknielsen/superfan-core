@@ -74,11 +74,28 @@ export default function QRManagement() {
         throw new Error('Failed to load QR codes');
       }
 
-      const data = await response.json() as { qr_codes?: QRCode[] };
-      setGeneratedQRs(data.qr_codes || []);
+      const data = await response.json();
+      
+      // Safely validate the response structure
+      if (data && typeof data === 'object' && Array.isArray(data.qr_codes)) {
+        // Filter and validate QR codes
+        const validQRs = data.qr_codes.filter((qr: any) => 
+          qr && 
+          typeof qr === 'object' && 
+          qr.qr_id && 
+          qr.qr_url && 
+          qr.tap_url &&
+          qr.club_name
+        );
+        setGeneratedQRs(validQRs);
+      } else {
+        console.warn('Invalid QR codes response format:', data);
+        setGeneratedQRs([]);
+      }
       
     } catch (error) {
       console.error('Error loading QR codes:', error);
+      setGeneratedQRs([]); // Fallback to empty array on error
       toast({
         title: "Failed to load QR codes",
         description: "Please try refreshing the page",
@@ -119,8 +136,10 @@ export default function QRManagement() {
   const downloadQR = async (qrUrl: string, qrId: string) => {
     try {
       // Generate QR code image and download
-      const QRCodeLib = await import('qrcode');
-      const qrImageUrl = await QRCodeLib.default.toDataURL(qrUrl, {
+      const QR = await import('qrcode');
+      const toDataURL = (QR as any).toDataURL ?? (QR as any).default?.toDataURL;
+      if (!toDataURL) throw new Error('QR code library not loaded');
+      const qrImageUrl = await toDataURL(qrUrl, {
         width: 300,
         margin: 2,
         color: {
@@ -285,7 +304,7 @@ export default function QRManagement() {
                         <Badge variant="outline" className="text-xs">
                           {qr.club_name}
                         </Badge>
-                        {qr.qr_data.points && (
+                        {qr.qr_data.points != null && (
                           <Badge variant="secondary" className="text-xs">
                             +{qr.qr_data.points} points
                           </Badge>

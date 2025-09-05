@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/app/api/supabase';
+import { createServiceClient } from '@/app/api/supabase';
 
 /**
  * GET /api/clubs/[id]
@@ -10,7 +10,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
+    const { id } = params;
+    const supabase = createServiceClient();
     
     const { data: club, error } = await supabase
       .from('clubs')

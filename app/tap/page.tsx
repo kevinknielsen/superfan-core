@@ -11,6 +11,7 @@ import Header from "@/components/header";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { usePrivy } from "@privy-io/react-auth";
 import { useFarcaster } from "@/lib/farcaster-context";
+import { POINT_VALUES } from "@/hooks/use-tap-ins";
 
 interface AdditionalData {
   location?: string;
@@ -29,23 +30,13 @@ interface TapInResponse {
   membership: any;
 }
 
-// Point values for different tap-in sources (from memo)
-const POINT_VALUES = {
-  qr_code: 20,
-  nfc: 20,
-  link: 10,
-  show_entry: 100,
-  merch_purchase: 50,
-  presave: 40,
-  default: 10
-};
 
 function TapPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, isInWalletApp } = useUnifiedAuth();
   const { toast } = useToast();
-  const { getAccessToken } = usePrivy();
+  const { getAccessToken, login } = usePrivy();
   const { user: farcasterUser } = useFarcaster();
   
   const [isProcessing, setIsProcessing] = useState(false);
@@ -65,9 +56,6 @@ function TapPageContent() {
 
   // Load club information first (even for unauthenticated users)
   const [clubInfo, setClubInfo] = useState<any>(null);
-  const [showClubModal, setShowClubModal] = useState(false);
-  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
-  const { login } = usePrivy();
   
   useEffect(() => {
     // Always load club info first
@@ -87,12 +75,7 @@ function TapPageContent() {
       }
       
       processingStarted.current = true;
-      setShowClubModal(false); // Close modal before processing
       processTapIn();
-    } else if (!authLoading && !isAuthenticated && clubInfo) {
-      // Show club modal with auth prompt instead of redirecting
-      setShowAuthPrompt(true);
-    }
   }, [authLoading, isAuthenticated, user, clubInfo, source]);
 
   const handleAuthAndTapIn = async () => {
@@ -123,7 +106,6 @@ function TapPageContent() {
       if (response.ok) {
         const club = await response.json();
         setClubInfo(club);
-        setShowClubModal(true);
       } else {
         setError("Club not found");
       }
