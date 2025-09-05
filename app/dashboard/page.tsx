@@ -199,7 +199,7 @@ export default function Dashboard() {
                   backgroundPosition: "left center",
                 }}
               >
-                Earn Your Status
+                Earn Status
               </motion.span>
             </h2>
           </motion.div>

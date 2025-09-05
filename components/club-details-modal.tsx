@@ -386,7 +386,7 @@ export default function ClubDetailsModal({
                     onClick={() => setShowPurchaseOverlay(true)}
                     className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg hover:bg-primary/90 transition-colors"
                   >
-                    Boost Your Status
+                    Open Wallet
                   </button>
                 </div>
 
@@ -538,7 +538,7 @@ export default function ClubDetailsModal({
                 onClick={() => setShowPurchaseOverlay(true)}
                 className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
               >
-                Boost Your Status
+                Open Wallet
               </button>
             )}
           </div>

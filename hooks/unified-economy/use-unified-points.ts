@@ -72,9 +72,10 @@ export function useUnifiedPoints(clubId: string) {
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
       try {
+        console.log(`[useUnifiedPoints] Fetching breakdown for club ${clubId}...`);
         const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
           method: 'GET',
           headers: {
@@ -83,6 +84,8 @@ export function useUnifiedPoints(clubId: string) {
           },
           signal: controller.signal,
         });
+        
+        console.log(`[useUnifiedPoints] Response status: ${response.status}`);
         
         clearTimeout(timeoutId);
         

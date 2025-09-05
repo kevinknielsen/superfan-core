@@ -21,15 +21,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Get global points breakdown across all clubs
+    // Get global points breakdown across all clubs using the same view as breakdown API
     const { data: globalData, error: globalError } = await supabase
-      .from('point_wallets')
+      .from('v_point_wallets')
       .select(`
         balance_pts,
         earned_pts,
         purchased_pts,
         spent_pts,
         escrowed_pts,
+        status_pts,
         club_id,
         clubs!inner(name, is_active)
       `)
@@ -38,13 +39,36 @@ export async function GET(request: NextRequest) {
 
     if (globalError) {
       console.error('Global points query error:', globalError);
+      console.error('Error details:', {
+        message: globalError.message,
+        details: globalError.details,
+        hint: globalError.hint,
+        code: globalError.code
+      });
       throw globalError;
     }
 
     // Debug logging for admin users
-    console.log(`[Global Balance] User ${user.id} has ${(globalData || []).length} point wallets`);
+    console.log(`[Global Balance] User ${user.id} query results:`, {
+      walletCount: (globalData || []).length,
+      wallets: globalData?.map(w => ({
+        club_id: w.club_id,
+        club_name: w.clubs?.name,
+        balance_pts: w.balance_pts,
+        earned_pts: w.earned_pts
+      }))
+    });
+    
     if ((globalData || []).length === 0) {
-      console.log('[Global Balance] No point wallets found - user may need to join clubs first');
+      console.log('[Global Balance] No point wallets found - checking if user has memberships...');
+      
+      // Check if user has club memberships without wallets
+      const { data: memberships } = await supabase
+        .from('club_memberships')
+        .select('club_id, clubs!inner(name)')
+        .eq('user_id', user.id);
+        
+      console.log('[Global Balance] User memberships:', memberships?.length || 0);
     }
 
     // Calculate totals

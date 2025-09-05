@@ -110,6 +110,21 @@ export default function WalletSettings() {
     balanceSource: isInWalletApp ? "connected wallet" : "metal holder"
   });
 
+  // Debug global points data
+  console.log("[WalletSettings] Global points debug:", {
+    isLoadingPoints,
+    pointsError: pointsError?.message,
+    globalPointsData: globalPointsData ? {
+      total_points: globalPointsData.global_balance.total_points,
+      active_clubs_count: globalPointsData.global_balance.active_clubs_count,
+      club_breakdown_count: globalPointsData.club_breakdown.length,
+      clubs: globalPointsData.club_breakdown.map(c => ({
+        name: c.club_name,
+        balance: c.balance_pts
+      }))
+    } : 'No data'
+  });
+
   // Removed presales - part of legacy funding system
 
   const handleCopy = () => {

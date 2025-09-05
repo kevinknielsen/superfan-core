@@ -55,6 +55,18 @@ export default function UnifiedPointsWallet({
     currentStatus
   } = useUnifiedPoints(clubId);
 
+  // Debug logging to compare with global balance
+  console.log(`[UnifiedPointsWallet] Club ${clubName} (${clubId}) breakdown:`, {
+    isLoading,
+    error: error?.message,
+    totalBalance,
+    breakdown: breakdown ? {
+      wallet: breakdown.wallet,
+      status: breakdown.status,
+      spending_power: breakdown.spending_power
+    } : 'No breakdown data'
+  });
+
   const { getStatusInfo } = useStatusInfo();
 
   // Handle buy points flow
