@@ -1,213 +1,366 @@
-import { NextRequest } from 'next/server';
-import { verifyUnifiedAuth } from '@/app/api/auth';
-import { createServiceClient } from '@/app/api/supabase';
+import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "../../../supabase";
+import { verifyUnifiedAuth } from "../../../auth";
 
-// Get media for a club
+// Define the expected shape for club media
+interface ClubMedia {
+  id: string;
+  club_id: string;
+  media_type: string;
+  file_path: string;
+  thumbnail_path?: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  display_order: number;
+  is_primary: boolean;
+  alt_text?: string;
+  caption?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Type-safe Supabase client for club_media operations
+const supabaseTyped = supabase as unknown as {
+  from: (table: 'club_media') => {
+    select: (columns: string) => any;
+    insert: (data: any) => any;
+    update: (data: any) => any;
+    delete: () => any;
+  };
+  storage: typeof supabase.storage;
+};
+
+// URL cache to reduce repeated Supabase API calls
+const urlCache = new Map<string, string>();
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const clubId = (await params).id;
-    const supabase = createServiceClient();
-    
-    const { data: media, error } = await supabase
+    const clubId = params.id;
+
+    console.log(`[Club Media API] Fetching media for club: ${clubId}`);
+
+    // Get club media from database
+    const { data: media, error } = await supabaseTyped
       .from('club_media')
       .select('*')
       .eq('club_id', clubId)
       .order('display_order', { ascending: true });
 
     if (error) {
-      console.error('Error fetching club media:', error);
-      return Response.json({ error: 'Failed to fetch media' }, { status: 500 });
+      console.error("[Club Media API] Database error:", error);
+      return NextResponse.json({ error: "Failed to fetch media" }, { status: 500 });
     }
 
-    return Response.json(media || []);
+    // Convert file paths to full URLs
+    const mediaWithUrls = media?.map((item: any) => ({
+      ...item,
+      file_url: getMediaUrl(item.file_path),
+      thumbnail_url: item.thumbnail_path ? getMediaUrl(item.thumbnail_path) : undefined,
+    })) || [];
+
+    console.log(`[Club Media API] Found ${mediaWithUrls.length} media items for club ${clubId}`);
+
+    return NextResponse.json(mediaWithUrls);
+
   } catch (error) {
-    console.error('Error in GET /api/clubs/[clubId]/media:', error);
-    return Response.json({ error: 'Internal server error' }, { status: 500 });
+    console.error("[Club Media API] Unexpected error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-// Upload new media to a club
+// Helper function to get full media URL from Supabase storage
+function getMediaUrl(filePath: string): string {
+  if (!filePath) return '';
+  
+  // Check cache first
+  if (urlCache.has(filePath)) {
+    return urlCache.get(filePath)!;
+  }
+  
+  // If it's already a full URL, return as is
+  if (filePath.startsWith('http')) {
+    urlCache.set(filePath, filePath);
+    return filePath;
+  }
+  
+  // Get public URL from Supabase storage
+  const { data } = supabase.storage
+    .from('club-media')
+    .getPublicUrl(filePath);
+  
+  const url = data?.publicUrl || filePath;
+  urlCache.set(filePath, url);
+  return url;
+}
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
-  const clubId = (await params).id;
-  console.log('[POST /api/clubs/[clubId]/media] === ROUTE HIT ===');
-  console.log('[POST /api/clubs/[clubId]/media] clubId:', clubId);
-  console.log('[POST /api/clubs/[clubId]/media] request method:', request.method);
-  
   try {
-    console.log('[POST /api/clubs/[clubId]/media] Starting upload for clubId:', clubId);
+    const clubId = params.id;
     
-    // Verify authentication
-    const authResult = await verifyUnifiedAuth(request);
-    console.log('[POST /api/clubs/[clubId]/media] Auth result:', authResult);
-    if (!authResult) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    // Authentication guard - BEFORE parsing formData
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    
-    // Extract privy ID from auth result
-    const privyId = typeof authResult === 'string' ? authResult : authResult.userId;
-    console.log('[POST /api/clubs/[clubId]/media] Privy ID extracted:', privyId);
 
-    const supabase = createServiceClient();
-    console.log('[POST /api/clubs/[clubId]/media] Created Supabase client');
-    
-    // Get user's UUID from their Privy ID
+    // Get user ID (support both Privy and Farcaster auth)
+    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', privyId)
+      .eq(userIdField, auth.userId)
       .single();
-    
+
     if (userError || !user) {
-      console.log('[POST /api/clubs/[clubId]/media] User not found in database:', userError);
-      return Response.json({ error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    
-    const userUuid = user.id;
-    console.log('[POST /api/clubs/[clubId]/media] User UUID:', userUuid);
-    
-    // Check if user has permission to upload to this club
-    // For now, any authenticated user can upload, but you might want to restrict this
-    const { data: club } = await supabase
+
+    // Verify user is authorized for this club (owner or admin)
+    const { data: clubAuth, error: clubAuthError } = await (supabase as any)
       .from('clubs')
-      .select('id, name')
+      .select('owner_id')
       .eq('id', clubId)
       .single();
 
-    if (!club) {
-      return Response.json({ error: 'Club not found' }, { status: 404 });
+    if (clubAuthError || !clubAuth) {
+      return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
 
+    // Check if user is club owner
+    if (clubAuth.owner_id !== user.id) {
+      // TODO: Check for admin role when role column is added to users table
+      return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
+    }
+    
+    // Only parse formData after authentication succeeds
     const formData = await request.formData();
-    console.log('[POST /api/clubs/[clubId]/media] Parsed form data');
     
     const file = formData.get('file') as File;
-    const mediaType = formData.get('mediaType') as string; // 'image' or 'video'
-    const isPrimary = formData.get('isPrimary') === 'true';
-    const altText = formData.get('altText') as string;
+    const mediaType = formData.get('media_type') as string;
+    const altText = formData.get('alt_text') as string;
     const caption = formData.get('caption') as string;
-
-    console.log('[POST /api/clubs/[clubId]/media] File details:', {
-      fileName: file?.name,
-      fileSize: file?.size,
-      fileType: file?.type,
-      mediaType,
-      isPrimary
-    });
-
+    const isPrimary = formData.get('is_primary') === 'true';
+    
+    // Input validation
     if (!file) {
-      return Response.json({ error: 'No file provided' }, { status: 400 });
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+    
+    if (!mediaType) {
+      return NextResponse.json({ error: "Media type is required" }, { status: 400 });
+    }
+    
+    // Validate MIME type and derive normalized media_type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({ 
+        error: "Invalid file type. Allowed types: JPEG, PNG, WebP, GIF, MP4, WebM, QuickTime",
+        allowed_types: allowedTypes
+      }, { status: 400 });
+    }
+    
+    const computedMediaType = file.type.startsWith('video/') ? 'video' : 'image';
+    if (!['image', 'video'].includes(mediaType)) {
+      return NextResponse.json({ error: "Invalid media_type" }, { status: 400 });
+    }
+    
+    // Prefer server-derived media type
+    const effectiveMediaType = computedMediaType;
+    
+    // File size validation (per-type limits)
+    const MAX_IMAGE = 10 * 1024 * 1024;   // 10MB
+    const MAX_VIDEO = 200 * 1024 * 1024;  // 200MB
+    const limit = (file.type.startsWith('video/') ? MAX_VIDEO : MAX_IMAGE);
+    if (file.size > limit) {
+      return NextResponse.json({ 
+        error: "File too large",
+        max_size: limit,
+        file_size: file.size
+      }, { status: 413 });
     }
 
-    // Validate file type
-    const validImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    const validVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
-    
-    if (mediaType === 'image' && !validImageTypes.includes(file.type)) {
-      return Response.json({ error: 'Invalid image format' }, { status: 400 });
-    }
-    
-    if (mediaType === 'video' && !validVideoTypes.includes(file.type)) {
-      return Response.json({ error: 'Invalid video format' }, { status: 400 });
-    }
+    console.log(`[Club Media API] Uploading ${mediaType} for club: ${clubId}`);
 
     // Generate unique filename
     const timestamp = Date.now();
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const fileName = `${clubId}/${mediaType}s/${timestamp}_${sanitizedName}`;
+    const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_'); // Sanitize filename
+    const fileName = `${clubId}/${timestamp}_${originalName}`;
 
-    console.log('[POST /api/clubs/[clubId]/media] Uploading to storage with fileName:', fileName);
-    
-    // Upload to Supabase Storage
+    // Upload to Supabase storage
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('club-media')
       .upload(fileName, file, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        contentType: file.type
       });
 
-    console.log('[POST /api/clubs/[clubId]/media] Storage upload result:', {
-      success: !uploadError,
-      uploadData,
-      uploadError
-    });
-
     if (uploadError) {
-      console.error('[POST /api/clubs/[clubId]/media] Storage upload error:', uploadError);
-      return Response.json({ 
-        error: 'Failed to upload file', 
-        details: uploadError.message 
-      }, { status: 500 });
+      console.error("[Club Media API] Upload error:", uploadError);
+      return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });
     }
 
-    // Get the public URL
-    const { data: urlData } = supabase.storage
-      .from('club-media')
-      .getPublicUrl(fileName);
+    // Get file size
+    const fileSize = file.size;
+    const mimeType = file.type;
 
     // If this is set as primary, unset other primary media of the same type
     if (isPrimary) {
-      await supabase
+      await supabaseTyped
         .from('club_media')
         .update({ is_primary: false })
         .eq('club_id', clubId)
-        .eq('media_type', mediaType);
+        .eq('media_type', effectiveMediaType)
+        .eq('is_primary', true);
     }
 
-    // Get the next display order
-    const { data: lastMedia } = await supabase
+    // Use RPC function for atomic display order insertion
+    const { data: insertResult, error: rpcError } = await (supabase as any)
+      .rpc('insert_club_media_with_order', {
+        p_club_id: clubId,
+        p_media_type: effectiveMediaType,
+        p_file_name: originalName,
+        p_file_path: fileName,
+        p_file_size: fileSize,
+        p_mime_type: mimeType,
+        p_is_primary: isPrimary,
+        p_alt_text: altText || null,
+        p_caption: caption || null
+      });
+
+    if (rpcError) {
+      console.error("[Club Media API] RPC error:", rpcError);
+      // Clean up uploaded file
+      await supabase.storage.from('club-media').remove([fileName]);
+      const code = (rpcError as any)?.code;
+      const status = code === '23505' ? 409 : 500;
+      const message = code === '23505'
+        ? "A primary item for this media type already exists"
+        : "Failed to save media record";
+      return NextResponse.json({ error: message }, { status });
+    }
+
+    // Return media record with URL
+    const mediaWithUrl = {
+      ...(insertResult as any),
+      file_url: getMediaUrl((insertResult as any).file_path),
+    };
+
+    console.log(`[Club Media API] Successfully uploaded media:`, mediaWithUrl.id);
+
+    return NextResponse.json(mediaWithUrl);
+
+  } catch (error) {
+    console.error("[Club Media API] Unexpected error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const clubId = params.id;
+    const { searchParams } = new URL(request.url);
+    const mediaId = searchParams.get('media_id');
+
+    if (!mediaId) {
+      return NextResponse.json({ error: "Media ID required" }, { status: 400 });
+    }
+
+    // Authentication guard
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get user ID (support both Privy and Farcaster auth)
+    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq(userIdField, auth.userId)
+      .single();
+
+    if (userError || !user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Verify user is authorized for this club (owner or admin)
+    const { data: clubAuth, error: clubAuthError } = await (supabase as any)
+      .from('clubs')
+      .select('owner_id')
+      .eq('id', clubId)
+      .single();
+
+    if (clubAuthError || !clubAuth) {
+      return NextResponse.json({ error: "Club not found" }, { status: 404 });
+    }
+
+    // Check if user is club owner
+    if (clubAuth.owner_id !== user.id) {
+      // TODO: Check for admin role when role column is added to users table
+      return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
+    }
+
+    console.log(`[Club Media API] Deleting media ${mediaId} for club: ${clubId}`);
+
+    // Get media record first
+    const { data: media, error: fetchError } = await supabaseTyped
       .from('club_media')
-      .select('display_order')
+      .select('*')
+      .eq('id', mediaId)
       .eq('club_id', clubId)
-      .order('display_order', { ascending: false })
-      .limit(1)
       .single();
 
-    const nextOrder = (lastMedia?.display_order || 0) + 1;
+    if (fetchError || !media) {
+      return NextResponse.json({ error: "Media not found" }, { status: 404 });
+    }
 
-    // Save media record to database
-    const { data: mediaRecord, error: dbError } = await supabase
+    // Delete from storage (including thumbnails)
+    const pathsToDelete = [media.file_path];
+    if (media.thumbnail_path) {
+      pathsToDelete.push(media.thumbnail_path);
+    }
+    
+    const { error: storageError } = await supabase.storage
+      .from('club-media')
+      .remove(pathsToDelete);
+
+    if (storageError) {
+      console.warn("[Club Media API] Storage deletion warning:", storageError);
+      // Continue with database deletion even if storage fails
+    }
+
+    // Delete from database
+    const { error: dbError } = await supabaseTyped
       .from('club_media')
-      .insert({
-        club_id: clubId,
-        media_type: mediaType,
-        file_name: file.name,
-        file_path: urlData.publicUrl,
-        file_size: file.size,
-        mime_type: file.type,
-        is_primary: isPrimary,
-        alt_text: altText,
-        caption: caption,
-        display_order: isPrimary ? 0 : nextOrder,
-        uploaded_by: userUuid
-      })
-      .select()
-      .single();
+      .delete()
+      .eq('id', mediaId)
+      .eq('club_id', clubId);
 
     if (dbError) {
-      console.error('Database error:', dbError);
-      // Clean up uploaded file if database insert fails
-      await supabase.storage.from('club-media').remove([fileName]);
-      return Response.json({ error: 'Failed to save media record' }, { status: 500 });
+      console.error("[Club Media API] Database deletion error:", dbError);
+      return NextResponse.json({ error: "Failed to delete media record" }, { status: 500 });
     }
 
-    return Response.json(mediaRecord);
+    console.log(`[Club Media API] Successfully deleted media: ${mediaId}`);
+
+    // Invalidate URL cache
+    pathsToDelete.forEach((p) => urlCache.delete(p));
+
+    return NextResponse.json({ success: true });
+
   } catch (error) {
-    console.error('[POST /api/clubs/[clubId]/media] === CATCH BLOCK ===');
-    console.error('[POST /api/clubs/[clubId]/media] Error type:', typeof error);
-    console.error('[POST /api/clubs/[clubId]/media] Error message:', error instanceof Error ? error.message : 'Unknown error');
-    console.error('[POST /api/clubs/[clubId]/media] Full error:', error);
-    console.error('[POST /api/clubs/[clubId]/media] Stack:', error instanceof Error ? error.stack : 'No stack');
-    
-    return Response.json({ 
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      type: typeof error
-    }, { status: 500 });
+    console.error("[Club Media API] Unexpected error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

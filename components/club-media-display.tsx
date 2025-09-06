@@ -102,25 +102,34 @@ export function ClubMediaDisplay({
     <div className={`relative overflow-hidden group ${className}`}>
       {currentMedia?.media_type === 'image' ? (
         <img
-          src={currentMedia.file_path}
+          src={currentMedia.file_url ?? currentMedia.file_path}
           alt={currentMedia.alt_text || 'Club image'}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
       ) : (
         <div className="relative">
           <video
             ref={videoRef}
-            src={currentMedia?.file_path}
+            src={currentMedia.file_url ?? currentMedia.file_path}
             className="w-full h-full object-cover"
             muted={isMuted}
             loop
             playsInline
+            preload="metadata"
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
           />
           
           {/* Video Controls */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div
+            className={`absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${
+              isPlaying
+                ? 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                : 'opacity-100'
+            }`}
+          >
             <Button
               variant="secondary"
               size="sm"
@@ -186,13 +195,6 @@ export function ClubMediaDisplay({
         </>
       )}
 
-      {/* Media type indicator - only show if primary or multiple media */}
-      {currentMedia && (currentMedia.is_primary || displayMedia.length > 1) && (
-        <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-          {currentMedia.media_type === 'video' ? 'Video' : 'Image'}
-          {currentMedia.is_primary && ' • Primary'}
-        </div>
-      )}
     </div>
   );
 }

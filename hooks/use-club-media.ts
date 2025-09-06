@@ -7,6 +7,7 @@ export interface ClubMedia {
   media_type: 'image' | 'video';
   file_name: string;
   file_path: string;
+  file_url?: string;
   file_size: number;
   mime_type: string;
   display_order: number;
@@ -15,6 +16,7 @@ export interface ClubMedia {
   caption?: string;
   duration_seconds?: number;
   thumbnail_path?: string;
+  thumbnail_url?: string;
   created_at: string;
   updated_at: string;
 }

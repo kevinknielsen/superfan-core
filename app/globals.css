@@ -80,6 +80,19 @@
 }
 
 @layer components {
+  .scrollbar-hide {
+    /* Hide scrollbar for IE/old Edge & Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Hide scrollbars for Chrome, Safari, Opera, new Edge */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   .btn-primary {
     @apply bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-4 py-2 font-medium transition-all;
     box-shadow: 0 0 10px rgba(156, 38, 176, 0.2);
