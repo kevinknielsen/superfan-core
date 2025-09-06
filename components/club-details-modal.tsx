@@ -25,6 +25,7 @@ import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
+import { useClubMedia } from "@/hooks/use-club-media";
 import UnifiedPointsWallet from "./unified-economy/unified-points-wallet";
 import UnlockRedemption from "./unlock-redemption";
 import PerkRedemptionConfirmation from "./perk-redemption-confirmation";
@@ -61,6 +62,8 @@ const STATUS_COLORS = {
 
 
 // Helper function to render club media (supports images and videos)
+// Note: Multiple ClubMediaDisplay instances with same clubId are automatically
+// deduplicated by React Query's caching (same queryKey: ['club-media', clubId])
 function renderClubImages(club: Club) {
   return (
     <ClubMediaDisplay

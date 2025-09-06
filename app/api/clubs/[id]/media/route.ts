@@ -193,7 +193,7 @@ export async function POST(
         .eq('media_type', mediaType);
     }
 
-    // Get next display order (TODO: Move to DB-side increment to prevent race conditions)
+    // Get next display order (TODO: Use RPC function when TypeScript types are updated)
     const { data: lastMedia } = await supabaseTyped
       .from('club_media')
       .select('display_order')
