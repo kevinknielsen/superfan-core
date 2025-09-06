@@ -60,6 +60,9 @@ export default function PerkDetailsModal({
 
   const handleResendDetails = async () => {
     setIsResending(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
     try {
       // Call notification API to resend redemption details
       const response = await fetch('/api/notifications/perk-redemption', {
@@ -71,6 +74,7 @@ export default function PerkDetailsModal({
           redemption_id: redemption.id,
           resend: true,
         }),
+        signal: controller.signal,
       });
 
       if (response.ok) {
@@ -79,20 +83,44 @@ export default function PerkDetailsModal({
           description: "Check your email for updated redemption details.",
         });
       } else {
+        // Parse server error details
+        let errorMessage = "Please try again later.";
+        try {
+          const errorData = await response.json() as { error?: string };
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // Fallback to text if JSON parsing fails
+          try {
+            errorMessage = await response.text() || errorMessage;
+          } catch {
+            // Keep default message if both fail
+          }
+        }
+        
         toast({
           title: "Failed to resend",
-          description: "Please try again later.",
+          description: errorMessage,
           variant: "destructive",
         });
       }
     } catch (error) {
       console.error('Error resending details:', error);
-      toast({
-        title: "Network error",
-        description: "Please check your connection and try again.",
-        variant: "destructive",
-      });
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Request timeout",
+          description: "The request took too long. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Network error",
+          description: "Please check your connection and try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsResending(false);
     }
   };

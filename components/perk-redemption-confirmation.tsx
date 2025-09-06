@@ -138,7 +138,26 @@ export default function PerkRedemptionConfirmation({
   };
 
   const handleExternalLink = (url: string) => {
-    window.open(url, '_blank');
+    try {
+      const urlObj = new URL(url);
+      // Only allow http and https protocols
+      if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+        toast({
+          title: "Invalid link",
+          description: "Only HTTP and HTTPS links are allowed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      toast({
+        title: "Invalid URL",
+        description: "The provided link is not valid.",
+        variant: "destructive",
+      });
+    }
   };
 
   if (!isOpen) return null;
@@ -320,12 +339,22 @@ export default function PerkRedemptionConfirmation({
                   <div>
                     <p className="font-medium text-white">Valid Until</p>
                     <p className="text-gray-400">
-                      {new Date(unlock.metadata.expiry_date).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
+                      {(() => {
+                        try {
+                          const date = new Date(unlock.metadata.expiry_date);
+                          if (isNaN(date.getTime())) {
+                            return unlock.metadata.expiry_date || '—';
+                          }
+                          return date.toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          });
+                        } catch {
+                          return unlock.metadata.expiry_date || '—';
+                        }
+                      })()}
                     </p>
                   </div>
                 </div>
@@ -346,13 +375,24 @@ export default function PerkRedemptionConfirmation({
                 <div>
                   <p className="font-medium text-white">Redeemed</p>
                   <p className="text-gray-400">
-                    {new Date(redemption.redeemed_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit'
-                    })}
+                    {(() => {
+                      if (!redemption.redeemed_at) return 'Not available';
+                      try {
+                        const date = new Date(redemption.redeemed_at);
+                        if (isNaN(date.getTime())) {
+                          return 'Not available';
+                        }
+                        return date.toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit'
+                        });
+                      } catch {
+                        return 'Not available';
+                      }
+                    })()}
                   </p>
                 </div>
               </div>

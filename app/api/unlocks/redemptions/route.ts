@@ -19,11 +19,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Get the user from our database
+    // Get the user from our database (support both auth types)
+    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userColumn, auth.userId)
       .single();
 
     if (userError || !user) {

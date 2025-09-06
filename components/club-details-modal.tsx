@@ -117,15 +117,21 @@ export default function ClubDetailsModal({
 
   // Helper function for progress bar width calculation
   const getProgressBarWidth = () => {
-    if (breakdown?.status.progress_to_next) {
+    if (breakdown?.status.progress_to_next != null) {
       return `${breakdown.status.progress_to_next}%`;
     }
     if (!nextStatus) return '100%';
     
     const currentThreshold = STATUS_THRESHOLDS[currentStatus];
     const nextThreshold = STATUS_THRESHOLDS[nextStatus];
+    
+    // Guard against division by zero
+    if (nextThreshold === currentThreshold) {
+      return '100%';
+    }
+    
     const progress = ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100;
-    return `${Math.min(progress, 100)}%`;
+    return `${Math.max(0, Math.min(progress, 100))}%`;
   };
   
   const StatusIcon = STATUS_ICONS[currentStatus];

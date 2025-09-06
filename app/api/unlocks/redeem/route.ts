@@ -154,28 +154,37 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Unlock Redeem API] User ${auth.userId} redeemed "${unlock.title}" in club ${redeemData.club_id}`);
 
-    // Send notification (fire and forget)
-    try {
-      const notificationResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/notifications/perk-redemption`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          redemption_id: redemption.id,
-          unlock_id: redeemData.unlock_id,
-        }),
-      });
-
-      if (!notificationResponse.ok) {
+    // Send notification (truly fire and forget with timeout)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
+    fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/notifications/perk-redemption`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        redemption_id: redemption.id,
+        unlock_id: redeemData.unlock_id,
+      }),
+      signal: controller.signal
+    })
+    .then(response => {
+      clearTimeout(timeoutId);
+      if (!response.ok) {
         console.warn("[Unlock Redeem API] Notification failed, but redemption succeeded");
       } else {
         console.log("[Unlock Redeem API] Notification sent successfully");
       }
-    } catch (notificationError) {
-      console.warn("[Unlock Redeem API] Notification error:", notificationError);
-      // Don't fail the redemption if notification fails
-    }
+    })
+    .catch(error => {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        console.warn("[Unlock Redeem API] Notification timeout, but redemption succeeded");
+      } else {
+        console.warn("[Unlock Redeem API] Notification error:", error.message);
+      }
+    });
 
     // Return success with redemption details
     return NextResponse.json({
