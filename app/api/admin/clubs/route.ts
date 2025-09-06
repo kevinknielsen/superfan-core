@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       club_memberships: undefined // Remove the nested object
     }));
 
-    return NextResponse.json({ clubs: formattedClubs });
+    return NextResponse.json(formattedClubs);
 
   } catch (error) {
     console.error("[Admin Clubs API] Unexpected error:", error);
