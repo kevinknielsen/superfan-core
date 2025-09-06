@@ -7,26 +7,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Users, Settings, UserPlus, Calendar, MessageSquare, Plus, Edit3, Trash2, MapPin, DollarSign } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Users, Settings, Calendar, MessageSquare, Plus, Edit3, DollarSign } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import type { Club as ClubType } from '@/types/club.types';
 
-interface Club {
-  id: string;
-  name: string;
-  description: string | null;
-  city: string | null;
-  image_url: string | null;
-  is_active: boolean;
+type Club = ClubType & {
   point_sell_cents: number;
   point_settle_cents: number;
   member_count?: number;
-  created_at: string;
-  updated_at: string;
-}
+};
 
 interface ClubManagementProps {
   onStatsUpdate?: () => void;
@@ -41,9 +34,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingClub, setEditingClub] = useState<Club | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -62,6 +53,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
   const fetchClubs = async () => {
     try {
       const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error('No access token');
       
       const response = await fetch('/api/admin/clubs', {
         headers: {
@@ -115,9 +107,9 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
   const handleSubmitClub = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Determine if we're editing (either modal edit or inline edit)
-    const isEdit = !!editingClub || isEditingDetails;
-    const currentClub = editingClub || (clubs.length === 1 ? clubs[0] : null);
+    // Determine if we're editing (inline edit only)
+    const isEdit = isEditingDetails;
+    const currentClub = clubs.length === 1 ? clubs[0] : null;
     
     // Validate point prices
     const sellPrice = formData.point_sell_cents || (currentClub?.point_sell_cents || 100);
@@ -145,13 +137,13 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
         ? { 
             ...formData, 
             id: currentClub?.id,
-            // Fill in any missing fields with current club data
-            name: formData.name || currentClub?.name,
-            description: formData.description || currentClub?.description,
-            city: formData.city || currentClub?.city,
-            point_sell_cents: formData.point_sell_cents || currentClub?.point_sell_cents,
-            point_settle_cents: formData.point_settle_cents || currentClub?.point_settle_cents,
-            image_url: formData.image_url || currentClub?.image_url
+            // Fill in any missing fields with current club data (use ?? to preserve empty strings)
+            name: formData.name ?? currentClub?.name,
+            description: formData.description ?? currentClub?.description,
+            city: formData.city ?? currentClub?.city,
+            point_sell_cents: formData.point_sell_cents ?? currentClub?.point_sell_cents,
+            point_settle_cents: formData.point_settle_cents ?? currentClub?.point_settle_cents,
+            image_url: formData.image_url ?? currentClub?.image_url
           }
         : formData;
 
@@ -179,8 +171,6 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
       
       // Close modals and reset form
       setShowCreateModal(false);
-      setShowEditModal(false);
-      setEditingClub(null);
       setIsEditingDetails(false);
       resetForm();
       
@@ -239,22 +229,18 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
     }
   };
 
-  // Club creation/editing modal (shared for both create and edit)
+  // Club creation modal
   const ClubFormModal = () => (
-    <Dialog open={showCreateModal || showEditModal} onOpenChange={(open) => {
+    <Dialog open={showCreateModal} onOpenChange={(open) => {
       if (!open) {
         setShowCreateModal(false);
-        setShowEditModal(false);
-        setEditingClub(null);
         resetForm();
       }
     }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editingClub ? 'Edit Club' : 'Create New Club'}</DialogTitle>
-          <DialogDescription>
-            {editingClub ? 'Update your club information' : 'Set up your club with basic information'}
-          </DialogDescription>
+          <DialogTitle>Create New Club</DialogTitle>
+          <DialogDescription>Set up your club with basic information</DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmitClub} className="space-y-6">
@@ -302,6 +288,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
                 onChange={(e) => setFormData({...formData, point_sell_cents: parseInt(e.target.value) || 100})}
                 min="50"
                 max="500"
+                step="1"
                 placeholder="100"
               />
               <p className="text-xs text-muted-foreground">
@@ -318,6 +305,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
                 onChange={(e) => setFormData({...formData, point_settle_cents: parseInt(e.target.value) || 50})}
                 min="25"
                 max="250"
+                step="1"
                 placeholder="50"
               />
               <p className="text-xs text-muted-foreground">
@@ -350,11 +338,8 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isCreating || isEditing}>
-              {editingClub 
-                ? (isEditing ? 'Updating...' : 'Update Club')
-                : (isCreating ? 'Creating...' : 'Create Club')
-              }
+            <Button type="submit" disabled={isCreating}>
+              {isCreating ? 'Creating...' : 'Create Club'}
             </Button>
           </div>
         </form>

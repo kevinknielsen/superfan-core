@@ -50,8 +50,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+  // Guardrail: enforce SKIP_ADMIN_CHECKS is never true in production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Clubs API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -92,8 +96,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+  // Guardrail: enforce SKIP_ADMIN_CHECKS is never true in production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Clubs API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -101,11 +109,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const clubData = createClubSchema.parse(body);
 
-    // Get admin user's internal ID
+    // Get admin user's internal ID - support both Privy and Farcaster auth
     const { data: adminUser, error: userError } = await supabaseAny
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .or(`privy_id.eq.${auth.userId},farcaster_id.eq.${auth.userId}`)
       .single();
 
     if (userError || !adminUser) {
@@ -183,8 +191,12 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+  // Guardrail: enforce SKIP_ADMIN_CHECKS is never true in production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Clubs API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 

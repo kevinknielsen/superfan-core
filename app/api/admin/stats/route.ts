@@ -12,8 +12,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+  // Admin check with production safety
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -67,7 +68,12 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Admin Stats] Retrieved for user ${auth.userId}:`, stats);
 
-    return NextResponse.json(stats);
+    const response = NextResponse.json(stats);
+    // Add health warning if admin checks are bypassed
+    if (skipAdmin) {
+      response.headers.set('X-Health-Warning', 'Admin checks disabled for testing');
+    }
+    return response;
 
   } catch (error) {
     console.error("[Admin Stats API] Unexpected error:", error);

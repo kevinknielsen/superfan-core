@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

@@ -3,7 +3,8 @@ import { verifyUnifiedAuth } from "../../../../auth";
 import { isAdmin } from "@/lib/security.server";
 import { supabase } from "../../../../supabase";
 
-// Type assertion needed: database types don't include new club tables yet
+// TODO: Regenerate Supabase TypeScript types to include unlocks table
+// Type assertion needed: database types don't include new unlocks table yet
 const supabaseAny = supabase as any;
 
 export async function POST(
@@ -16,7 +17,7 @@ export async function POST(
   }
 
   // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 

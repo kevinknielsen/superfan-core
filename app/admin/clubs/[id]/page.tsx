@@ -41,6 +41,7 @@ export default function ClubManagementPage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const resetTimerRef = React.useRef<number | null>(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -56,24 +57,34 @@ export default function ClubManagementPage() {
     }
   }, [clubId]);
 
-  // Cleanup timeout to avoid state updates after unmount
+  // Cleanup timeout and abort controller to avoid state updates after unmount
   useEffect(() => {
     return () => {
       if (resetTimerRef.current) {
         clearTimeout(resetTimerRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
     };
   }, []);
 
   const fetchClub = async () => {
     try {
+      // Abort previous request if still pending
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
       const accessToken = await getAccessToken();
       if (!accessToken) throw new Error('Not authenticated');
       
+      abortControllerRef.current = new AbortController();
       const response = await fetch(`/api/admin/clubs/${clubId}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
         },
+        signal: abortControllerRef.current.signal,
       });
 
       if (response.ok) {
@@ -123,12 +134,13 @@ export default function ClubManagementPage() {
         throw new Error('Image is too large (max 5MB)');
       }
       
-      // For now, just use a data URL. In production, you'd upload to your media service
+      // Use data URL only for client-side preview
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result as string;
         setCoverImagePreview(result);
-        setFormData(prev => ({ ...prev, image_url: result }));
+        // TODO: Upload file to media service and get hosted URL
+        // For now, don't set image_url until we have a proper hosted URL
       };
       reader.readAsDataURL(file);
     } catch (error) {
@@ -145,7 +157,7 @@ export default function ClubManagementPage() {
 
   const removeImage = () => {
     setCoverImagePreview("");
-    setFormData(prev => ({ ...prev, image_url: "" }));
+    // Don't clear image_url from formData - let it keep the original hosted URL
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -380,7 +392,7 @@ export default function ClubManagementPage() {
                 <Button 
                   className="flex-1 gap-2"
                   onClick={handleSave}
-                  disabled={isSaving}
+                  disabled={isSaving || !formData.name.trim()}
                 >
                   {saveStatus === "saving" && <Loader2 className="w-4 h-4 animate-spin" />}
                   {saveStatus === "saved" && <Check className="w-4 h-4" />}
