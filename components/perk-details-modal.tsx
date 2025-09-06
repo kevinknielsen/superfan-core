@@ -49,6 +49,8 @@ export default function PerkDetailsModal({
 
   // Extract relevant data from perk and redemption
   const eventDate = perk.rules?.event_date || redemption.metadata?.event_date;
+  const eventDateObj = eventDate ? new Date(eventDate) : null;
+  const hasValidDate = !!(eventDateObj && !isNaN(eventDateObj.getTime()));
   const location = perk.rules?.location || redemption.metadata?.location;
   const capacity = perk.rules?.capacity;
   const accessCode = redemption.metadata?.access_code;
@@ -102,6 +104,9 @@ export default function PerkDetailsModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="perk-modal-title"
         onClick={onClose}
       >
         <motion.div
@@ -117,10 +122,12 @@ export default function PerkDetailsModal({
             <button
               onClick={onClose}
               className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-800/50 text-white hover:bg-gray-700/50 transition-colors z-10"
+              aria-label="Close"
+              type="button"
             >
               <X className="h-5 w-5" />
             </button>
-            <h1 className="text-lg font-semibold text-white text-center flex-1 mx-4">
+            <h1 id="perk-modal-title" className="text-lg font-semibold text-white text-center flex-1 mx-4">
               {clubName}
             </h1>
             <div className="w-10" /> {/* Spacer for centering */}
@@ -134,9 +141,9 @@ export default function PerkDetailsModal({
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center text-white">
                     <div className="text-4xl font-bold mb-2">{perk.title}</div>
-                    {eventDate && (
+                    {hasValidDate && (
                       <div className="text-lg opacity-90">
-                        {new Date(eventDate).toLocaleDateString('en-US', {
+                        {eventDateObj!.toLocaleDateString('en-US', {
                           month: 'numeric',
                           day: 'numeric',
                           year: '2-digit'
@@ -156,9 +163,9 @@ export default function PerkDetailsModal({
               {/* Title and Date */}
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold text-white">{perk.title}</h2>
-                {eventDate && (
+                {hasValidDate && (
                   <p className="text-gray-400">
-                    {new Date(eventDate).toLocaleDateString('en-US', {
+                    {eventDateObj!.toLocaleDateString('en-US', {
                       weekday: 'long',
                       year: 'numeric',
                       month: 'long',
@@ -182,15 +189,15 @@ export default function PerkDetailsModal({
               </div>
 
               {/* Event Details */}
-              {(eventDate || location || capacity) && (
+              {(hasValidDate || location || capacity !== undefined) && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold text-white">Event Details</h3>
                   <div className="space-y-3">
-                    {eventDate && (
+                    {hasValidDate && (
                       <div className="flex items-center gap-3 text-gray-300">
                         <Calendar className="h-5 w-5 text-gray-400" />
                         <span>
-                          {new Date(eventDate).toLocaleDateString('en-US', {
+                          {eventDateObj!.toLocaleDateString('en-US', {
                             weekday: 'long',
                             year: 'numeric',
                             month: 'long',
@@ -207,7 +214,7 @@ export default function PerkDetailsModal({
                         <span>{location}</span>
                       </div>
                     )}
-                    {capacity && (
+                    {capacity !== undefined && (
                       <div className="flex items-center gap-3 text-gray-300">
                         <Users className="h-5 w-5 text-gray-400" />
                         <span>Limited to {capacity} attendees</span>
@@ -245,7 +252,7 @@ export default function PerkDetailsModal({
                     variant="outline"
                     size="lg"
                     className="w-full bg-gray-800/50 border-gray-700 text-white hover:bg-gray-700/50"
-                    onClick={() => window.open(`mailto:${contactEmail}`, '_blank')}
+                    onClick={() => window.open(`mailto:${contactEmail}`, '_blank', 'noopener,noreferrer')}
                   >
                     <Mail className="h-5 w-5 mr-2" />
                     Contact Support
@@ -256,7 +263,7 @@ export default function PerkDetailsModal({
                     variant="outline"
                     size="lg"
                     className="w-full bg-gray-800/50 border-gray-700 text-white hover:bg-gray-700/50"
-                    onClick={() => window.open(externalLink, '_blank')}
+                    onClick={() => window.open(externalLink, '_blank', 'noopener,noreferrer')}
                   >
                     <ExternalLink className="h-5 w-5 mr-2" />
                     External Link
@@ -285,6 +292,8 @@ export default function PerkDetailsModal({
               disabled={isResending}
               size="lg"
               className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl"
+              aria-busy={isResending}
+              aria-live="polite"
             >
               {isResending ? 'Sending...' : 'Resend Details'}
             </Button>
