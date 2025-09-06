@@ -110,16 +110,33 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // TODO: Add admin role check when role column is added to users table
-    // For now, just verify user exists
+    // Get user ID (support both Privy and Farcaster auth)
+    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userIdField, auth.userId)
       .single();
 
     if (userError || !user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Verify user is authorized for this club (owner or admin)
+    const { data: clubAuth, error: clubAuthError } = await (supabase as any)
+      .from('clubs')
+      .select('owner_id')
+      .eq('id', clubId)
+      .single();
+
+    if (clubAuthError || !clubAuth) {
+      return NextResponse.json({ error: "Club not found" }, { status: 404 });
+    }
+
+    // Check if user is club owner
+    if (clubAuth.owner_id !== user.id) {
+      // TODO: Check for admin role when role column is added to users table
+      return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
     
     // Only parse formData after authentication succeeds
@@ -140,7 +157,7 @@ export async function POST(
       return NextResponse.json({ error: "Media type is required" }, { status: 400 });
     }
     
-    // Validate media type against whitelist
+    // Validate MIME type and derive normalized media_type
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json({ 
@@ -148,6 +165,14 @@ export async function POST(
         allowed_types: allowedTypes
       }, { status: 400 });
     }
+    
+    const computedMediaType = file.type.startsWith('video/') ? 'video' : 'image';
+    if (!['image', 'video'].includes(mediaType)) {
+      return NextResponse.json({ error: "Invalid media_type" }, { status: 400 });
+    }
+    
+    // Prefer server-derived media type
+    const effectiveMediaType = computedMediaType;
     
     // File size validation (10MB limit)
     const maxSize = 10 * 1024 * 1024; // 10MB
@@ -190,39 +215,25 @@ export async function POST(
         .from('club_media')
         .update({ is_primary: false })
         .eq('club_id', clubId)
-        .eq('media_type', mediaType);
+        .eq('media_type', effectiveMediaType);
     }
 
-    // Get next display order (TODO: Use RPC function when TypeScript types are updated)
-    const { data: lastMedia } = await supabaseTyped
-      .from('club_media')
-      .select('display_order')
-      .eq('club_id', clubId)
-      .order('display_order', { ascending: false })
-      .limit(1);
+    // Use RPC function for atomic display order insertion
+    const { data: insertResult, error: rpcError } = await (supabase as any)
+      .rpc('insert_club_media_with_order', {
+        p_club_id: clubId,
+        p_media_type: effectiveMediaType,
+        p_file_name: originalName,
+        p_file_path: fileName,
+        p_file_size: fileSize,
+        p_mime_type: mimeType,
+        p_is_primary: isPrimary,
+        p_alt_text: altText || null,
+        p_caption: caption || null
+      });
 
-    const displayOrder = (lastMedia?.[0]?.display_order || 0) + 1;
-
-    // Save media record to database
-    const { data: mediaRecord, error: dbError } = await supabaseTyped
-      .from('club_media')
-      .insert({
-        club_id: clubId,
-        media_type: mediaType,
-        file_name: originalName,
-        file_path: fileName,
-        file_size: fileSize,
-        mime_type: mimeType,
-        display_order: displayOrder,
-        is_primary: isPrimary,
-        alt_text: altText || null,
-        caption: caption || null,
-      })
-      .select()
-      .single();
-
-    if (dbError) {
-      console.error("[Club Media API] Database error:", dbError);
+    if (rpcError) {
+      console.error("[Club Media API] RPC error:", rpcError);
       // Clean up uploaded file
       await supabase.storage.from('club-media').remove([fileName]);
       return NextResponse.json({ error: "Failed to save media record" }, { status: 500 });
@@ -230,8 +241,8 @@ export async function POST(
 
     // Return media record with URL
     const mediaWithUrl = {
-      ...mediaRecord,
-      file_url: getMediaUrl(mediaRecord.file_path),
+      ...(insertResult as any),
+      file_url: getMediaUrl((insertResult as any).file_path),
     };
 
     console.log(`[Club Media API] Successfully uploaded media:`, mediaWithUrl.id);
@@ -263,16 +274,33 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // TODO: Add admin role check when role column is added to users table
-    // For now, just verify user exists
+    // Get user ID (support both Privy and Farcaster auth)
+    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userIdField, auth.userId)
       .single();
 
     if (userError || !user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Verify user is authorized for this club (owner or admin)
+    const { data: clubAuth, error: clubAuthError } = await (supabase as any)
+      .from('clubs')
+      .select('owner_id')
+      .eq('id', clubId)
+      .single();
+
+    if (clubAuthError || !clubAuth) {
+      return NextResponse.json({ error: "Club not found" }, { status: 404 });
+    }
+
+    // Check if user is club owner
+    if (clubAuth.owner_id !== user.id) {
+      // TODO: Check for admin role when role column is added to users table
+      return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
 
     console.log(`[Club Media API] Deleting media ${mediaId} for club: ${clubId}`);
