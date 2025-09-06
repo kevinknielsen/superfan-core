@@ -25,8 +25,9 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
+  // Admin check - bypass only allowed in non-production
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -78,8 +79,9 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
+  // Admin check - bypass only allowed in non-production
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -151,8 +153,9 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - can be disabled via environment variable for testing
-  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !isAdmin(auth.userId)) {
+  // Admin check - bypass only allowed in non-production
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
