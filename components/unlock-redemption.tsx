@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
-import confetti from "canvas-confetti";
 import { getAccessToken } from "@privy-io/react-auth";
 
 interface Unlock {
@@ -234,11 +233,6 @@ export default function UnlockRedemption({
 
   const getUnlockIcon = (type: string) => {
     const IconComponent = UNLOCK_TYPE_ICONS[type] || Gift;
-    return IconComponent;
-  };
-
-  const getStatusIcon = (status: string) => {
-    const IconComponent = STATUS_ICONS[status as keyof typeof STATUS_ICONS] || Users;
     return IconComponent;
   };
 

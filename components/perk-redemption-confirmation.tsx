@@ -84,10 +84,14 @@ export default function PerkRedemptionConfirmation({
 
   // Trigger celebration on mount
   useEffect(() => {
+    const prefersReduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      
     if (isOpen) {
-      setShowCelebration(true);
+      setShowCelebration(!prefersReduced);
       // Trigger confetti
       const timeoutId = setTimeout(() => {
+        if (prefersReduced) return;
         confetti({
           particleCount: 150,
           spread: 70,

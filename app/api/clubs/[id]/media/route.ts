@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../supabase";
+import { verifyUnifiedAuth } from "../../../auth";
 
 // Define the expected shape for club media
 interface ClubMedia {
@@ -103,14 +104,55 @@ export async function POST(
     const clubId = params.id;
     const formData = await request.formData();
     
+    // Admin authentication guard
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get user and verify admin role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('privy_id', auth.userId)
+      .single();
+
+    if (userError || !user || user.role !== 'admin') {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+    
     const file = formData.get('file') as File;
     const mediaType = formData.get('media_type') as string;
     const altText = formData.get('alt_text') as string;
     const caption = formData.get('caption') as string;
     const isPrimary = formData.get('is_primary') === 'true';
     
+    // Input validation
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+    
+    if (!mediaType) {
+      return NextResponse.json({ error: "Media type is required" }, { status: 400 });
+    }
+    
+    // Validate media type against whitelist
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
+    if (!allowedTypes.includes(file.type)) {
+      return NextResponse.json({ 
+        error: "Invalid file type. Allowed types: JPEG, PNG, WebP, GIF, MP4, WebM, QuickTime",
+        allowed_types: allowedTypes
+      }, { status: 400 });
+    }
+    
+    // File size validation (10MB limit)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      return NextResponse.json({ 
+        error: "File too large. Maximum size is 10MB",
+        max_size: maxSize,
+        file_size: file.size
+      }, { status: 413 });
     }
 
     console.log(`[Club Media API] Uploading ${mediaType} for club: ${clubId}`);
@@ -126,7 +168,8 @@ export async function POST(
       .from('club-media')
       .upload(fileName, file, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        contentType: file.type
       });
 
     if (uploadError) {
@@ -209,6 +252,23 @@ export async function DELETE(
 
     if (!mediaId) {
       return NextResponse.json({ error: "Media ID required" }, { status: 400 });
+    }
+
+    // Admin authentication guard
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get user and verify admin role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('privy_id', auth.userId)
+      .single();
+
+    if (userError || !user || user.role !== 'admin') {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
     console.log(`[Club Media API] Deleting media ${mediaId} for club: ${clubId}`);

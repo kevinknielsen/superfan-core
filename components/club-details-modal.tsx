@@ -113,7 +113,7 @@ export default function ClubDetailsModal({
   const currentPoints = membership?.points || 0;
   const nextStatus = getNextStatus(currentStatus);
   // Use unified points data if available, fallback to manual calculation
-  const pointsToNext = breakdown?.status.points_to_next || getPointsToNext(currentPoints, currentStatus);
+  const pointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
 
   // Helper function for progress bar width calculation
   const getProgressBarWidth = () => {

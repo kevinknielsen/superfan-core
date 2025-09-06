@@ -9,7 +9,9 @@ const supabaseAny = supabase as any;
 const notificationSchema = type({
   redemption_id: "string",
   unlock_id: "string",
-  "resend?": "boolean"
+  "resend?": "boolean",
+  "user_email?": "string",
+  "user_phone?": "string"
 });
 
 interface NotificationData {
@@ -52,7 +54,7 @@ function generateEmailContent(data: NotificationData): { subject: string; html: 
 Congratulations! You've successfully redeemed: ${unlock.title}
 
 Club: ${club.name}
-Perk Type: ${unlock.unlock_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+Perk Type: ${unlock.unlock_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
 
 ${unlock.description}
 
@@ -121,7 +123,7 @@ Thanks for being a Superfan!
     <div class="perk-card">
       <h2 style="margin-top: 0; color: #495057;">${unlock.title}</h2>
       <p><strong>Club:</strong> ${club.name}</p>
-      <p><strong>Type:</strong> ${unlock.unlock_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
+      <p><strong>Type:</strong> ${unlock.unlock_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
       <p>${unlock.description}</p>
     </div>
 
@@ -164,7 +166,7 @@ Thanks for being a Superfan!
 
     ${unlock.metadata?.external_link ? `
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${unlock.metadata.external_link}" class="button">Continue to ${unlock.unlock_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())} →</a>
+      <a href="${unlock.metadata.external_link}" class="button">Continue to ${unlock.unlock_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} →</a>
     </div>
     ` : ''}
 
@@ -238,7 +240,7 @@ export async function POST(request: NextRequest) {
 
     // Get redemption details
     const { data: redemption, error: redemptionError } = await supabaseAny
-      .from('unlock_redemptions')
+      .from('redemptions')
       .select('*')
       .eq('id', notificationData.redemption_id)
       .single();
@@ -284,13 +286,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Prepare notification data
+    // Prepare notification data with normalized unlock fields
+    const normalizedUnlock = {
+      ...unlock,
+      unlock_type: unlock.type || unlock.unlock_type || 'unknown',
+      metadata: unlock.rules || unlock.metadata || {}
+    };
+
     const fullNotificationData: NotificationData = {
       redemption_id: notificationData.redemption_id,
       unlock_id: notificationData.unlock_id,
       user_email: notificationData.user_email || user.email,
       user_phone: notificationData.user_phone || user.phone,
-      unlock,
+      unlock: normalizedUnlock,
       club,
       user
     };
@@ -299,19 +307,31 @@ export async function POST(request: NextRequest) {
     const emailContent = generateEmailContent(fullNotificationData);
     const smsContent = generateSMSContent(fullNotificationData);
 
+    // Validate that at least one delivery channel exists
+    const hasEmailChannel = fullNotificationData.user_email && emailContent;
+    const hasSMSChannel = fullNotificationData.user_phone && smsContent;
+    
+    if (!hasEmailChannel && !hasSMSChannel) {
+      return NextResponse.json({ 
+        error: "No delivery channel available. User must have email or phone number." 
+      }, { status: 400 });
+    }
+
     // TODO: Integrate with actual email service (SendGrid, Resend, etc.)
     // For now, we'll log the content and return success
-    console.log("[Perk Notification API] Email would be sent:", {
-      to: fullNotificationData.user_email,
-      subject: emailContent.subject,
-      preview: emailContent.text.substring(0, 200) + '...'
-    });
+    if (hasEmailChannel) {
+      console.log("[Perk Notification API] Email would be sent:", {
+        to: fullNotificationData.user_email?.replace(/(.).+(@.+)/, '$1***$2'),
+        subject: emailContent.subject,
+        preview: '[redacted]'
+      });
+    }
 
     // TODO: Integrate with actual SMS service (Twilio, etc.)
-    if (fullNotificationData.user_phone) {
+    if (hasSMSChannel) {
       console.log("[Perk Notification API] SMS would be sent:", {
-        to: fullNotificationData.user_phone,
-        message: smsContent.substring(0, 160) + '...'
+        to: fullNotificationData.user_phone?.replace(/(\d{3})\d*(\d{4})/, '$1***$2'),
+        message: '[redacted]'
       });
     }
 

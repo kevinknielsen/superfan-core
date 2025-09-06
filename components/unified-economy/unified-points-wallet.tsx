@@ -188,10 +188,10 @@ export default function UnifiedPointsWallet({
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-3">
           {showPurchaseOptions && (
-            <Button 
-              key="buy-points"
-              variant="default" 
-              className="w-full"
+              <Button
+                type="button"
+                variant="default"
+                className="w-full"
               onClick={(e) => {
                 e.stopPropagation();
                 handleBuyPoints();
@@ -202,9 +202,9 @@ export default function UnifiedPointsWallet({
             </Button>
           )}
           
-          <Button 
-            key="spend-points"
-            variant="outline" 
+          <Button
+            type="button"
+            variant="outline"
             onClick={(e) => {
               e.stopPropagation();
               setShowSpendModal(true);
@@ -216,9 +216,9 @@ export default function UnifiedPointsWallet({
           </Button>
 
           {showTransferOptions && (
-            <Button 
-              key="transfer-points"
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowTransferModal(true);

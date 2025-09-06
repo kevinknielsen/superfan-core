@@ -102,12 +102,13 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // Check capacity limits if specified
-    if (unlock.rules?.capacity) {
+    // Check capacity limits if specified (including 0)
+    if (typeof unlock.rules?.capacity === 'number') {
       const { count: redemptionCount, error: countError } = await supabaseAny
         .from('redemptions')
         .select('*', { count: 'exact', head: true })
-        .eq('unlock_id', redeemData.unlock_id);
+        .eq('unlock_id', redeemData.unlock_id)
+        .eq('status', 'confirmed');
 
       if (countError) {
         console.error("[Unlock Redeem API] Error checking capacity:", countError);
