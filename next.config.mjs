@@ -76,8 +76,8 @@ const nextConfig = {
     
     // Development and Preview CSP is more permissive for hot reloading, debugging, and Vercel features
     const scriptSrc = isDevOrPreview 
-      ? "'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://vercel.live https://*.vercel.app https://*.vercel.com https://farcaster.xyz"
-      : "'self' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://superfan.one https://farcaster.xyz";
+      ? "'self' 'unsafe-eval' 'unsafe-inline' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://vercel.live https://*.vercel.app https://*.vercel.com https://farcaster.xyz https://www.googletagmanager.com https://www.google-analytics.com"
+      : "'self' https://auth.privy.io https://verify.walletconnect.com https://registry.walletconnect.com https://superfan.one https://farcaster.xyz https://www.googletagmanager.com https://www.google-analytics.com";
     
     const styleSrc = isDevOrPreview
       ? "'self' 'unsafe-inline' https://*.vercel.app https://*.vercel.com https://fonts.googleapis.com"
@@ -97,7 +97,7 @@ const nextConfig = {
               "img-src 'self' data: https: blob:",
               "font-src 'self' data: https: https://fonts.gstatic.com",
               "media-src 'self' data: https: blob: https://*.supabase.co",
-              "connect-src 'self' https: wss: data: https://vercel.live https://*.vercel.app https://*.vercel.com https://*.supabase.co https://farcaster.xyz https://client.farcaster.xyz https://warpcast.com https://client.warpcast.com https://wrpcd.net https://*.wrpcd.net https://proxy.wrpcd.net https://privy.farcaster.xyz https://privy.warpcast.com https://auth.privy.io https://*.rpc.privy.systems https://cloudflareinsights.com https://explorer-api.walletconnect.com https://*.walletconnect.com",
+              "connect-src 'self' https: wss: data: https://vercel.live https://*.vercel.app https://*.vercel.com https://*.supabase.co https://farcaster.xyz https://client.farcaster.xyz https://warpcast.com https://client.warpcast.com https://wrpcd.net https://*.wrpcd.net https://proxy.wrpcd.net https://privy.farcaster.xyz https://privy.warpcast.com https://auth.privy.io https://*.rpc.privy.systems https://cloudflareinsights.com https://explorer-api.walletconnect.com https://*.walletconnect.com https://www.google-analytics.com https://analytics.google.com https://*.googletagmanager.com",
               "frame-src 'self' https://auth.privy.io https://verify.walletconnect.com https://vercel.live https://farcaster.xyz https://wallet.coinbase.com https://*.coinbase.com",
               "worker-src 'self' blob:",
               "object-src 'none'",

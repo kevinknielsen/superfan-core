@@ -33,6 +33,10 @@ import Spinner from "./ui/spinner";
 import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
 
+// Use compatible types with existing components
+type RedemptionData = any; // Keep flexible for now since it comes from API
+type UnlockData = any;     // Keep flexible for now since it comes from API
+
 interface ClubDetailsModalProps {
   club: Club;
   membership?: ClubMembership | null;
@@ -81,13 +85,13 @@ export default function ClubDetailsModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
   const [redemptionConfirmation, setRedemptionConfirmation] = useState<{
-    redemption: any;
-    unlock: any;
+    redemption: RedemptionData;
+    unlock: UnlockData;
   } | null>(null);
   const [perkDetails, setPerkDetails] = useState<{
     isOpen: boolean;
-    unlock: any;
-    redemption: any;
+    unlock: UnlockData | null;
+    redemption: RedemptionData | null;
   }>({
     isOpen: false,
     unlock: null,
@@ -110,6 +114,19 @@ export default function ClubDetailsModal({
   const nextStatus = getNextStatus(currentStatus);
   // Use unified points data if available, fallback to manual calculation
   const pointsToNext = breakdown?.status.points_to_next || getPointsToNext(currentPoints, currentStatus);
+
+  // Helper function for progress bar width calculation
+  const getProgressBarWidth = () => {
+    if (breakdown?.status.progress_to_next) {
+      return `${breakdown.status.progress_to_next}%`;
+    }
+    if (!nextStatus) return '100%';
+    
+    const currentThreshold = STATUS_THRESHOLDS[currentStatus];
+    const nextThreshold = STATUS_THRESHOLDS[nextStatus];
+    const progress = ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100;
+    return `${Math.min(progress, 100)}%`;
+  };
   
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
@@ -269,12 +286,7 @@ export default function ClubDetailsModal({
 
             {/* Back button */}
             <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Back button clicked');
-                onClose();
-              }}
+              onClick={onClose}
               className="absolute left-4 top-12 rounded-full bg-black/40 backdrop-blur-sm p-3 text-white hover:bg-black/60 transition-colors z-30"
             >
               <ChevronLeft className="h-6 w-6" />
@@ -288,7 +300,7 @@ export default function ClubDetailsModal({
                 e.stopPropagation();
                 console.log('Share button clicked');
                 if (!club) return;
-                const url = "https://superfan.one";
+                const url = `${window.location.origin}/clubs/${club.id}`;
                 try {
                   await navigator.clipboard.writeText(url);
                   toast({
@@ -493,13 +505,7 @@ export default function ClubDetailsModal({
                           className={`h-2 rounded-full transition-all duration-500 ${
                             currentStatus === 'superfan' ? 'bg-yellow-500' : 'bg-primary'
                           }`}
-                          style={{
-                            width: `${
-                              breakdown?.status.progress_to_next 
-                                ? `${breakdown.status.progress_to_next}%`
-                                : `${Math.min(((currentPoints - STATUS_THRESHOLDS[currentStatus]) / (STATUS_THRESHOLDS[nextStatus] - STATUS_THRESHOLDS[currentStatus])) * 100, 100)}%`
-                            }`,
-                          }}
+                          style={{ width: getProgressBarWidth() }}
                         />
                       </div>
                     </div>
@@ -570,9 +576,10 @@ export default function ClubDetailsModal({
       </motion.div>
       
       {/* Purchase Overlay */}
-      {showPurchaseOverlay && (
-        <div 
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+              {showPurchaseOverlay && (
+          <div 
+            key="purchase-overlay"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
           onClick={(e) => { 
             e.stopPropagation(); 
             setShowPurchaseOverlay(false); 
@@ -608,6 +615,7 @@ export default function ClubDetailsModal({
       {/* Perk Redemption Confirmation */}
       {redemptionConfirmation && (
         <PerkRedemptionConfirmation
+          key="redemption-confirmation"
           isOpen={!!redemptionConfirmation}
           onClose={() => setRedemptionConfirmation(null)}
           redemption={redemptionConfirmation.redemption}
@@ -618,6 +626,7 @@ export default function ClubDetailsModal({
 
       {/* Persistent Perk Details Modal */}
       <PerkDetailsModal
+        key="perk-details"
         isOpen={perkDetails.isOpen}
         onClose={() => setPerkDetails({ isOpen: false, unlock: null, redemption: null })}
         perk={perkDetails.unlock}

@@ -1,8 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../supabase";
 
-// Type assertion for club schema tables
-const supabaseAny = supabase as any;
+// Define the expected shape for club media
+interface ClubMedia {
+  id: string;
+  club_id: string;
+  media_type: string;
+  file_path: string;
+  thumbnail_path?: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  display_order: number;
+  is_primary: boolean;
+  alt_text?: string;
+  caption?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Type-safe Supabase client for club_media operations
+const supabaseTyped = supabase as unknown as {
+  from: (table: 'club_media') => {
+    select: (columns: string) => any;
+    insert: (data: any) => any;
+    update: (data: any) => any;
+    delete: () => any;
+  };
+  storage: typeof supabase.storage;
+};
+
+// URL cache to reduce repeated Supabase API calls
+const urlCache = new Map<string, string>();
 
 export async function GET(
   request: NextRequest,
@@ -14,7 +43,7 @@ export async function GET(
     console.log(`[Club Media API] Fetching media for club: ${clubId}`);
 
     // Get club media from database
-    const { data: media, error } = await supabaseAny
+    const { data: media, error } = await supabaseTyped
       .from('club_media')
       .select('*')
       .eq('club_id', clubId)
@@ -46,8 +75,14 @@ export async function GET(
 function getMediaUrl(filePath: string): string {
   if (!filePath) return '';
   
+  // Check cache first
+  if (urlCache.has(filePath)) {
+    return urlCache.get(filePath)!;
+  }
+  
   // If it's already a full URL, return as is
   if (filePath.startsWith('http')) {
+    urlCache.set(filePath, filePath);
     return filePath;
   }
   
@@ -56,6 +91,7 @@ function getMediaUrl(filePath: string): string {
     .from('club-media')
     .getPublicUrl(filePath);
   
+  urlCache.set(filePath, data.publicUrl);
   return data.publicUrl;
 }
 
@@ -81,8 +117,9 @@ export async function POST(
 
     // Generate unique filename
     const timestamp = Date.now();
-    const fileExtension = file.name.split('.').pop();
-    const fileName = `${clubId}/${timestamp}_${file.name}`;
+    const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_'); // Sanitize filename
+    const fileExtension = originalName.split('.').pop();
+    const fileName = `${clubId}/${timestamp}_${originalName}`;
 
     // Upload to Supabase storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -103,7 +140,7 @@ export async function POST(
 
     // If this is set as primary, unset other primary media of the same type
     if (isPrimary) {
-      await supabaseAny
+      await supabaseTyped
         .from('club_media')
         .update({ is_primary: false })
         .eq('club_id', clubId)
@@ -111,7 +148,7 @@ export async function POST(
     }
 
     // Get next display order
-    const { data: lastMedia } = await supabaseAny
+    const { data: lastMedia } = await supabaseTyped
       .from('club_media')
       .select('display_order')
       .eq('club_id', clubId)
@@ -121,7 +158,7 @@ export async function POST(
     const displayOrder = (lastMedia?.[0]?.display_order || 0) + 1;
 
     // Save media record to database
-    const { data: mediaRecord, error: dbError } = await supabaseAny
+    const { data: mediaRecord, error: dbError } = await supabaseTyped
       .from('club_media')
       .insert({
         club_id: clubId,
@@ -177,7 +214,7 @@ export async function DELETE(
     console.log(`[Club Media API] Deleting media ${mediaId} for club: ${clubId}`);
 
     // Get media record first
-    const { data: media, error: fetchError } = await supabaseAny
+    const { data: media, error: fetchError } = await supabaseTyped
       .from('club_media')
       .select('*')
       .eq('id', mediaId)
@@ -199,7 +236,7 @@ export async function DELETE(
     }
 
     // Delete from database
-    const { error: dbError } = await supabaseAny
+    const { error: dbError } = await supabaseTyped
       .from('club_media')
       .delete()
       .eq('id', mediaId)

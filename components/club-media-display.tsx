@@ -102,7 +102,7 @@ export function ClubMediaDisplay({
     <div className={`relative overflow-hidden group ${className}`}>
       {currentMedia?.media_type === 'image' ? (
         <img
-          src={(currentMedia as any).file_url || currentMedia.file_path}
+          src={(currentMedia as (ClubMedia & { file_url?: string })).file_url ?? currentMedia.file_path}
           alt={currentMedia.alt_text || 'Club image'}
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
@@ -110,7 +110,7 @@ export function ClubMediaDisplay({
         <div className="relative">
           <video
             ref={videoRef}
-            src={(currentMedia as any).file_url || currentMedia?.file_path}
+            src={(currentMedia as (ClubMedia & { file_url?: string })).file_url ?? currentMedia.file_path}
             className="w-full h-full object-cover"
             muted={isMuted}
             loop
@@ -120,11 +120,14 @@ export function ClubMediaDisplay({
           />
           
           {/* Video Controls */}
-          <div className={`absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${
-            isPlaying 
-              ? 'opacity-0 group-hover:opacity-100' // Only show on hover when playing
-              : 'opacity-100' // Always show when paused
-          }`}>
+          <div
+            className={`absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${
+              isPlaying
+                ? 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                : 'opacity-100'
+            }`}
+            aria-hidden={isPlaying}
+          >
             <Button
               variant="secondary"
               size="sm"

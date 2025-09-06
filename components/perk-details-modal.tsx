@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 interface PerkDetailsModalProps {
   isOpen: boolean;
@@ -12,14 +13,25 @@ interface PerkDetailsModalProps {
     title: string;
     description: string;
     type: string;
-    rules?: any;
-    metadata?: any;
-  };
+    rules?: {
+      event_date?: string;
+      location?: string;
+      capacity?: number;
+      instructions?: string;
+      contact_email?: string;
+      external_link?: string;
+    };
+    metadata?: Record<string, unknown>;
+  } | null;
   redemption: {
     id: string;
     redeemed_at: string;
-    metadata?: any;
-  };
+    metadata?: {
+      access_code?: string;
+      event_date?: string;
+      location?: string;
+    } & Record<string, unknown>;
+  } | null;
   clubName: string;
 }
 
@@ -30,7 +42,10 @@ export default function PerkDetailsModal({
   redemption,
   clubName,
 }: PerkDetailsModalProps) {
-  if (!isOpen) return null;
+  const { toast } = useToast();
+  const [isResending, setIsResending] = useState(false);
+
+  if (!isOpen || !perk || !redemption) return null;
 
   // Extract relevant data from perk and redemption
   const eventDate = perk.rules?.event_date || redemption.metadata?.event_date;
@@ -42,6 +57,7 @@ export default function PerkDetailsModal({
   const externalLink = perk.rules?.external_link;
 
   const handleResendDetails = async () => {
+    setIsResending(true);
     try {
       // Call notification API to resend redemption details
       const response = await fetch('/api/notifications/perk-redemption', {
@@ -56,13 +72,26 @@ export default function PerkDetailsModal({
       });
 
       if (response.ok) {
-        // Show success toast or feedback
-        console.log('Details resent successfully');
+        toast({
+          title: "Details sent!",
+          description: "Check your email for updated redemption details.",
+        });
       } else {
-        console.error('Failed to resend details');
+        toast({
+          title: "Failed to resend",
+          description: "Please try again later.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error resending details:', error);
+      toast({
+        title: "Network error",
+        description: "Please check your connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -253,10 +282,11 @@ export default function PerkDetailsModal({
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent">
             <Button
               onClick={handleResendDetails}
+              disabled={isResending}
               size="lg"
-              className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
+              className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl"
             >
-              Resend Details
+              {isResending ? 'Sending...' : 'Resend Details'}
             </Button>
           </div>
         </motion.div>

@@ -189,6 +189,7 @@ export default function UnifiedPointsWallet({
         <div className="grid grid-cols-2 gap-3">
           {showPurchaseOptions && (
             <Button 
+              key="buy-points"
               variant="default" 
               className="w-full"
               onClick={(e) => {
@@ -202,6 +203,7 @@ export default function UnifiedPointsWallet({
           )}
           
           <Button 
+            key="spend-points"
             variant="outline" 
             onClick={(e) => {
               e.stopPropagation();
@@ -215,6 +217,7 @@ export default function UnifiedPointsWallet({
 
           {showTransferOptions && (
             <Button 
+              key="transfer-points"
               variant="outline" 
               onClick={(e) => {
                 e.stopPropagation();

@@ -115,16 +115,20 @@ export default function UnlockRedemption({
       ]);
 
       if (unlocksResponse.ok) {
-        const unlocksData = await unlocksResponse.json();
+        const unlocksData = await unlocksResponse.json() as Unlock[];
         setUnlocks(unlocksData);
       }
 
       if (redemptionsResponse.ok) {
-        const redemptionsData = await redemptionsResponse.json();
+        const redemptionsData = await redemptionsResponse.json() as { redemptions: any[] };
         setRedemptions(redemptionsData.redemptions || []);
       } else {
-        // If redemptions API doesn't exist yet, just log and continue
-        console.warn('Redemptions API not available yet');
+        // Handle different error scenarios
+        if (redemptionsResponse.status === 404) {
+          console.warn('Redemptions API not available yet');
+        } else {
+          console.error(`Failed to fetch redemptions: ${redemptionsResponse.status}`);
+        }
         setRedemptions([]);
       }
     } catch (error) {
@@ -187,10 +191,13 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        const redemptionData = await response.json();
+        const redemptionData = await response.json() as { redemption: any };
         
         // Close current modal
         setSelectedUnlock(null);
+        
+        // Reload data to update UI state
+        await loadData();
         
         // Show full-screen confirmation
         onShowRedemptionConfirmation?.(redemptionData.redemption, unlock);
@@ -198,7 +205,20 @@ export default function UnlockRedemption({
         // Callback for parent component
         onRedemption?.();
       } else {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string };
+        
+        // Handle specific error cases
+        if (response.status === 409) {
+          // Conflict - already redeemed, reload data to sync UI
+          await loadData();
+          toast({
+            title: "Already Redeemed",
+            description: "You've already redeemed this perk. Check your email for details.",
+            variant: "default",
+          });
+          return;
+        }
+        
         throw new Error(errorData.error || 'Failed to redeem unlock');
       }
     } catch (error) {
@@ -228,15 +248,15 @@ export default function UnlockRedemption({
 
   if (isLoading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="flex gap-4 overflow-x-auto pb-2">
         {[1, 2, 3].map((i) => (
-          <Card key={i} className="animate-pulse">
-            <CardContent className="p-6">
-              <div className="h-4 bg-muted rounded w-1/2 mb-2"></div>
-              <div className="h-3 bg-muted rounded w-3/4 mb-4"></div>
-              <div className="h-8 bg-muted rounded"></div>
-            </CardContent>
-          </Card>
+          <div 
+            key={i} 
+            className="flex-shrink-0 w-48 rounded-3xl overflow-hidden bg-gray-900/40 animate-pulse"
+            style={{ aspectRatio: '3/4' }}
+          >
+            <div className="h-full bg-muted"></div>
+          </div>
         ))}
       </div>
     );
@@ -345,6 +365,15 @@ export default function UnlockRedemption({
                           : 'bg-gray-700/80 text-gray-400 cursor-not-allowed'
                     }`}
                     disabled={!isAvailable && !isUnlockRedeemed(unlock)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const redemption = getUnlockRedemption(unlock);
+                      if (redemption) {
+                        onShowPerkDetails?.(unlock, redemption);
+                      } else if (isAvailable) {
+                        setSelectedUnlock(unlock);
+                      }
+                    }}
                   >
                     {isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
@@ -401,7 +430,17 @@ export default function UnlockRedemption({
                 {selectedUnlock.metadata?.expiry_date && (
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>Valid until {new Date(selectedUnlock.metadata.expiry_date).toLocaleDateString()}</span>
+                    <span>
+                      Valid until {
+                        (() => {
+                          try {
+                            return new Date(selectedUnlock.metadata.expiry_date).toLocaleDateString();
+                          } catch {
+                            return selectedUnlock.metadata.expiry_date;
+                          }
+                        })()
+                      }
+                    </span>
                   </div>
                 )}
                 

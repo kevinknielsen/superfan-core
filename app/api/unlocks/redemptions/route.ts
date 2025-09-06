@@ -26,18 +26,23 @@ export async function GET(request: NextRequest) {
       .eq('privy_id', auth.userId)
       .single();
 
-    if (userError) {
-      console.error("[Redemptions API] User not found:", userError);
+    if (userError || !user) {
+      console.error("[Redemptions API] User not found");
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Get user's redemptions for this club
+    // Get user's redemptions for this club with proper scoping
     const { data: redemptions, error: redemptionsError } = await supabaseAny
       .from('redemptions')
       .select(`
-        *,
-        unlocks (
+        id,
+        unlock_id,
+        status,
+        redeemed_at,
+        metadata,
+        unlocks!inner (
           id,
+          club_id,
           title,
           description,
           type,
@@ -45,7 +50,8 @@ export async function GET(request: NextRequest) {
         )
       `)
       .eq('user_id', user.id)
-      .in('status', ['confirmed', 'completed']) // Only include successful redemptions
+      .in('status', ['confirmed', 'completed'])
+      .eq('unlocks.club_id', clubId)
       .order('redeemed_at', { ascending: false });
 
     if (redemptionsError) {
@@ -53,15 +59,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Failed to fetch redemptions" }, { status: 500 });
     }
 
-    // Filter by club if we have unlock data (some redemptions might not have unlock data if unlocks were deleted)
-    const clubRedemptions = redemptions?.filter(redemption => 
-      redemption.unlocks && 
-      (redemption.metadata?.club_id === clubId || 
-       // For older redemptions that might not have club_id in metadata, we'll include all
-       !redemption.metadata?.club_id)
-    ) || [];
+    // Data already scoped by club via inner join; keep all rows
+    const clubRedemptions = redemptions ?? [];
 
-    console.log(`[Redemptions API] Found ${clubRedemptions.length} redemptions for user ${auth.userId} in club ${clubId}`);
+    console.log(`[Redemptions API] Found ${clubRedemptions.length} redemptions for user ${user.id} in club ${clubId}`);
 
     return NextResponse.json({
       success: true,

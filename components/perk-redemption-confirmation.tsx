@@ -87,7 +87,7 @@ export default function PerkRedemptionConfirmation({
     if (isOpen) {
       setShowCelebration(true);
       // Trigger confetti
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         confetti({
           particleCount: 150,
           spread: 70,
@@ -95,6 +95,12 @@ export default function PerkRedemptionConfirmation({
           colors: ['#FFD700', '#FFA500', '#FF69B4', '#9370DB', '#00CED1'],
         });
       }, 300);
+      
+      // Cleanup
+      return () => {
+        clearTimeout(timeoutId);
+        confetti.reset(); // Reset confetti if component unmounts
+      };
     }
   }, [isOpen]);
 
@@ -234,7 +240,11 @@ export default function PerkRedemptionConfirmation({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleCopyCode(unlock.metadata!.presale_code!)}
+                        onClick={() => {
+                          if (unlock.metadata?.presale_code) {
+                            handleCopyCode(unlock.metadata.presale_code);
+                          }
+                        }}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -252,7 +262,11 @@ export default function PerkRedemptionConfirmation({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleCopyCode(unlock.metadata!.access_code!)}
+                        onClick={() => {
+                          if (unlock.metadata?.access_code) {
+                            handleCopyCode(unlock.metadata.access_code);
+                          }
+                        }}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -386,7 +400,11 @@ export default function PerkRedemptionConfirmation({
                 transition={{ delay: 1.0 }}
               >
                 <Button
-                  onClick={() => handleExternalLink(unlock.metadata!.external_link!)}
+                  onClick={() => {
+                    if (unlock.metadata?.external_link) {
+                      handleExternalLink(unlock.metadata.external_link);
+                    }
+                  }}
                   className="w-full bg-primary hover:bg-primary/90 text-white py-4 text-lg"
                 >
                   <ExternalLink className="h-5 w-5 mr-2" />
