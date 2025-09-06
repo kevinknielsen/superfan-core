@@ -4,7 +4,6 @@ import React, { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
-  Globe,
   Calendar,
   Users,
   Star,
@@ -13,19 +12,15 @@ import {
   Shield,
   Share2,
   MapPin,
-  Gift,
-  Sparkles,
   ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
-import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
+import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
-import { useClubMedia } from "@/hooks/use-club-media";
 import UnifiedPointsWallet from "./unified-economy/unified-points-wallet";
 import UnlockRedemption from "./unlock-redemption";
 import PerkRedemptionConfirmation from "./perk-redemption-confirmation";
@@ -52,12 +47,6 @@ const STATUS_ICONS = {
   superfan: Crown,
 };
 
-const STATUS_COLORS = {
-  cadet: "text-gray-400",
-  resident: "text-blue-400", 
-  headliner: "text-purple-400",
-  superfan: "text-yellow-400",
-};
 
 
 
@@ -115,7 +104,8 @@ export default function ClubDetailsModal({
   const currentPoints = membership?.points || 0;
   const nextStatus = getNextStatus(currentStatus);
   // Use unified points data if available, fallback to manual calculation
-  const pointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
+  const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
+  const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
 
   // Helper function for progress bar width calculation
   const getProgressBarWidth = () => {

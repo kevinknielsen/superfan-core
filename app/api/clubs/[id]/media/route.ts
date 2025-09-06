@@ -59,7 +59,7 @@ export async function GET(
     const mediaWithUrls = media?.map((item: any) => ({
       ...item,
       file_url: getMediaUrl(item.file_path),
-      thumbnail_url: item.thumbnail_path ? getMediaUrl(item.thumbnail_path) : null,
+      thumbnail_url: item.thumbnail_path ? getMediaUrl(item.thumbnail_path) : undefined,
     })) || [];
 
     console.log(`[Club Media API] Found ${mediaWithUrls.length} media items for club ${clubId}`);
@@ -174,12 +174,14 @@ export async function POST(
     // Prefer server-derived media type
     const effectiveMediaType = computedMediaType;
     
-    // File size validation (10MB limit)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
+    // File size validation (per-type limits)
+    const MAX_IMAGE = 10 * 1024 * 1024;   // 10MB
+    const MAX_VIDEO = 200 * 1024 * 1024;  // 200MB
+    const limit = (file.type.startsWith('video/') ? MAX_VIDEO : MAX_IMAGE);
+    if (file.size > limit) {
       return NextResponse.json({ 
-        error: "File too large. Maximum size is 10MB",
-        max_size: maxSize,
+        error: "File too large",
+        max_size: limit,
         file_size: file.size
       }, { status: 413 });
     }
@@ -215,7 +217,8 @@ export async function POST(
         .from('club_media')
         .update({ is_primary: false })
         .eq('club_id', clubId)
-        .eq('media_type', effectiveMediaType);
+        .eq('media_type', effectiveMediaType)
+        .eq('is_primary', true);
     }
 
     // Use RPC function for atomic display order insertion
@@ -236,7 +239,12 @@ export async function POST(
       console.error("[Club Media API] RPC error:", rpcError);
       // Clean up uploaded file
       await supabase.storage.from('club-media').remove([fileName]);
-      return NextResponse.json({ error: "Failed to save media record" }, { status: 500 });
+      const code = (rpcError as any)?.code;
+      const status = code === '23505' ? 409 : 500;
+      const message = code === '23505'
+        ? "A primary item for this media type already exists"
+        : "Failed to save media record";
+      return NextResponse.json({ error: message }, { status });
     }
 
     // Return media record with URL
@@ -345,6 +353,9 @@ export async function DELETE(
     }
 
     console.log(`[Club Media API] Successfully deleted media: ${mediaId}`);
+
+    // Invalidate URL cache
+    pathsToDelete.forEach((p) => urlCache.delete(p));
 
     return NextResponse.json({ success: true });
 
