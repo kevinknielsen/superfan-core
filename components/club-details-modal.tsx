@@ -30,7 +30,6 @@ import UnlockRedemption from "./unlock-redemption";
 import PerkRedemptionConfirmation from "./perk-redemption-confirmation";
 import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
-import { Badge } from "./ui/badge";
 import { formatDate } from "@/lib/utils";
 
 // Use compatible types with existing components
@@ -541,10 +540,10 @@ export default function ClubDetailsModal({
               <div className="w-full max-w-md">
                 {membership ? (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log('Open Wallet clicked');
                       setShowPurchaseOverlay(true);
                     }}
                     className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
@@ -553,10 +552,10 @@ export default function ClubDetailsModal({
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log('Join Club clicked');
                       handleJoinClub();
                     }}
                     disabled={joinClubMutation.isPending || !isAuthenticated}

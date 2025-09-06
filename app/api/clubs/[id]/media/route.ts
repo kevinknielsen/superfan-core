@@ -92,8 +92,9 @@ function getMediaUrl(filePath: string): string {
     .from('club-media')
     .getPublicUrl(filePath);
   
-  urlCache.set(filePath, data.publicUrl);
-  return data.publicUrl;
+  const url = data?.publicUrl || filePath;
+  urlCache.set(filePath, url);
+  return url;
 }
 
 export async function POST(
@@ -102,24 +103,27 @@ export async function POST(
 ) {
   try {
     const clubId = params.id;
-    const formData = await request.formData();
     
-    // Admin authentication guard
+    // Authentication guard - BEFORE parsing formData
     const auth = await verifyUnifiedAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user and verify admin role
+    // TODO: Add admin role check when role column is added to users table
+    // For now, just verify user exists
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, role')
+      .select('id')
       .eq('privy_id', auth.userId)
       .single();
 
-    if (userError || !user || user.role !== 'admin') {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (userError || !user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+    
+    // Only parse formData after authentication succeeds
+    const formData = await request.formData();
     
     const file = formData.get('file') as File;
     const mediaType = formData.get('media_type') as string;
@@ -160,7 +164,6 @@ export async function POST(
     // Generate unique filename
     const timestamp = Date.now();
     const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_'); // Sanitize filename
-    const fileExtension = originalName.split('.').pop();
     const fileName = `${clubId}/${timestamp}_${originalName}`;
 
     // Upload to Supabase storage
@@ -190,7 +193,7 @@ export async function POST(
         .eq('media_type', mediaType);
     }
 
-    // Get next display order
+    // Get next display order (TODO: Move to DB-side increment to prevent race conditions)
     const { data: lastMedia } = await supabaseTyped
       .from('club_media')
       .select('display_order')
@@ -206,7 +209,7 @@ export async function POST(
       .insert({
         club_id: clubId,
         media_type: mediaType,
-        file_name: file.name,
+        file_name: originalName,
         file_path: fileName,
         file_size: fileSize,
         mime_type: mimeType,
@@ -254,21 +257,22 @@ export async function DELETE(
       return NextResponse.json({ error: "Media ID required" }, { status: 400 });
     }
 
-    // Admin authentication guard
+    // Authentication guard
     const auth = await verifyUnifiedAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user and verify admin role
+    // TODO: Add admin role check when role column is added to users table
+    // For now, just verify user exists
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, role')
+      .select('id')
       .eq('privy_id', auth.userId)
       .single();
 
-    if (userError || !user || user.role !== 'admin') {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (userError || !user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     console.log(`[Club Media API] Deleting media ${mediaId} for club: ${clubId}`);
@@ -285,10 +289,15 @@ export async function DELETE(
       return NextResponse.json({ error: "Media not found" }, { status: 404 });
     }
 
-    // Delete from storage
+    // Delete from storage (including thumbnails)
+    const pathsToDelete = [media.file_path];
+    if (media.thumbnail_path) {
+      pathsToDelete.push(media.thumbnail_path);
+    }
+    
     const { error: storageError } = await supabase.storage
       .from('club-media')
-      .remove([media.file_path]);
+      .remove(pathsToDelete);
 
     if (storageError) {
       console.warn("[Club Media API] Storage deletion warning:", storageError);

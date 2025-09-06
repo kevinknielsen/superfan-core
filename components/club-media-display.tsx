@@ -104,6 +104,8 @@ export function ClubMediaDisplay({
         <img
           src={currentMedia.file_url ?? currentMedia.file_path}
           alt={currentMedia.alt_text || 'Club image'}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
       ) : (
@@ -115,6 +117,7 @@ export function ClubMediaDisplay({
             muted={isMuted}
             loop
             playsInline
+            preload="metadata"
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
           />
