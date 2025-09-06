@@ -4,7 +4,7 @@ import { isAdmin } from "@/lib/security.server";
 import { supabase } from "../../supabase";
 import { type } from "arktype";
 
-// Type assertion for club schema tables (temporary workaround for outdated types)
+// Type assertion needed: database types don't include new club tables yet
 const supabaseAny = supabase as any;
 
 const createUnlockSchema = type({
@@ -33,14 +33,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check admin status
-  if (!(await isAdmin(auth.userId))) {
+  // Admin check - bypass only allowed in non-production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Unlocks API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
   try {
     // Get unlocks with club information
-    const { data: unlocks, error } = await supabaseAny
+    const { data: unlocks, error } = await supabase
       .from('unlocks')
       .select(`
         *,
@@ -75,8 +80,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check admin status
-  if (!(await isAdmin(auth.userId))) {
+  // Admin check - bypass only allowed in non-production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Unlocks API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Verify club exists and is active
-    const { data: club, error: clubError } = await supabaseAny
+    const { data: club, error: clubError } = await supabase
       .from('clubs')
       .select('id, name')
       .eq('id', unlockData.club_id)
@@ -105,7 +115,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the unlock
-    const { data: newUnlock, error: createError } = await supabaseAny
+    const { data: newUnlock, error: createError } = await supabase
       .from('unlocks')
       .insert({
         club_id: unlockData.club_id,
@@ -145,8 +155,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check admin status
-  if (!(await isAdmin(auth.userId))) {
+  // Admin check - bypass only allowed in non-production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Unlocks API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -163,7 +178,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     // Update the unlock
-    const { data: updatedUnlock, error: updateError } = await supabaseAny
+    const { data: updatedUnlock, error: updateError } = await supabase
       .from('unlocks')
       .update({
         club_id: unlockData.club_id,

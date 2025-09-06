@@ -114,8 +114,8 @@ export default function UnlockManagement({ onStatsUpdate }: UnlockManagementProp
     try {
       const response = await fetch('/api/admin/unlocks');
       if (response.ok) {
-        const data = await response.json();
-        setUnlocks(data);
+        const data = await response.json() as Unlock[];
+        setUnlocks(Array.isArray(data) ? data : []);
       }
     } catch (error) {
       console.error('Error loading unlocks:', error);

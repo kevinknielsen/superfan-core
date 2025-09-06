@@ -3,7 +3,7 @@ import { verifyUnifiedAuth } from "../../auth";
 import { isAdmin } from "@/lib/security.server";
 import { supabase } from "../../supabase";
 
-// Type assertion for club schema tables (temporary workaround for outdated types)
+// Type assertion needed: database types don't include new club tables yet
 const supabaseAny = supabase as any;
 
 export async function GET(request: NextRequest) {
@@ -12,14 +12,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check admin status
-  if (!(await isAdmin(auth.userId))) {
+  // Admin check with production safety
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
   try {
     // Get total clubs
-    const { count: totalClubs, error: clubsError } = await supabaseAny
+    const { count: totalClubs, error: clubsError } = await supabase
       .from('clubs')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true);
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total members (club memberships)
-    const { count: totalMembers, error: membersError } = await supabaseAny
+    const { count: totalMembers, error: membersError } = await supabase
       .from('club_memberships')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active');
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total tap-ins
-    const { count: totalTapIns, error: tapInsError } = await supabaseAny
+    const { count: totalTapIns, error: tapInsError } = await supabase
       .from('tap_ins')
       .select('*', { count: 'exact', head: true });
 
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total unlocks
-    const { count: totalUnlocks, error: unlocksError } = await supabaseAny
+    const { count: totalUnlocks, error: unlocksError } = await supabase
       .from('unlocks')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true);
@@ -67,7 +68,12 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Admin Stats] Retrieved for user ${auth.userId}:`, stats);
 
-    return NextResponse.json(stats);
+    const response = NextResponse.json(stats);
+    // Add health warning if admin checks are bypassed
+    if (skipAdmin) {
+      response.headers.set('X-Health-Warning', 'Admin checks disabled for testing');
+    }
+    return response;
 
   } catch (error) {
     console.error("[Admin Stats API] Unexpected error:", error);

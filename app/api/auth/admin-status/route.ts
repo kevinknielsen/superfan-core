@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { createServiceClient } from '@/app/api/supabase';
 import { isAdmin } from '@/lib/security.server';
 
 /**
@@ -8,6 +7,17 @@ import { isAdmin } from '@/lib/security.server';
  */
 export async function GET(request: NextRequest) {
   try {
+    // If in testing mode, return test response
+    if (process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+      console.log('[Admin Status] TESTING MODE - Admin access open to everyone');
+      return NextResponse.json({ 
+        isAdmin: true,
+        testingMode: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Real auth check
     const auth = await verifyUnifiedAuth(request);
     if (!auth) {
       console.log('[Admin Status] No auth found');
@@ -16,26 +26,15 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Admin Status] Checking admin for user: ${auth.userId} (type: ${auth.type})`);
     
+    const userIsAdmin = isAdmin(auth.userId);
+    console.log(`[Admin Status] Final result - User: ${auth.userId}, isAdmin: ${userIsAdmin}`);
     
-    // Direct database check (same as debug test that worked)
-    const supabase = createServiceClient();
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('role')
-      .eq('privy_id', auth.userId)
-      .single();
-    
-    if (error) {
-      console.error('[Admin Status] Database error:', error);
-      return NextResponse.json({ isAdmin: false, error: 'Database error' }, { status: 500 });
-    }
-    
-    const userIsAdmin = user?.role === 'admin';
-    console.log(`[Admin Status] Final result - User: ${auth.userId}, role: ${user?.role}, isAdmin: ${userIsAdmin}`);
-    
-    return NextResponse.json({ isAdmin: userIsAdmin });
+    return NextResponse.json({ 
+      isAdmin: userIsAdmin,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
-    console.error('[Admin Status] Error checking admin status:', error);
+    console.error('[Admin Status] Error:', error);
     return NextResponse.json({ isAdmin: false }, { status: 200 });
   }
 }

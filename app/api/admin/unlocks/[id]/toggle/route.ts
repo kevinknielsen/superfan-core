@@ -3,7 +3,8 @@ import { verifyUnifiedAuth } from "../../../../auth";
 import { isAdmin } from "@/lib/security.server";
 import { supabase } from "../../../../supabase";
 
-// Type assertion for club schema tables (temporary workaround for outdated types)
+// TODO: Regenerate Supabase TypeScript types to include unlocks table
+// Type assertion needed: database types don't include new unlocks table yet
 const supabaseAny = supabase as any;
 
 export async function POST(
@@ -15,8 +16,13 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check admin status
-  if (!(await isAdmin(auth.userId))) {
+  // Admin check - bypass only allowed in non-production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Admin Unlock Toggle API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -24,7 +30,7 @@ export async function POST(
 
   try {
     // Get current unlock status
-    const { data: unlock, error: fetchError } = await supabaseAny
+    const { data: unlock, error: fetchError } = await supabase
       .from('unlocks')
       .select('id, title, is_active')
       .eq('id', unlockId)
@@ -35,7 +41,7 @@ export async function POST(
     }
 
     // Toggle the active status
-    const { data: updatedUnlock, error: updateError } = await supabaseAny
+    const { data: updatedUnlock, error: updateError } = await supabase
       .from('unlocks')
       .update({
         is_active: !unlock.is_active,
