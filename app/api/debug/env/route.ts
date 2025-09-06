@@ -14,13 +14,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // TEMPORARY: Skip admin check for testing
-  // if (!isAdmin(auth.userId)) {
-  //   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  // }
+  // Admin check - can be disabled via environment variable for testing
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   return NextResponse.json({
-    adminUserIds: process.env.ADMIN_USER_IDS,
+    adminUserIds: process.env.ADMIN_USER_IDS ? '[REDACTED]' : undefined,
     enableAdminPanel: process.env.ENABLE_ADMIN_PANEL,
     hasAdminEnv: !!process.env.ADMIN_USER_IDS,
     envLength: process.env.ADMIN_USER_IDS?.length || 0,

@@ -74,8 +74,17 @@ export default function QRManagement() {
         throw new Error('Failed to load QR codes');
       }
 
-      const data = await response.json();
-      setGeneratedQRs(data.qr_codes || []);
+      const data = await response.json() as { qr_codes?: QRCode[] };
+      const qrCodes = data.qr_codes || [];
+      // Validate that essential properties exist
+      const validQRs = qrCodes.filter(qr => 
+        qr && 
+        qr.qr_id && 
+        qr.qr_url && 
+        qr.qr_data && 
+        typeof qr.qr_data === 'object'
+      );
+      setGeneratedQRs(validQRs);
       
     } catch (error) {
       console.error('Error loading QR codes:', error);
@@ -203,7 +212,7 @@ export default function QRManagement() {
                 <SelectValue placeholder="Choose a club..." />
               </SelectTrigger>
               <SelectContent>
-                {activeClubs.map((club) => (
+                {activeClubs.filter(club => club.id && typeof club.id === 'string').map((club) => (
                   <SelectItem key={club.id} value={club.id}>
                     <div className="flex items-center gap-2">
                       <span>{club.name}</span>
@@ -268,7 +277,7 @@ export default function QRManagement() {
               <div className="space-y-4">
                 {generatedQRs.map((qr, index) => (
                 <motion.div
-                  key={qr.qr_id}
+                  key={qr.qr_id || `qr-${index}`}
                   className="border rounded-lg p-4"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -278,7 +287,7 @@ export default function QRManagement() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <h4 className="font-medium">
-                          {qr.qr_data.source.replace(/_/g, ' ').toUpperCase()}
+                          {qr.qr_data?.source ? qr.qr_data.source.replace(/_/g, ' ').toUpperCase() : 'UNKNOWN'}
                         </h4>
                         <Badge variant="outline">
                           {qr.club_name}

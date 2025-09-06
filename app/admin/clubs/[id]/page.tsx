@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from "framer-motion";
-import { ArrowLeft, Upload, X, Save, Loader2, Check, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Upload, X, Save, Loader2, Check } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
 import { usePrivy } from "@privy-io/react-auth";
 import Header from "@/components/header";
-import { cn } from "@/lib/utils";
 
 interface Club {
   id: string;
@@ -41,6 +40,7 @@ export default function ClubManagementPage() {
   const [coverImagePreview, setCoverImagePreview] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const resetTimerRef = React.useRef<number | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -56,9 +56,20 @@ export default function ClubManagementPage() {
     }
   }, [clubId]);
 
+  // Cleanup timeout to avoid state updates after unmount
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
   const fetchClub = async () => {
     try {
       const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error('Not authenticated');
+      
       const response = await fetch(`/api/admin/clubs/${clubId}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -82,7 +93,7 @@ export default function ClubManagementPage() {
           description: "Failed to load club",
           variant: "destructive",
         });
-        router.push('/admin');
+        // Stay on page and show the "Club not found" UI
       }
     } catch (error) {
       console.error('Error fetching club:', error);
@@ -91,7 +102,7 @@ export default function ClubManagementPage() {
         description: "Failed to load club",
         variant: "destructive",
       });
-      router.push('/admin');
+      // Stay on page and show the "Club not found" UI
     } finally {
       setIsLoading(false);
     }
@@ -104,12 +115,20 @@ export default function ClubManagementPage() {
     setIsUploading(true);
     
     try {
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Please select an image file');
+      }
+      const maxBytes = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxBytes) {
+        throw new Error('Image is too large (max 5MB)');
+      }
+      
       // For now, just use a data URL. In production, you'd upload to your media service
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result as string;
         setCoverImagePreview(result);
-        setFormData({...formData, image_url: result});
+        setFormData(prev => ({ ...prev, image_url: result }));
       };
       reader.readAsDataURL(file);
     } catch (error) {
@@ -126,7 +145,7 @@ export default function ClubManagementPage() {
 
   const removeImage = () => {
     setCoverImagePreview("");
-    setFormData({...formData, image_url: ""});
+    setFormData(prev => ({ ...prev, image_url: "" }));
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -140,6 +159,8 @@ export default function ClubManagementPage() {
     
     try {
       const accessToken = await getAccessToken();
+      if (!accessToken) throw new Error('Not authenticated');
+      
       const response = await fetch('/api/admin/clubs', {
         method: 'PUT',
         headers: {
@@ -157,16 +178,23 @@ export default function ClubManagementPage() {
         throw new Error(error.error || 'Failed to update club');
       }
 
+      const updatedClub = await response.json() as Club;
+      setClub(updatedClub);
+      setFormData({
+        name: updatedClub.name,
+        description: updatedClub.description || '',
+        city: updatedClub.city || '',
+        image_url: updatedClub.image_url || '',
+        is_active: updatedClub.is_active
+      });
+      setCoverImagePreview(updatedClub.image_url || '');
       setSaveStatus("saved");
       toast({
         title: "Success",
         description: "Club updated successfully",
       });
       
-      // Reset to idle after 2 seconds
-      setTimeout(() => {
-        setSaveStatus("idle");
-      }, 2000);
+      resetTimerRef.current = window.setTimeout(() => setSaveStatus("idle"), 2000);
       
     } catch (error) {
       console.error('Error updating club:', error);
@@ -268,9 +296,13 @@ export default function ClubManagementPage() {
                       </button>
                     </div>
                   ) : (
-                    <div 
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Upload cover image"
                       className="w-full h-32 border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
                       onClick={() => fileInputRef.current?.click()}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInputRef.current?.click()}
                     >
                       {isUploading ? (
                         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -314,9 +346,10 @@ export default function ClubManagementPage() {
                   placeholder="Tell people about your club..."
                   className="min-h-[100px] resize-none input-field"
                   rows={4}
+                  maxLength={500}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {formData.description?.length || 0}/500 characters
+                  {formData.description.length}/500 characters
                 </p>
               </div>
 

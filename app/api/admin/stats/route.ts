@@ -12,10 +12,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // TEMPORARY: Skip admin check for testing
-  // if (!isAdmin(auth.userId)) {
-  //   return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
-  // }
+  // Admin check - can be disabled via environment variable for testing
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+    return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
+  }
 
   try {
     // Get total clubs

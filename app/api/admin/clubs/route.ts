@@ -15,11 +15,7 @@ const createClubSchema = z.object({
   point_settle_cents: z.number().int().min(1).max(500).default(50), // Default: 50% of sell price
   image_url: z.string().url().optional(),
 }).refine(data => {
-  // Ensure settle price doesn't exceed sell price
-  if (data.point_settle_cents > data.point_sell_cents) {
-    return false;
-  }
-  return true;
+  return data.point_settle_cents <= data.point_sell_cents;
 }, {
   message: "Settle price cannot exceed sell price",
   path: ["point_settle_cents"]
@@ -35,10 +31,12 @@ const updateClubSchema = z.object({
   image_url: z.string().url().optional(),
   is_active: z.boolean().optional(),
 }).refine(data => {
-  // Ensure settle price doesn't exceed sell price when both are provided
-  if (data.point_settle_cents && data.point_sell_cents && data.point_settle_cents > data.point_sell_cents) {
-    return false;
+  // This validation should be done after fetching the existing club
+  // to ensure the new values don't create an invalid state
+  if (data.point_settle_cents !== undefined && data.point_sell_cents !== undefined) {
+    return data.point_settle_cents <= data.point_sell_cents;
   }
+  // Note: Additional validation needed against existing values
   return true;
 }, {
   message: "Settle price cannot exceed sell price",
@@ -52,10 +50,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // TEMPORARY: Skip admin check for testing
-  // if (!isAdmin(auth.userId)) {
-  //   return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
-  // }
+  // Admin check - can be disabled via environment variable for testing
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+    return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
+  }
 
   try {
     // Get clubs with member counts
@@ -94,10 +92,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // TEMPORARY: Skip admin check for testing
-  // if (!isAdmin(auth.userId)) {
-  //   return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
-  // }
+  // Admin check - can be disabled via environment variable for testing
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+    return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
+  }
 
   try {
     const body = await request.json();
@@ -185,10 +183,10 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // TEMPORARY: Skip admin check for testing
-  // if (!isAdmin(auth.userId)) {
-  //   return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
-  // }
+  // Admin check - can be disabled via environment variable for testing
+  if (process.env.SKIP_ADMIN_CHECKS !== 'true' && !(await isAdmin(auth.userId))) {
+    return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
+  }
 
   try {
     const body = await request.json();
@@ -218,6 +216,28 @@ export async function PUT(request: NextRequest) {
         clubData.point_settle_cents,
         Math.min(250, Math.floor(clubData.point_settle_cents * 2))
       );
+    }
+
+    // If only one pricing field is being updated, fetch current values to validate
+    if ((clubData.point_sell_cents !== undefined) !== (clubData.point_settle_cents !== undefined)) {
+      const { data: existingClub, error: fetchError } = await supabaseAny
+        .from('clubs')
+        .select('point_sell_cents, point_settle_cents')
+        .eq('id', clubData.id)
+        .single();
+
+      if (fetchError || !existingClub) {
+        return NextResponse.json({ error: "Club not found" }, { status: 404 });
+      }
+
+      const newSellPrice = clubData.point_sell_cents ?? existingClub.point_sell_cents;
+      const newSettlePrice = clubData.point_settle_cents ?? existingClub.point_settle_cents;
+
+      if (newSettlePrice > newSellPrice) {
+        return NextResponse.json({ 
+          error: "Settle price cannot exceed sell price" 
+        }, { status: 400 });
+      }
     }
 
     // Add updated timestamp

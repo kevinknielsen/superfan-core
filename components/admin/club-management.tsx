@@ -70,7 +70,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
       });
 
       if (response.ok) {
-        const clubsData = await response.json();
+        const clubsData = await response.json() as Club[];
         setClubs(Array.isArray(clubsData) ? clubsData : []);
       } else {
         toast({
@@ -233,7 +233,7 @@ export default function ClubManagement({ onStatsUpdate }: ClubManagementProps) {
       console.error('Error toggling club status:', error);
       toast({
         title: "Error",
-        description: "Failed to update club status",
+        description: error instanceof Error ? error.message : "Failed to update club status",
         variant: "destructive",
       });
     }
