@@ -75,27 +75,10 @@ export default function QRManagement() {
       }
 
       const data = await response.json();
-      
-      // Safely validate the response structure
-      if (data && typeof data === 'object' && Array.isArray(data.qr_codes)) {
-        // Filter and validate QR codes
-        const validQRs = data.qr_codes.filter((qr: any) => 
-          qr && 
-          typeof qr === 'object' && 
-          qr.qr_id && 
-          qr.qr_url && 
-          qr.tap_url &&
-          qr.club_name
-        );
-        setGeneratedQRs(validQRs);
-      } else {
-        console.warn('Invalid QR codes response format:', data);
-        setGeneratedQRs([]);
-      }
+      setGeneratedQRs(data.qr_codes || []);
       
     } catch (error) {
       console.error('Error loading QR codes:', error);
-      setGeneratedQRs([]); // Fallback to empty array on error
       toast({
         title: "Failed to load QR codes",
         description: "Please try refreshing the page",
@@ -136,10 +119,8 @@ export default function QRManagement() {
   const downloadQR = async (qrUrl: string, qrId: string) => {
     try {
       // Generate QR code image and download
-      const QR = await import('qrcode');
-      const toDataURL = (QR as any).toDataURL ?? (QR as any).default?.toDataURL;
-      if (!toDataURL) throw new Error('QR code library not loaded');
-      const qrImageUrl = await toDataURL(qrUrl, {
+      const QRCodeLib = await import('qrcode');
+      const qrImageUrl = await QRCodeLib.default.toDataURL(qrUrl, {
         width: 300,
         margin: 2,
         color: {
@@ -222,8 +203,8 @@ export default function QRManagement() {
                 <SelectValue placeholder="Choose a club..." />
               </SelectTrigger>
               <SelectContent>
-                {activeClubs.map((club, index) => (
-                  <SelectItem key={club.id || `club-${index}`} value={club.id}>
+                {activeClubs.map((club) => (
+                  <SelectItem key={club.id} value={club.id}>
                     <div className="flex items-center gap-2">
                       <span>{club.name}</span>
                       {club.city && (
@@ -287,60 +268,54 @@ export default function QRManagement() {
               <div className="space-y-4">
                 {generatedQRs.map((qr, index) => (
                 <motion.div
-                  key={qr.qr_id || `qr-${index}`}
+                  key={qr.qr_id}
                   className="border rounded-lg p-4"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                 >
-                  {/* Mobile-first responsive layout */}
-                  <div className="space-y-4">
-                    {/* Header with badges */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <h4 className="font-medium text-lg uppercase">
-                        {String(qr.qr_data?.source ?? 'QR').replace(/_/g, ' ')}
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge variant="outline" className="text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h4 className="font-medium">
+                          {qr.qr_data.source.replace(/_/g, ' ').toUpperCase()}
+                        </h4>
+                        <Badge variant="outline">
                           {qr.club_name}
                         </Badge>
-                        {qr.qr_data?.points != null && (
-                          <Badge variant="secondary" className="text-xs">
+                        {qr.qr_data.points && (
+                          <Badge variant="secondary">
                             +{qr.qr_data.points} points
                           </Badge>
                         )}
                       </div>
-                    </div>
-                    
-                    {/* Details - stack on mobile */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
-                      {qr.qr_data?.location && (
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {qr.qr_data.location}
+                      
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        {qr.qr_data.location && (
+                          <div className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {qr.qr_data.location}
+                          </div>
+                        )}
+                        {qr.expires_at && (
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            Expires {new Date(qr.expires_at).toLocaleDateString()}
+                          </div>
+                        )}
+                        <div>
+                          Created {new Date(qr.created_at).toLocaleDateString()}
                         </div>
-                      )}
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        Created {new Date(qr.created_at).toLocaleDateString()}
                       </div>
-                      {qr.expires_at && (
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          Expires {new Date(qr.expires_at).toLocaleDateString()}
-                        </div>
-                      )}
                     </div>
                     
-                    {/* Actions - full width on mobile, inline on desktop */}
-                    <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="flex items-center gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => copyToClipboard(qr.qr_url, "QR URL")}
-                        className="flex-1 sm:flex-none justify-center"
                       >
-                        <Copy className="h-4 w-4 mr-2" />
+                        <Copy className="h-3 w-3 mr-1" />
                         Copy URL
                       </Button>
                       
@@ -348,9 +323,8 @@ export default function QRManagement() {
                         size="sm"
                         variant="outline"
                         onClick={() => downloadQR(qr.qr_url, qr.qr_id)}
-                        className="flex-1 sm:flex-none justify-center"
                       >
-                        <Download className="h-4 w-4 mr-2" />
+                        <Download className="h-3 w-3 mr-1" />
                         Download
                       </Button>
                     </div>

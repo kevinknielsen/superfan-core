@@ -273,7 +273,7 @@ export default function UnlockManagement({ onStatsUpdate }: UnlockManagementProp
                       <SelectValue placeholder="Select club..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {activeClubs.filter(club => club.id && typeof club.id === 'string').map((club) => (
+                      {activeClubs.map((club) => (
                         <SelectItem key={club.id} value={club.id}>
                           {club.name}
                         </SelectItem>
@@ -449,7 +449,7 @@ export default function UnlockManagement({ onStatsUpdate }: UnlockManagementProp
             
             return (
               <motion.div
-                key={unlock.id || `unlock-${index}`}
+                key={unlock.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
