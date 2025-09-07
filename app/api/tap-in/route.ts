@@ -3,6 +3,7 @@ import { createServiceClient } from "../supabase";
 
 import { verifyUnifiedAuth } from "../auth";
 import { type } from "arktype";
+import { computeStatus } from "@/lib/status";
 
 const tapInSchema = type({
   club_id: "string",
@@ -22,21 +23,6 @@ const POINT_VALUES = {
   presave: 40,
   default: 10
 };
-
-// Status thresholds (from memo)
-const STATUS_THRESHOLDS = {
-  cadet: 0,
-  resident: 500,
-  headliner: 1500,
-  superfan: 4000
-};
-
-function calculateStatus(points: number): string {
-  if (points >= STATUS_THRESHOLDS.superfan) return 'superfan';
-  if (points >= STATUS_THRESHOLDS.headliner) return 'headliner';
-  if (points >= STATUS_THRESHOLDS.resident) return 'resident';
-  return 'cadet';
-}
 
 export async function POST(request: NextRequest) {
   const auth = await verifyUnifiedAuth(request);
@@ -161,7 +147,7 @@ export async function POST(request: NextRequest) {
     // Use wallet earned points for status calculation
     const newEarnedPoints = wallet.earned_pts + pointsToAward;
     const newTotalPoints = wallet.balance_pts + pointsToAward;
-    const newStatus = calculateStatus(newEarnedPoints); // Status based on earned points only
+    const newStatus = computeStatus(newEarnedPoints); // Status based on earned points only
     const oldStatus = membership.current_status;
 
     // Start transaction
@@ -277,6 +263,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Use service client for server-side queries
+    const supabase = createServiceClient();
     // Get the user from our database
     const { data: user, error: userError } = await supabase
       .from('users')

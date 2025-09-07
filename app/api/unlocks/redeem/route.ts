@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 import { type } from "arktype";
+import { STATUS_THRESHOLDS } from "@/lib/status";
 
 // Type assertion for club schema tables (temporary workaround for outdated types)
 const supabaseAny = supabase as any;
@@ -10,14 +11,6 @@ const redeemSchema = type({
   unlock_id: "string",
   club_id: "string"
 });
-
-// Status point thresholds
-const STATUS_POINTS: Record<string, number> = {
-  cadet: 0,
-  resident: 500,
-  headliner: 1500,
-  superfan: 4000,
-};
 
 export async function POST(request: NextRequest) {
   const auth = await verifyUnifiedAuth(request);
@@ -77,13 +70,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "You must be a member of this club" }, { status: 403 });
     }
 
-    // Check if user has enough points for this unlock
-    const requiredPoints = STATUS_POINTS[unlock.min_status] || 0;
-    if (membership.points < requiredPoints) {
+    // Derive status points from unified view
+    const { data: walletView, error: walletViewError } = await supabase
+      .from('v_point_wallets')
+      .select('status_pts')
+      .eq('user_id', user.id)
+      .eq('club_id', redeemData.club_id)
+      .single();
+
+    if (walletViewError) {
+      console.error("[Unlock Redeem API] Wallet not found for status check:", walletViewError);
+      return NextResponse.json({ error: "Wallet not found for this club" }, { status: 404 });
+    }
+
+    // Check if user has enough points for this unlock based on unified thresholds
+    const requiredPoints = STATUS_THRESHOLDS[(unlock.min_status as keyof typeof STATUS_THRESHOLDS) || 'cadet'] || 0;
+    const statusPoints = walletView?.status_pts || 0;
+    if (statusPoints < requiredPoints) {
       return NextResponse.json({ 
-        error: `Insufficient points. You need ${requiredPoints} points for ${unlock.min_status} status.`,
+        error: `Insufficient status points. You need ${requiredPoints} to redeem (${unlock.min_status}).`,
         required_points: requiredPoints,
-        current_points: membership.points
+        current_points: statusPoints
       }, { status: 403 });
     }
 
@@ -140,7 +147,7 @@ export async function POST(request: NextRequest) {
           unlock_title: unlock.title,
           unlock_type: unlock.type,
           user_status_at_redemption: membership.current_status,
-          user_points_at_redemption: membership.points,
+          user_points_at_redemption: statusPoints,
           club_id: redeemData.club_id
         }
       })
