@@ -93,27 +93,7 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Points must be positive');
   END IF;
 
-  -- Check for existing tap-in with same ref (idempotency) - with full response
-  IF p_ref IS NOT NULL THEN
-    SELECT * INTO tap_in_record FROM tap_ins WHERE ref = p_ref;
-    IF FOUND THEN
-      -- Return existing tap-in result with full consistent payload
-      RETURN json_build_object(
-        'success', true, 
-        'idempotent', true,
-        'tap_in', row_to_json(tap_in_record),
-        'points_earned', tap_in_record.points_earned,
-        'total_points', tap_in_record.total_points_after,
-        'current_status', tap_in_record.current_status,
-        'previous_status', tap_in_record.previous_status,
-        'status_changed', (tap_in_record.previous_status != tap_in_record.current_status),
-        'status_points', (
-          SELECT status_pts FROM v_point_wallets 
-          WHERE user_id = p_user_id AND club_id = p_club_id
-        )
-      );
-    END IF;
-  END IF;
+  -- Idempotency is now handled by the INSERT ... ON CONFLICT DO NOTHING below
 
   -- Get or create wallet using race-free upsert
   INSERT INTO point_wallets (
@@ -138,17 +118,40 @@ BEGIN
   -- Calculate total points after this tap-in
   total_points_after := wallet_record.balance_pts + p_points;
 
-  -- Insert tap-in record with race-free upsert
+  -- Insert tap-in record with race detection
   INSERT INTO tap_ins (
     user_id, club_id, source, points_earned, location, metadata, ref,
     previous_status, current_status, total_points_after
   ) VALUES (
     p_user_id, p_club_id, p_source, p_points, p_location, p_metadata, p_ref,
     old_status, old_status, total_points_after  -- current_status will be updated below
-  ) ON CONFLICT (ref) DO UPDATE SET
-    points_earned = tap_ins.points_earned  -- no-op if conflict
+  ) ON CONFLICT (ref) DO NOTHING
   RETURNING * INTO tap_in_record;
 
+  -- Check if insert actually created a new row
+  IF tap_in_record IS NULL THEN
+    -- Conflict occurred, fetch existing record and return idempotently
+    SELECT * INTO tap_in_record FROM tap_ins WHERE ref = p_ref;
+    
+    -- Return existing tap-in result with full consistent payload
+    RETURN json_build_object(
+      'success', true, 
+      'idempotent', true,
+      'tap_in', row_to_json(tap_in_record),
+      'points_earned', tap_in_record.points_earned,
+      'total_points', tap_in_record.total_points_after,
+      'current_status', tap_in_record.current_status,
+      'previous_status', tap_in_record.previous_status,
+      'status_changed', (tap_in_record.previous_status != tap_in_record.current_status),
+      'status_points', (
+        SELECT status_pts FROM v_point_wallets 
+        WHERE user_id = p_user_id AND club_id = p_club_id
+      )
+    );
+  END IF;
+
+  -- Only proceed with side effects if we created a new tap-in record
+  
   -- Update wallet with new points
   UPDATE point_wallets SET
     balance_pts = balance_pts + p_points,

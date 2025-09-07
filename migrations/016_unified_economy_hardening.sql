@@ -40,10 +40,14 @@ BEGIN
   WHERE id = p_wallet_id 
   FOR UPDATE;
 
-  -- Idempotency re-check under lock
+  -- Check wallet exists immediately after SELECT
+  IF wallet_record IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Wallet not found');
+  END IF;
+
+  -- Idempotency re-check under lock (using EXISTS to avoid affecting FOUND)
   IF p_ref IS NOT NULL THEN
-    PERFORM 1 FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref;
-    IF FOUND THEN
+    IF EXISTS (SELECT 1 FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref) THEN
       RETURN json_build_object(
         'success', true,
         'idempotent', true,
@@ -56,23 +60,28 @@ BEGIN
     END IF;
   END IF;
 
-  IF NOT FOUND THEN
-    RETURN json_build_object('success', false, 'error', 'Wallet not found');
-  END IF;
-
   -- Check if user has enough points
   IF wallet_record.balance_pts < p_points_to_spend THEN
     RETURN json_build_object('success', false, 'error', 'Insufficient points');
   END IF;
 
   -- Determine status threshold if protection is enabled (unified peg thresholds)
-  status_threshold := CASE 
-    WHEN NOT p_preserve_status THEN 0
-    WHEN p_current_status = 'superfan' THEN 40000
-    WHEN p_current_status = 'headliner' THEN 15000
-    WHEN p_current_status = 'resident' THEN 5000
-    ELSE 0
-  END;
+  IF p_preserve_status THEN
+    -- Validate status and set threshold
+    IF p_current_status = 'superfan' THEN
+      status_threshold := 40000;
+    ELSIF p_current_status = 'headliner' THEN
+      status_threshold := 15000;
+    ELSIF p_current_status = 'resident' THEN
+      status_threshold := 5000;
+    ELSIF p_current_status = 'cadet' THEN
+      status_threshold := 0;
+    ELSE
+      RAISE EXCEPTION 'Invalid status for preservation: %. Valid statuses are: cadet, resident, headliner, superfan', p_current_status;
+    END IF;
+  ELSE
+    status_threshold := 0;
+  END IF;
 
   -- Calculate available points by source (clamp to zero to avoid negative values)
   available_purchased := GREATEST(0, wallet_record.purchased_pts);
