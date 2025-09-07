@@ -12,12 +12,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_point_transactions_wallet_ref
   ON point_transactions(wallet_id, ref)
   WHERE ref IS NOT NULL;
 
--- Harden spend_points_unified with input validation and row lock
+-- Harden spend_points_unified with input validation, row lock, and transaction logging
 CREATE OR REPLACE FUNCTION spend_points_unified(
   p_wallet_id UUID,
   p_points_to_spend INTEGER,
   p_preserve_status BOOLEAN DEFAULT false,
-  p_current_status TEXT DEFAULT 'cadet'
+  p_current_status TEXT DEFAULT 'cadet',
+  p_ref TEXT DEFAULT NULL,
+  p_description TEXT DEFAULT 'Point spending'
 ) RETURNS JSON AS $$
 DECLARE
   wallet_record RECORD;
@@ -30,6 +32,14 @@ BEGIN
   -- Validate positive spend amount
   IF p_points_to_spend IS NULL OR p_points_to_spend <= 0 THEN
     RETURN json_build_object('success', false, 'error', 'Spend amount must be positive');
+  END IF;
+
+  -- Check for existing transaction with same ref (idempotency)
+  IF p_ref IS NOT NULL THEN
+    -- Look for existing transaction with this ref
+    IF EXISTS (SELECT 1 FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref) THEN
+      RETURN json_build_object('success', true, 'idempotent', true, 'message', 'Transaction already processed');
+    END IF;
   END IF;
 
   -- Lock the wallet row to prevent concurrent races
@@ -56,13 +66,13 @@ BEGIN
     ELSE 0
   END;
 
-  -- Calculate available points by source
-  available_purchased := wallet_record.purchased_pts;
+  -- Calculate available points by source (clamp to zero to avoid negative values)
+  available_purchased := GREATEST(0, wallet_record.purchased_pts);
   available_earned := GREATEST(0, wallet_record.earned_pts - status_threshold);
 
   -- Determine spending breakdown (purchased first, then earned)
   spend_purchased := LEAST(p_points_to_spend, available_purchased);
-  spend_earned := p_points_to_spend - spend_purchased;
+  spend_earned := GREATEST(0, p_points_to_spend - spend_purchased);
 
   -- Check if we can spend the required earned points
   IF spend_earned > available_earned THEN
@@ -83,6 +93,35 @@ BEGIN
     spent_pts = spent_pts + p_points_to_spend,
     updated_at = NOW()
   WHERE id = p_wallet_id;
+
+  -- Atomically log the transaction (if ref provided)
+  IF p_ref IS NOT NULL THEN
+    INSERT INTO point_transactions (
+      wallet_id, 
+      type, 
+      pts, 
+      source, 
+      affects_status, 
+      ref, 
+      metadata
+    ) VALUES (
+      p_wallet_id,
+      'SPEND',
+      p_points_to_spend,
+      'spent',
+      false,
+      p_ref,
+      json_build_object(
+        'description', p_description,
+        'spent_breakdown', json_build_object(
+          'purchased', spend_purchased,
+          'earned', spend_earned
+        ),
+        'preserve_status', p_preserve_status,
+        'status_at_time', p_current_status
+      )
+    );
+  END IF;
 
   -- Return success with breakdown
   RETURN json_build_object(

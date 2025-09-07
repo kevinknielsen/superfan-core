@@ -84,7 +84,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user has enough points for this unlock based on unified thresholds
-    const requiredPoints = STATUS_THRESHOLDS[(unlock.min_status as keyof typeof STATUS_THRESHOLDS) || 'cadet'] || 0;
+    if (!unlock.min_status || !(unlock.min_status in STATUS_THRESHOLDS)) {
+      console.error(`[Unlock Redeem API] Invalid min_status: ${unlock.min_status} for unlock ${redeemData.unlock_id}`);
+      return NextResponse.json({ 
+        error: "Unlock configuration error: invalid minimum status requirement" 
+      }, { status: 500 });
+    }
+    const requiredPoints = STATUS_THRESHOLDS[unlock.min_status as keyof typeof STATUS_THRESHOLDS];
     const statusPoints = walletView?.status_pts || 0;
     if (statusPoints < requiredPoints) {
       return NextResponse.json({ 
@@ -94,19 +100,28 @@ export async function POST(request: NextRequest) {
       }, { status: 403 });
     }
 
-    // Check if already redeemed
+    // Check if already redeemed (idempotency check)
     const { data: existingRedemption, error: redemptionCheckError } = await supabaseAny
       .from('redemptions')
-      .select('id')
+      .select('*')
       .eq('user_id', user.id)
       .eq('unlock_id', redeemData.unlock_id)
       .single();
 
-    // If we found an existing redemption, this unlock was already used
+    // If we found an existing redemption, return the existing result (idempotent)
     if (existingRedemption && !redemptionCheckError) {
-      return NextResponse.json({ 
-        error: "You have already redeemed this unlock" 
-      }, { status: 409 });
+      return NextResponse.json({
+        success: true,
+        idempotent: true,
+        redemption: existingRedemption,
+        unlock: {
+          title: unlock.title,
+          description: unlock.description,
+          unlock_type: unlock.type,
+          metadata: unlock.rules
+        },
+        message: `Already redeemed: ${unlock.title}`
+      });
     }
 
     // Check capacity limits if specified (including 0)
@@ -156,6 +171,41 @@ export async function POST(request: NextRequest) {
 
     if (createError) {
       console.error("[Unlock Redeem API] Error creating redemption:", createError);
+      
+      // Check if this is a unique constraint violation (duplicate redemption)
+      if (createError.code === '23505' || // Postgres unique violation
+          createError.message?.includes('duplicate') ||
+          createError.message?.includes('unique') ||
+          createError.message?.includes('uniq_redemptions_user_unlock')) {
+        
+        // Fetch the existing redemption for idempotent response
+        const { data: existingRedemption } = await supabaseAny
+          .from('redemptions')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('unlock_id', redeemData.unlock_id)
+          .single();
+        
+        if (existingRedemption) {
+          return NextResponse.json({
+            success: true,
+            idempotent: true,
+            redemption: existingRedemption,
+            unlock: {
+              title: unlock.title,
+              description: unlock.description,
+              unlock_type: unlock.type,
+              metadata: unlock.rules
+            },
+            message: `Already redeemed: ${unlock.title}`
+          });
+        }
+        
+        return NextResponse.json({ 
+          error: "You have already redeemed this unlock" 
+        }, { status: 409 });
+      }
+      
       return NextResponse.json({ error: "Failed to redeem unlock" }, { status: 500 });
     }
 

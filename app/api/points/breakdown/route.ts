@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
     // Calculate spending power breakdown
     const earned = walletView.earned_pts || 0;
     const escrowed = walletView.escrowed_pts || 0;
-    const lockedForStatus = Math.min(statusPoints, currentThreshold);
+    const lockedForStatus = currentThreshold;
     const earnedAvailable = Math.max(0, earned - lockedForStatus - escrowed);
     
     const spendingPower = {

@@ -70,13 +70,18 @@ export async function POST(request: NextRequest) {
     const statusPoints = walletView?.status_pts || 0;
     const currentStatus = computeStatus(statusPoints);
 
-    // Use unified database function for safe spending with status protection
+    // Generate reference ID for idempotency
+    const ref = referenceId || `spend_${Date.now()}`;
+
+    // Use unified database function for safe spending with status protection and atomic logging
     const { data: spendResult, error: spendError } = await supabase
       .rpc('spend_points_unified', {
         p_wallet_id: wallet.id,
         p_points_to_spend: pointsToSpend,
         p_preserve_status: preserveStatus,
-        p_current_status: currentStatus
+        p_current_status: currentStatus,
+        p_ref: ref,
+        p_description: description
       });
 
     if (spendError) {
@@ -98,67 +103,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Record the spending transaction
-    const ref = referenceId || `spend_${Date.now()}`;
-    const { error: transactionError } = await supabase
-      .from('point_transactions')
-      .insert({
-        wallet_id: wallet.id,
-        type: 'SPEND',
-        pts: pointsToSpend,
-        source: 'spent',
-        affects_status: false, // Spending doesn't affect status, only earning does
-        ref,
-        metadata: {
-          description,
-          spent_breakdown: {
-            purchased: spendResult.spent_purchased,
-            earned: spendResult.spent_earned
-          },
-          preserve_status: preserveStatus,
-          status_at_time: currentStatus
-        }
-      });
-
-    if (transactionError) {
-      console.error('Error recording spend transaction:', transactionError);
-      
-      // Check if this is a duplicate reference (idempotent request)
-      if (transactionError.code === '23505' || // Postgres unique violation
-          transactionError.message?.includes('duplicate') ||
-          transactionError.message?.includes('unique')) {
-        console.log('Duplicate transaction reference detected, treating as idempotent success:', ref);
-        
-        return NextResponse.json({
-          success: true,
-          idempotent: true,
-          transaction: {
-            reference: ref,
-            points_spent: pointsToSpend,
-            spent_breakdown: {
-              purchased: spendResult.spent_purchased,
-              earned: spendResult.spent_earned
-            },
-            remaining_balance: spendResult.remaining_balance,
-            status_preserved: preserveStatus,
-            current_status: currentStatus
-          }
-        });
-      }
-      
-      // Non-idempotent insert error: surface failure (no destructive reversal)
-      return NextResponse.json({
-        error: 'Spending recorded on wallet but failed to log transaction',
-        details: transactionError.message,
-        reference: ref
-      }, { status: 500 });
-    }
-
+    // Return success response with atomically handled transaction
     return NextResponse.json({
       success: true,
+      idempotent: Boolean(spendResult?.idempotent),
       transaction: {
         reference: ref,
-        points_spent: pointsToSpend,
+        points_spent: spendResult.points_spent,
         spent_breakdown: {
           purchased: spendResult.spent_purchased,
           earned: spendResult.spent_earned

@@ -3,7 +3,6 @@ import { createServiceClient } from "../supabase";
 
 import { verifyUnifiedAuth } from "../auth";
 import { type } from "arktype";
-import { computeStatus } from "@/lib/status";
 
 const tapInSchema = type({
   club_id: "string",
@@ -72,171 +71,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
 
-    // Get or create club membership
-    let { data: membership, error: membershipError } = await supabase
-      .from('club_memberships')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('club_id', tapInData.club_id)
-      .single();
-
-    if (membershipError && membershipError.code === 'PGRST116') {
-      // Create membership if it doesn't exist
-      const { data: newMembership, error: createError } = await supabase
-        .from('club_memberships')
-        .insert({
-          user_id: user.id,
-          club_id: tapInData.club_id,
-          points: 0,
-          current_status: 'cadet',
-          status: 'active'
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        console.error("[Tap-in API] Error creating membership:", createError);
-        return NextResponse.json({ error: "Failed to create membership" }, { status: 500 });
-      }
-
-      membership = newMembership;
-    } else if (membershipError) {
-      console.error("[Tap-in API] Error fetching membership:", membershipError);
-      return NextResponse.json({ error: "Failed to fetch membership" }, { status: 500 });
-    }
-
-    // Get or create point wallet (unified system)
-    let { data: wallet, error: walletError } = await supabase
-      .from('point_wallets')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('club_id', tapInData.club_id)
-      .single();
-
-    if (walletError && walletError.code === 'PGRST116') {
-      // Create wallet if it doesn't exist
-      const { data: newWallet, error: createWalletError } = await supabase
-        .from('point_wallets')
-        .insert({
-          user_id: user.id,
-          club_id: tapInData.club_id,
-          balance_pts: 0,
-          earned_pts: 0,
-          purchased_pts: 0,
-          spent_pts: 0,
-          escrowed_pts: 0
-        })
-        .select()
-        .single();
-
-      if (createWalletError) {
-        console.error("[Tap-in API] Error creating wallet:", createWalletError);
-        return NextResponse.json({ error: "Failed to create wallet" }, { status: 500 });
-      }
-
-      wallet = newWallet;
-    } else if (walletError) {
-      console.error("[Tap-in API] Error fetching wallet:", walletError);
-      return NextResponse.json({ error: "Failed to fetch wallet" }, { status: 500 });
-    }
-
     // Determine points to award
     const pointsToAward = tapInData.points_earned || 
       (tapInData.source in POINT_VALUES ? POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] : POINT_VALUES.default);
     
-    // Use wallet earned points for status calculation
-    const newEarnedPoints = wallet.earned_pts + pointsToAward;
-    const newTotalPoints = wallet.balance_pts + pointsToAward;
-    const newStatus = computeStatus(newEarnedPoints); // Status based on earned points only
-    const oldStatus = membership.current_status;
+    // Generate reference for idempotency
+    const ref = `tapin_${user.id}_${tapInData.club_id}_${Date.now()}`;
 
-    // Start transaction
-    const { data: tapIn, error: tapInError } = await supabase
-      .from('tap_ins')
-      .insert({
-        user_id: user.id,
-        club_id: tapInData.club_id,
-        source: tapInData.source,
-        points_earned: pointsToAward,
-        location: tapInData.location,
-        metadata: tapInData.metadata || {}
-      })
-      .select()
-      .single();
-
-    if (tapInError) {
-      console.error("[Tap-in API] Error creating tap-in:", tapInError);
-      return NextResponse.json({ error: "Failed to create tap-in" }, { status: 500 });
-    }
-
-    // Update point wallet (unified system)
-    const { data: updatedWallet, error: walletUpdateError } = await supabase
-      .from('point_wallets')
-      .update({
-        balance_pts: newTotalPoints,
-        earned_pts: newEarnedPoints,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', user.id)
-      .eq('club_id', tapInData.club_id)
-      .select()
-      .single();
-
-    if (walletUpdateError) {
-      console.error("[Tap-in API] Error updating wallet:", walletUpdateError);
-      return NextResponse.json({ error: "Failed to update wallet" }, { status: 500 });
-    }
-
-    // Update membership status and activity
-    const { data: updatedMembership, error: updateError } = await supabase
-      .from('club_memberships')
-      .update({
-        current_status: newStatus,
-        last_activity_at: new Date().toISOString()
-      })
-      .eq('user_id', user.id)
-      .eq('club_id', tapInData.club_id)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error("[Tap-in API] Error updating membership:", updateError);
-      return NextResponse.json({ error: "Failed to update membership" }, { status: 500 });
-    }
-
-    // Add to point transactions (unified system)
-    const { error: transactionError } = await supabase
-      .from('point_transactions')
-      .insert({
-        wallet_id: wallet.id,
-        type: 'BONUS', // Earned points from tap-in
-        source: 'earned',
-        pts: pointsToAward,
-        ref: tapIn.id
+    // Use unified database function for atomic tap-in processing
+    const { data: tapInResult, error: tapInError } = await supabase
+      .rpc('award_points_unified', {
+        p_user_id: user.id,
+        p_club_id: tapInData.club_id,
+        p_source: tapInData.source,
+        p_points: pointsToAward,
+        p_location: tapInData.location,
+        p_metadata: tapInData.metadata || {},
+        p_ref: ref
       });
 
-    if (transactionError) {
-      console.error("[Tap-in API] Error creating transaction:", transactionError);
-      // Note: Continue despite transaction error as main operations succeeded
+    if (tapInError) {
+      console.error("[Tap-in API] Error calling award_points_unified:", tapInError);
+      return NextResponse.json({ error: "Failed to process tap-in" }, { status: 500 });
     }
 
-    // Return success with status change info
-    const statusChanged = oldStatus !== newStatus;
+    // Check if the operation was successful
+    if (!tapInResult?.success) {
+      return NextResponse.json({ 
+        error: tapInResult?.error || 'Tap-in processing failed',
+        details: tapInResult
+      }, { status: 500 });
+    }
+
+    // Build response with all the data from the unified function
     const response = {
       success: true,
-      tap_in: tapIn,
-      points_earned: pointsToAward,
-      total_points: newTotalPoints,
-      current_status: newStatus,
-      previous_status: oldStatus,
-      status_changed: statusChanged,
-      club_name: club.name,
-      membership: updatedMembership
+      idempotent: Boolean(tapInResult?.idempotent),
+      tap_in: tapInResult.tap_in,
+      points_earned: tapInResult.points_earned,
+      total_points: tapInResult.total_points,
+      current_status: tapInResult.current_status,
+      previous_status: tapInResult.previous_status,
+      status_changed: tapInResult.status_changed,
+      club_name: club.name
     };
 
-    console.log(`[Tap-in API] Success: ${pointsToAward} points awarded to user ${auth.userId} in club ${club.name}`);
-    if (statusChanged) {
-      console.log(`[Tap-in API] Status upgraded: ${oldStatus} → ${newStatus}`);
+    console.log(`[Tap-in API] Success: ${tapInResult.points_earned} points awarded to user ${auth.userId} in club ${club.name}`);
+    if (tapInResult.status_changed) {
+      console.log(`[Tap-in API] Status upgraded: ${tapInResult.previous_status} → ${tapInResult.current_status}`);
     }
 
     return NextResponse.json(response);
@@ -256,7 +138,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const clubId = searchParams.get('club_id');
-  const limit = parseInt(searchParams.get('limit') || '10');
+  const raw = Number(searchParams.get('limit') ?? '10');
+  const limit = Number.isFinite(raw) ? Math.min(Math.max(1, raw), 100) : 10;
 
   if (!clubId) {
     return NextResponse.json({ error: "club_id is required" }, { status: 400 });
