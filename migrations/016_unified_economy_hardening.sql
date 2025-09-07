@@ -34,19 +34,27 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'Spend amount must be positive');
   END IF;
 
-  -- Check for existing transaction with same ref (idempotency)
-  IF p_ref IS NOT NULL THEN
-    -- Look for existing transaction with this ref
-    IF EXISTS (SELECT 1 FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref) THEN
-      RETURN json_build_object('success', true, 'idempotent', true, 'message', 'Transaction already processed');
-    END IF;
-  END IF;
-
   -- Lock the wallet row to prevent concurrent races
   SELECT * INTO wallet_record 
   FROM point_wallets 
   WHERE id = p_wallet_id 
   FOR UPDATE;
+
+  -- Idempotency re-check under lock
+  IF p_ref IS NOT NULL THEN
+    PERFORM 1 FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref;
+    IF FOUND THEN
+      RETURN json_build_object(
+        'success', true,
+        'idempotent', true,
+        'message', 'Transaction already processed',
+        'points_spent', (SELECT pts FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref LIMIT 1),
+        'spent_purchased', COALESCE((SELECT (metadata->'spent_breakdown'->>'purchased')::int FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref LIMIT 1), NULL),
+        'spent_earned', COALESCE((SELECT (metadata->'spent_breakdown'->>'earned')::int FROM point_transactions WHERE wallet_id = p_wallet_id AND ref = p_ref LIMIT 1), NULL),
+        'remaining_balance', (SELECT balance_pts FROM point_wallets WHERE id = p_wallet_id)
+      );
+    END IF;
+  END IF;
 
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'error', 'Wallet not found');

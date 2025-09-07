@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "../supabase";
+import crypto from "node:crypto";
 
 import { verifyUnifiedAuth } from "../auth";
 import { type } from "arktype";
@@ -9,7 +10,8 @@ const tapInSchema = type({
   source: "string", // 'qr_code', 'nfc', 'link', 'show_entry', 'merch_purchase', etc.
   points_earned: "number?",
   location: "string?",
-  metadata: "unknown?"
+  metadata: "unknown?",
+  idempotency_key: "string?" // Optional client-provided idempotency key
 });
 
 // Point values for different tap-in sources (from memo)
@@ -75,8 +77,18 @@ export async function POST(request: NextRequest) {
     const pointsToAward = tapInData.points_earned || 
       (tapInData.source in POINT_VALUES ? POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] : POINT_VALUES.default);
     
-    // Generate reference for idempotency
-    const ref = `tapin_${user.id}_${tapInData.club_id}_${Date.now()}`;
+    // Idempotency key: prefer client-provided header/body; else derive a deterministic fallback
+    const headerKey = request.headers.get("Idempotency-Key") || undefined;
+    const bodyKey = tapInData.idempotency_key as string | undefined;
+    const ref =
+      bodyKey ??
+      headerKey ??
+      // deterministic fallback: hash of stable tuple (no timestamps)
+      `tapin_${crypto
+        .createHash("sha256")
+        .update(`${user.id}|${tapInData.club_id}|${tapInData.source}|${tapInData.location ?? ""}|${JSON.stringify(tapInData.metadata ?? {})}`)
+        .digest("hex")
+      }`;
 
     // Use unified database function for atomic tap-in processing
     const { data: tapInResult, error: tapInError } = await supabase

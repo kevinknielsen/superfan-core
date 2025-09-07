@@ -128,12 +128,18 @@ export async function GET(request: NextRequest) {
     // Calculate spending power breakdown
     const earned = walletView.earned_pts || 0;
     const escrowed = walletView.escrowed_pts || 0;
-    const lockedForStatus = currentThreshold;
+    const purchased = walletView.purchased_pts || 0;
+    
+    // Clamp lockedForStatus to not exceed earned
+    const lockedForStatus = Math.min(currentThreshold, earned);
     const earnedAvailable = Math.max(0, earned - lockedForStatus - escrowed);
     
+    // Total spendable should only include actually spendable components
+    const totalSpendable = purchased + earnedAvailable;
+    
     const spendingPower = {
-      total_spendable: walletView.balance_pts,
-      purchased_available: walletView.purchased_pts,
+      total_spendable: totalSpendable,
+      purchased_available: purchased,
       earned_available: earnedAvailable,
       earned_locked_for_status: lockedForStatus,
       escrowed: escrowed
