@@ -69,8 +69,8 @@ const UNLOCK_TYPE_ICONS: Record<string, any> = {
 };
 
 import { STATUS_THRESHOLDS } from "@/lib/status";
-
-const STATUS_POINTS: Record<string, number> = STATUS_THRESHOLDS;
+// Prevent mutation and improve inference
+const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<string, number>>;
 
 export default function UnlockRedemption({ 
   clubId, 

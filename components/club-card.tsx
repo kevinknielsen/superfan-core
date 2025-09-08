@@ -147,6 +147,7 @@ export default function ClubCard({
 }: ClubCardProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
+  const router = useRouter();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -301,15 +302,13 @@ export default function ClubCard({
                   handleJoinClub(e);
                 }}
               >
-                {joinClubMutation.isPending ? (
-                  <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
-                    <Spinner size="sm" color="black" />
-                  </div>
-                ) : (
-                  <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                  {joinClubMutation.isPending ? (
+                    <Spinner size="sm" color="slate" />
+                  ) : (
                     <Plus size={20} className="text-black" />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
 

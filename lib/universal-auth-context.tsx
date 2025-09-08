@@ -83,11 +83,13 @@ export function useAuthAction() {
   const { showAuthModal } = useUniversalAuthModal();
   const { isInWalletApp, user } = useFarcaster();
   
-  // Safely get Privy auth state
+  // Always call the hook at the top level (Rules of Hooks)
+  const privyAuth = usePrivy();
+  
+  // Safely access Privy auth state
   let authenticated = false;
   try {
-    const privyAuth = usePrivy();
-    authenticated = privyAuth.authenticated;
+    authenticated = privyAuth?.authenticated || false;
   } catch (error) {
     console.warn('Privy not available:', error);
   }
@@ -119,13 +121,15 @@ function UniversalAuthModal() {
   const { isAuthModalOpen, hideAuthModal, resolveAuthSuccess, authAction, authCallback } = useUniversalAuthModal();
   const { isInWalletApp, user } = useFarcaster();
   
-  // Safely get Privy auth state
+  // Always call the hook at the top level (Rules of Hooks)
+  const privyAuth = usePrivy();
+  
+  // Safely access Privy auth state
   let login = null;
   let authenticated = false;
   try {
-    const privyAuth = usePrivy();
-    login = privyAuth.login;
-    authenticated = privyAuth.authenticated;
+    login = privyAuth?.login || null;
+    authenticated = privyAuth?.authenticated || false;
   } catch (error) {
     console.warn('Privy not available:', error);
   }
@@ -192,7 +196,7 @@ function UniversalAuthModal() {
           // The useEffect will handle closing and callback execution
           setIsLoading(false); // Reset loading state since Privy modal is now handling it
         } else {
-          throw new Error('Privy login not available. Please check your configuration.');
+          throw new Error('Privy login not available. Please ensure NEXT_PUBLIC_PRIVY_APP_ID is set in your environment variables.');
         }
       }
     } catch (error) {
