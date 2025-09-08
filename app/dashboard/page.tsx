@@ -5,11 +5,13 @@ import { motion } from "framer-motion";
 import Header from "@/components/header";
 import ClubCard from "@/components/club-card";
 import ClubDetailsModal from "@/components/club-details-modal";
-import { Search, Plus, Users, Star, Crown } from "lucide-react";
+import BillfoldWallet from "@/components/billfold-wallet";
+import { Search, Plus, Users, Star, Crown, Wallet } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import confetti from "canvas-confetti";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import { useClubs, useUserClubMemberships } from "@/hooks/use-clubs";
 import type { Club, ClubMembership } from "@/types/club.types";
@@ -85,6 +87,7 @@ export default function Dashboard() {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [showPurchaseSuccess, setShowPurchaseSuccess] = useState(false);
   const [showPurchaseCanceled, setShowPurchaseCanceled] = useState(false);
+  const [showWalletModal, setShowWalletModal] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -204,6 +207,26 @@ export default function Dashboard() {
             </h2>
           </motion.div>
 
+          {/* Open Wallet Section */}
+          <motion.div
+            className="text-center mb-12"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+          >
+            <div className="max-w-md mx-auto">
+              <motion.button
+                onClick={() => setShowWalletModal(true)}
+                className="w-full max-w-sm mx-auto bg-primary text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-3 shadow-lg shadow-primary/20"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Wallet className="h-6 w-6" />
+                Open Wallet
+              </motion.button>
+            </div>
+          </motion.div>
+
           {/* Your Clubs Section */}
           <section className="mb-12">
             <motion.h1
@@ -215,12 +238,15 @@ export default function Dashboard() {
             </motion.h1>
 
             {isLoading ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {[1, 2, 3].map((i) => (
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div
                     key={i}
-                    className="h-[300px] rounded-xl bg-[#0F141E] animate-pulse"
-                  />
+                    className="flex flex-col items-center p-4"
+                  >
+                    <div className="w-[120px] h-[120px] rounded-full bg-[#0F141E] animate-pulse mb-3" />
+                    <div className="w-16 h-3 bg-[#0F141E] animate-pulse rounded" />
+                  </div>
                 ))}
               </div>
             ) : (
@@ -240,7 +266,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
                     {userClubs.map((clubWithMembership, index) => (
                       <ClubCard
                         key={clubWithMembership.id}
@@ -272,12 +298,15 @@ export default function Dashboard() {
             </div>
 
             {isLoading ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {[1, 2, 3].map((i) => (
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div
                     key={i}
-                    className="h-[300px] rounded-xl bg-[#0F141E] animate-pulse"
-                  />
+                    className="flex flex-col items-center p-4"
+                  >
+                    <div className="w-[120px] h-[120px] rounded-full bg-[#0F141E] animate-pulse mb-3" />
+                    <div className="w-16 h-3 bg-[#0F141E] animate-pulse rounded" />
+                  </div>
                 ))}
               </div>
             ) : (
@@ -299,7 +328,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
                     {discoverClubs.map((club, index) => (
                       <ClubCard
                         key={club.id}
@@ -328,6 +357,19 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      {/* Wallet Modal */}
+      <Dialog open={showWalletModal} onOpenChange={setShowWalletModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              Your Wallet
+            </DialogTitle>
+          </DialogHeader>
+          <BillfoldWallet />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

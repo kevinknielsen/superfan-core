@@ -127,12 +127,10 @@ export interface UserClubData {
 }
 
 // Status progression helper
-export const STATUS_THRESHOLDS: Record<ClubStatus, number> = {
-  cadet: 0,
-  resident: 500,
-  headliner: 1500,
-  superfan: 4000,
-};
+// Import unified status thresholds
+import { STATUS_THRESHOLDS as UNIFIED_STATUS_THRESHOLDS } from "@/lib/status";
+
+export const STATUS_THRESHOLDS: Record<ClubStatus, number> = UNIFIED_STATUS_THRESHOLDS;
 
 export const STATUS_ORDER: ClubStatus[] = ['cadet', 'resident', 'headliner', 'superfan'];
 
@@ -152,9 +150,9 @@ export const STATUS_COLORS = {
 };
 
 export function calculateStatus(points: number): ClubStatus {
-  if (points >= 4000) return 'superfan';
-  if (points >= 1500) return 'headliner';
-  if (points >= 500) return 'resident';
+  if (points >= STATUS_THRESHOLDS.superfan) return 'superfan';
+  if (points >= STATUS_THRESHOLDS.headliner) return 'headliner';
+  if (points >= STATUS_THRESHOLDS.resident) return 'resident';
   return 'cadet';
 }
 

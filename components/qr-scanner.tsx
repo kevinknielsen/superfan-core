@@ -573,6 +573,16 @@ export default function QRScanner({ isOpen, onClose, onScan, embedded = false }:
           exit={{ scale: 0.95, opacity: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Close Button */}
+          <div className="absolute top-4 left-4 z-10">
+            <button
+              onClick={onClose}
+              className="p-2 bg-white/20 rounded-lg text-white hover:bg-white/30 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
           {/* Flash Control - positioned for nested use */}
           <div className="absolute top-4 right-4 z-10">
             {isScanning && (

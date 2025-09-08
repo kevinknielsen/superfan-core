@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
       stripe_publishable_key: !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
       stripe_webhook_secret: !!process.env.STRIPE_WEBHOOK_SECRET,
       stripe_api_version: process.env.STRIPE_API_VERSION || '2024-10-28',
-      app_url: process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}` 
+      app_url: process.env.NODE_ENV === 'production' 
+        ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
         : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
     };
 

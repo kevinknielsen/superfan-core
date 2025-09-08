@@ -68,12 +68,9 @@ const UNLOCK_TYPE_ICONS: Record<string, any> = {
   exclusive_content: Globe,
 };
 
-const STATUS_POINTS: Record<string, number> = {
-  cadet: 0,
-  resident: 500,
-  headliner: 1500,
-  superfan: 4000,
-};
+import { STATUS_THRESHOLDS } from "@/lib/status";
+
+const STATUS_POINTS: Record<string, number> = STATUS_THRESHOLDS;
 
 export default function UnlockRedemption({ 
   clubId, 

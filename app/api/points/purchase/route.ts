@@ -71,9 +71,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Stripe checkout session
-    // Use Vercel URL in production, fallback to localhost in development
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
+    // Use production domain in production, fallback to localhost in development
+    const baseUrl = process.env.NODE_ENV === 'production' 
+      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
       : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
     // Redirect back to dashboard with modal state to preserve UX context
     const successUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=success`;
