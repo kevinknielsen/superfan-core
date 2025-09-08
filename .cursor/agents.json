@@ -1,0 +1,32 @@
+{
+  "$schema": "https://cursor.sh/schemas/agents.v1.json",
+  "agents": [
+    {
+      "name": "Points & Status Invariants",
+      "description": "Enforce points math, tier rules, and escrow/refund invariants across the app.",
+      "scope": "repo",
+      "include": ["apps/web/**", "apps/api/**", "packages/**", "supabase/**"],
+      "exclude": ["**/node_modules/**", "**/.next/**", "**/dist/**"],
+      "applyMode": "ask",
+      "prompt": "You are Superfan's invariants sentinel. Audit all code touching: points, tiers, redemptions, QR/NFC check-ins, House Accounts, and preorder escrow. Enforce invariants: (1) Tier thresholds strictly increase (Cadet < Resident < Headliner < Superfan). (2) Purchased points are spent before earned points; earned points never reduce Status. (3) No double-spend between concurrent flows (scan/tap-in, checkout, refunds). (4) Balances never go negative (points or House Accounts). (5) Escrow auto-refunds on MOQ expiry and never traps funds. When a diff violates an invariant: mark exact lines, propose a minimal patch, and add failing tests (Vitest/Jest) that then pass with your fix."
+    },
+    {
+      "name": "Analytics Event Linter",
+      "description": "Validate analytics calls against the Superfan schema.",
+      "scope": "repo",
+      "include": ["apps/web/**", "apps/api/**", "packages/**", "analytics/events.schema.json"],
+      "exclude": ["**/node_modules/**", "**/.next/**", "**/dist/**"],
+      "applyMode": "ask",
+      "prompt": "Find all analytics track/identify/page calls. Validate event names and payloads against analytics/events.schema.json: required props, types, and privacy flags (no emails/tokens in clear text). Auto-fix property names, add missing context (clubId, memberId, tier, sessionId) when derivable, and propose a schema PR if an event is truly new (with tight typing and migration notes)."
+    },
+    {
+      "name": "Supabase Schema Watcher",
+      "description": "Detect migration changes; sync generated TS types; propose safe codemods.",
+      "scope": "repo",
+      "include": ["supabase/migrations/**", "packages/db/**", "packages/types/**", "apps/**"],
+      "exclude": ["**/node_modules/**", "**/.next/**", "**/dist/**"],
+      "applyMode": "ask",
+      "prompt": "When migrations change, (1) note the drift, (2) regenerate types (script: pnpm typegen), (3) locate affected queries (select/insert/update) and propose minimal codemods, (4) add/adjust Zod/TypeScript validators, and (5) post a checklist in the PR description."
+    }
+  ]
+}
