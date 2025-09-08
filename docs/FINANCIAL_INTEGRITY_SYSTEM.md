@@ -16,10 +16,10 @@ Every point in circulation must be backed by real money in escrow to prevent inf
 
 #### Tap-In Points (Organic Earning)
 ```
-User taps QR at event → Earns points → No escrow needed
+User taps QR at event → Earns points → Backed by pre-funded escrow
 ├── These are "earned" through engagement
 ├── Funded by club/event marketing budget
-└── Pre-funded in club's escrow allocation
+└── Pre-funded in club's escrow allocation before issuance
 ```
 
 #### Claim Code Points (Subsidized)

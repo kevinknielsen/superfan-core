@@ -297,7 +297,6 @@ export default function ClubDetailsModal({
               onClick={async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Share button clicked');
                 if (!club) return;
                 const url = `${window.location.origin}/clubs/${club.id}`;
                 try {
@@ -487,7 +486,7 @@ export default function ClubDetailsModal({
                         {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
                       </h4>
                       <p className="text-gray-400">
-                        {currentPoints.toLocaleString()} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
+                        {currentPoints.toLocaleString()} points • {nextStatus ? `${Number(pointsToNext).toLocaleString()} to ${nextStatus}` : "Max level!"}
                       </p>
                     </div>
                   </div>

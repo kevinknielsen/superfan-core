@@ -3,7 +3,6 @@
 import type React from "react";
 
 import { useMemo, useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
 import { Users, Star, Crown, Trophy, Shield, Plus, QrCode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
@@ -69,10 +68,10 @@ const CircleProgress = ({
               x2="100%"
               y2="100%"
             >
-              {gradientColors.map((color, index) => (
+              {(gradientColors.length > 1 ? gradientColors : [gradientColors[0], gradientColors[0]]).map((color, index, arr) => (
                 <stop
                   key={index}
-                  offset={`${(index / (gradientColors.length - 1)) * 100}%`}
+                  offset={`${(index / (arr.length - 1)) * 100}%`}
                   stopColor={color}
                 />
               ))}
@@ -176,17 +175,26 @@ export default function ClubCard({
   const nextStatus = getNextStatus(currentStatus);
   const pointsToNext = getPointsToNext(currentPoints, currentStatus);
   
-  // Progress calculation - show overall progress toward next tier
+  // Progress calculation - show progress relative to current tier
   const statusProgress = useMemo(() => {
     if (!membership) return 0; // No membership = no progress
     if (!nextStatus) return 100; // Already at max status
     
+    const currentThreshold = STATUS_THRESHOLDS[currentStatus];
     const nextThreshold = STATUS_THRESHOLDS[nextStatus];
-    // Calculate overall progress from 0 to next tier threshold
-    const progress = Math.min(100, Math.max(0, (currentPoints / nextThreshold) * 100));
+    
+    // Guard against division by zero
+    if (nextThreshold === currentThreshold) {
+      return 100;
+    }
+    
+    // Calculate progress relative to current tier: (currentPoints - currentThreshold) / (nextThreshold - currentThreshold)
+    const relativePoints = currentPoints - currentThreshold;
+    const tierRange = nextThreshold - currentThreshold;
+    const progress = Math.min(100, Math.max(0, (relativePoints / tierRange) * 100));
     
     return progress;
-  }, [currentPoints, nextStatus, membership]);
+  }, [currentPoints, nextStatus, membership, currentStatus]);
 
   // Visual indicators
   const StatusIcon = STATUS_ICONS[currentStatus];

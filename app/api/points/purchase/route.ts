@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { createPointsPurchaseSession } from '@/lib/stripe';
 import { generateUnifiedPurchaseBundles } from '@/lib/points';
 import { verifyUnifiedAuth } from '@/app/api/auth';
+import { resolveAppUrl } from '@/lib/env';
 
 const PurchaseRequestSchema = z.object({
   communityId: z.string().uuid(),
@@ -71,10 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Stripe checkout session
-    // Use production domain in production, fallback to localhost in development
-    const baseUrl = process.env.NODE_ENV === 'production' 
-      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
-      : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+    const baseUrl = resolveAppUrl(request);
     // Redirect back to dashboard with modal state to preserve UX context
     const successUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=success`;
     const cancelUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=canceled`;

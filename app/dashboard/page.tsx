@@ -5,7 +5,11 @@ import { motion } from "framer-motion";
 import Header from "@/components/header";
 import ClubCard from "@/components/club-card";
 import ClubDetailsModal from "@/components/club-details-modal";
-import BillfoldWallet from "@/components/billfold-wallet";
+import dynamic from "next/dynamic";
+const BillfoldWallet = dynamic(
+  () => import("@/components/billfold-wallet"),
+  { ssr: false, loading: () => <div className="p-8 text-muted-foreground">Loading wallet…</div> }
+);
 import { Search, Plus, Users, Star, Crown, Wallet } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -111,48 +115,45 @@ export default function Dashboard() {
     const clubParam = searchParams.get('club');
     const purchaseParam = searchParams.get('purchase');
     
-    if (clubParam && purchaseParam) {
-      // Find the club
-      const club = allClubs.find(c => c.id === clubParam);
-      
-      if (club) {
-        if (purchaseParam === 'success') {
-          // Show success message and confetti
-          setSelectedClubId(clubParam);
-          setShowPurchaseSuccess(true);
-          
-          // Trigger confetti
-          setTimeout(() => {
-            confetti({
-              particleCount: 100,
-              spread: 70,
-              origin: { y: 0.6 },
-              colors: ['#10b981', '#3b82f6', '#8b5cf6']
-            });
-          }, 500);
-
-          toast({
-            title: "Points Purchase Successful! 🎉",
-            description: `Your points have been added to ${club.name}`,
-          });
-        } else if (purchaseParam === 'canceled') {
-          setSelectedClubId(clubParam);
-          setShowPurchaseCanceled(true);
-          
-          toast({
-            title: "Purchase Canceled",
-            description: "No charges were made to your account",
-            variant: "default",
-          });
-        }
+  if (clubParam && purchaseParam) {
+    const club = allClubs.find(c => c.id === clubParam);
+    if (club) {
+      if (purchaseParam === 'success') {
+        // Show success message and confetti
+        setSelectedClubId(clubParam);
+        setShowPurchaseSuccess(true);
         
-        // Clean up URL parameters
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.delete('club');
-        newUrl.searchParams.delete('purchase');
-        router.replace(newUrl.pathname + newUrl.search);
+        // Trigger confetti
+        setTimeout(() => {
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#10b981', '#3b82f6', '#8b5cf6']
+          });
+        }, 500);
+
+        toast({
+          title: "Points Purchase Successful! 🎉",
+          description: `Your points have been added to ${club.name}`,
+        });
+      } else if (purchaseParam === 'canceled') {
+        setSelectedClubId(clubParam);
+        setShowPurchaseCanceled(true);
+        
+        toast({
+          title: "Purchase Canceled",
+          description: "No charges were made to your account",
+          variant: "default",
+        });
       }
     }
+    // Clean up URL parameters regardless
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.delete('club');
+    newUrl.searchParams.delete('purchase');
+    router.replace(newUrl.pathname + newUrl.search);
+  }
   }, [searchParams, allClubs, router, toast]);
 
   // Loading state

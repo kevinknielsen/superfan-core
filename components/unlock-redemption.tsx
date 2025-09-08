@@ -69,8 +69,9 @@ const UNLOCK_TYPE_ICONS: Record<string, any> = {
 };
 
 import { STATUS_THRESHOLDS } from "@/lib/status";
+import type { ClubStatus } from "@/types/club.types";
 // Prevent mutation and improve inference
-const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<string, number>>;
+const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<ClubStatus, number>>;
 
 export default function UnlockRedemption({ 
   clubId, 
@@ -137,7 +138,7 @@ export default function UnlockRedemption({
   };
 
   const isUnlockAvailable = (unlock: Unlock) => {
-    const requiredPoints = STATUS_POINTS[unlock.min_status] || 0;
+    const requiredPoints = STATUS_POINTS[unlock.min_status as ClubStatus] ?? 0;
     return userPoints >= requiredPoints;
   };
 
@@ -150,7 +151,7 @@ export default function UnlockRedemption({
   };
 
   const getStatusProgress = (requiredStatus: string) => {
-    const requiredPoints = STATUS_POINTS[requiredStatus] || 0;
+    const requiredPoints = STATUS_POINTS[requiredStatus as ClubStatus] ?? 0;
     const progress = Math.min((userPoints / requiredPoints) * 100, 100);
     return progress;
   };
@@ -343,7 +344,7 @@ export default function UnlockRedemption({
                   
                   {/* Requirements info */}
                   <div className="text-xs text-gray-300 mb-3">
-                    Requires {unlock.min_status} • {STATUS_POINTS[unlock.min_status]}+ pts
+                    Requires {unlock.min_status} • {(STATUS_POINTS[unlock.min_status as ClubStatus] ?? 0)}+ pts
                   </div>
                   
                   {/* Action Button - Like screenshot */}
