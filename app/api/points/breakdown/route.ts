@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
+import { STATUS_THRESHOLDS, computeStatus, nextStatus as computeNext } from '@/lib/status';
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,6 +53,11 @@ export async function GET(request: NextRequest) {
       }
 
       // Return empty wallet state for new members
+      const current = computeStatus(0);
+      const next = computeNext(current);
+      const currentThreshold = STATUS_THRESHOLDS[current];
+      const nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+
       return NextResponse.json({
         wallet: {
           id: null,
@@ -65,12 +71,12 @@ export async function GET(request: NextRequest) {
           created_at: new Date().toISOString()
         },
         status: {
-          current: membership.current_status || 'cadet',
-          current_threshold: 0,
-          next_status: 'resident',
-          next_threshold: 500,
-          progress_to_next: 0,
-          points_to_next: 500
+          current,
+          current_threshold: currentThreshold,
+          next_status: next,
+          next_threshold: nextThreshold,
+          progress_to_next: nextThreshold ? 0 : 100,
+          points_to_next: nextThreshold ? nextThreshold : 0
         },
         spending_power: {
           total_spendable: 0,
@@ -88,7 +94,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get membership status for context
+    // Get membership status for context (optional)
     const { data: membership, error: membershipError } = await supabase
       .from('club_memberships')
       .select('current_status, points, join_date')
@@ -112,37 +118,34 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching recent transactions:', recentError);
     }
 
-    // Calculate status thresholds and progress (unified peg: 10x higher thresholds)
-    const statusThresholds = {
-      cadet: 0,
-      resident: 5000,    // 50 points at $1 per 100 pts
-      headliner: 15000,  // 150 points at $1 per 100 pts  
-      superfan: 40000    // 400 points at $1 per 100 pts
-    };
-
-    const currentStatus = membership?.current_status || 'cadet';
+    // Compute status and thresholds from status_pts
     const statusPoints = walletView.status_pts || 0; // Points that count toward status
-    const currentThreshold = statusThresholds[currentStatus as keyof typeof statusThresholds];
-    const nextStatus = currentStatus === 'superfan' ? null : 
-      currentStatus === 'headliner' ? 'superfan' :
-      currentStatus === 'resident' ? 'headliner' : 'resident';
-    const nextThreshold = nextStatus ? statusThresholds[nextStatus as keyof typeof statusThresholds] : null;
+    const current = computeStatus(statusPoints);
+    const next = computeNext(current);
+    const currentThreshold = STATUS_THRESHOLDS[current];
+    const nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
 
-    // Calculate spending power breakdown (corrected math to avoid double-counting)
+    // Calculate spending power breakdown
     const earned = walletView.earned_pts || 0;
     const escrowed = walletView.escrowed_pts || 0;
-    const lockedForStatus = Math.min(statusPoints, currentThreshold);
+    const purchased = walletView.purchased_pts || 0;
+    
+    // Clamp lockedForStatus to not exceed earned
+    const lockedForStatus = Math.min(currentThreshold, earned);
     const earnedAvailable = Math.max(0, earned - lockedForStatus - escrowed);
     
+    // Total spendable should only include actually spendable components
+    const totalSpendable = purchased + earnedAvailable;
+    
     const spendingPower = {
-      total_spendable: walletView.balance_pts,
-      purchased_available: walletView.purchased_pts,
+      total_spendable: totalSpendable,
+      purchased_available: purchased,
       earned_available: earnedAvailable,
       earned_locked_for_status: lockedForStatus,
       escrowed: escrowed
     };
 
-    // Simplified transaction breakdown (empty for now to improve performance)
+    // Simplified transaction breakdown (empty for performance)
     const processedBreakdown: Record<string, number> = {};
 
     return NextResponse.json({
@@ -153,14 +156,14 @@ export async function GET(request: NextRequest) {
         purchased_points: walletView.purchased_pts,
         spent_points: walletView.spent_pts,
         escrowed_points: walletView.escrowed_pts || 0,
-        status_points: statusPoints, // Points that count toward status (earned - escrowed)
+        status_points: statusPoints,
         last_activity: walletView.last_activity_at,
         created_at: walletView.created_at
       },
       status: {
-        current: currentStatus,
+        current,
         current_threshold: currentThreshold,
-        next_status: nextStatus,
+        next_status: next,
         next_threshold: nextThreshold,
         progress_to_next: nextThreshold
           ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))

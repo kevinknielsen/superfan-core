@@ -1,7 +1,9 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
+import { computeStatus } from '@/lib/status';
 
 const SpendPointsSchema = z.object({
   clubId: z.string().uuid(),
@@ -44,10 +46,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user's point wallet and current membership status
+    // Get user's point wallet basic data
     const { data: wallet, error: walletError } = await supabase
       .from('point_wallets')
-      .select('id, balance_pts, earned_pts, purchased_pts')
+      .select('id')
       .eq('user_id', user.id)
       .eq('club_id', clubId)
       .single();
@@ -59,27 +61,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get current membership status for status protection
-    const { data: membership, error: membershipError } = await supabase
-      .from('club_memberships')
-      .select('current_status')
-      .eq('user_id', user.id)
-      .eq('club_id', clubId)
+    // Derive current status from status points (earned - escrow) via view
+    const { data: walletView } = await supabase
+      .from('v_point_wallets')
+      .select('status_pts')
+      .eq('id', wallet.id)
       .single();
 
-    const currentStatus = membership?.current_status || 'cadet';
+    const statusPoints = walletView?.status_pts || 0;
+    const currentStatus = computeStatus(statusPoints);
 
-    // Use unified database function for safe spending with status protection
+    // Generate reference ID for idempotency
+    const ref = referenceId || `spend_${Date.now()}`;
+
+    // Use unified database function for safe spending with status protection and atomic logging
     const { data: spendResult, error: spendError } = await supabase
       .rpc('spend_points_unified', {
         p_wallet_id: wallet.id,
         p_points_to_spend: pointsToSpend,
         p_preserve_status: preserveStatus,
-        p_current_status: currentStatus
+        p_current_status: currentStatus,
+        p_ref: ref,
+        p_description: description
       });
 
     if (spendError) {
-      console.error('Error calling spend_points_with_protection:', spendError);
+      console.error('Error calling spend_points_unified:', spendError);
       return NextResponse.json(
         { error: 'Failed to process spending' },
         { status: 500 }
@@ -97,111 +104,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Record the spending transaction
-    const ref = referenceId || `spend_${Date.now()}`;
-    const { error: transactionError } = await supabase
-      .from('point_transactions')
-      .insert({
-        wallet_id: wallet.id,
-        type: 'SPEND',
-        pts: pointsToSpend,
-        source: 'spent',
-        affects_status: false, // Spending doesn't affect status, only earning does
-        ref,
-        metadata: {
-          description,
-          spent_breakdown: {
-            purchased: spendResult.spent_purchased,
-            earned: spendResult.spent_earned
-          },
-          preserve_status: preserveStatus,
-          status_at_time: currentStatus
-        }
-      });
-
-    if (transactionError) {
-      console.error('Error recording spend transaction:', transactionError);
-      
-      // Check if this is a duplicate reference (idempotent request)
-      if (transactionError.code === '23505' || // Postgres unique violation
-          transactionError.message?.includes('duplicate') ||
-          transactionError.message?.includes('unique')) {
-        console.log('Duplicate transaction reference detected, treating as idempotent success:', ref);
-        
-        // Return success response since the transaction was already recorded
-        return NextResponse.json({
-          success: true,
-          idempotent: true,
-          transaction: {
-            reference: ref,
-            points_spent: pointsToSpend,
-            spent_breakdown: {
-              purchased: spendResult.spent_purchased,
-              earned: spendResult.spent_earned
-            },
-            remaining_balance: spendResult.remaining_balance,
-            status_preserved: preserveStatus,
-            current_status: currentStatus
-          }
-        });
-      }
-      
-      // CRITICAL: Points were already spent, but transaction wasn't recorded
-      // Implement compensation logic to maintain data integrity
-      try {
-        // Attempt to reverse the spending by calling the database function again
-        const { data: compensationResult, error: compensationError } = await supabase
-          .rpc('spend_points_unified', {
-            p_wallet_id: wallet.id,
-            p_points_to_spend: -pointsToSpend, // Negative amount to reverse
-            p_preserve_status: false, // Don't preserve status during compensation
-            p_current_status: currentStatus
-          });
-
-        if (compensationError || !compensationResult?.success) {
-          console.error('CRITICAL: Failed to compensate for transaction recording failure:', {
-            originalError: transactionError,
-            compensationError,
-            compensationResult,
-            walletId: wallet.id,
-            pointsToSpend,
-            userId: user.id,
-            clubId
-          });
-          
-          // Return error but note that manual intervention may be needed
-          return NextResponse.json({
-            error: 'Transaction recording failed and compensation failed',
-            details: 'Points may have been spent but not recorded. Manual intervention required.',
-            compensation_attempted: true,
-            compensation_result: compensationResult,
-            original_error: transactionError.message
-          }, { status: 500 });
-        }
-        
-        console.log('Successfully compensated for transaction recording failure');
-        return NextResponse.json({
-          error: 'Transaction recording failed but spending was reversed',
-          details: 'Please try again',
-          compensation_successful: true
-        }, { status: 500 });
-        
-      } catch (compensationError) {
-        console.error('CRITICAL: Compensation logic failed:', compensationError);
-        return NextResponse.json({
-          error: 'Critical error: Points spent but cannot record or compensate',
-          details: 'Manual database intervention required',
-          wallet_id: wallet.id,
-          points_affected: pointsToSpend
-        }, { status: 500 });
-      }
-    }
-
+    // Return success response with atomically handled transaction
     return NextResponse.json({
       success: true,
+      idempotent: Boolean(spendResult?.idempotent),
       transaction: {
         reference: ref,
-        points_spent: pointsToSpend,
+        points_spent: spendResult.points_spent,
         spent_breakdown: {
           purchased: spendResult.spent_purchased,
           earned: spendResult.spent_earned
