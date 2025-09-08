@@ -83,22 +83,25 @@ Perk Access Check:
 ```sql
 CREATE TABLE escrow_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_type TEXT NOT NULL, -- 'master', 'club', 'event'
-  entity_id UUID, -- club_id or event_id (null for master)
-  currency CHAR(3) NOT NULL DEFAULT 'USD', -- ISO 4217 currency code
+  account_type TEXT NOT NULL CHECK (account_type IN ('master', 'club', 'event')),
+  club_id UUID, -- Only set when account_type = 'club'
+  event_id UUID, -- Only set when account_type = 'event'
+  currency CHAR(3) NOT NULL DEFAULT 'USD' CHECK (currency = UPPER(currency)), -- ISO 4217 uppercase
   balance_cents INTEGER NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
   reserved_cents INTEGER NOT NULL DEFAULT 0 CHECK (reserved_cents >= 0 AND reserved_cents <= balance_cents),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   
-  -- Prevent duplicate accounts
-  CONSTRAINT ux_escrow_account_entity UNIQUE(account_type, entity_id),
+  -- Type-specific column constraints
+  CONSTRAINT chk_escrow_master CHECK (
+    (account_type = 'master' AND club_id IS NULL AND event_id IS NULL) OR
+    (account_type = 'club' AND club_id IS NOT NULL AND event_id IS NULL) OR
+    (account_type = 'event' AND event_id IS NOT NULL AND club_id IS NULL)
+  ),
   
-  -- Foreign key references (when tables exist)
-  CONSTRAINT fk_escrow_club FOREIGN KEY (entity_id) REFERENCES clubs(id) 
-    WHEN account_type = 'club',
-  CONSTRAINT fk_escrow_event FOREIGN KEY (entity_id) REFERENCES events(id) 
-    WHEN account_type = 'event'
+  -- Foreign key references
+  CONSTRAINT fk_escrow_club FOREIGN KEY (club_id) REFERENCES clubs(id),
+  CONSTRAINT fk_escrow_event FOREIGN KEY (event_id) REFERENCES events(id)
 );
 
 -- Automatic updated_at maintenance
@@ -113,6 +116,16 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_escrow_accounts_updated_at 
   BEFORE UPDATE ON escrow_accounts 
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Partial unique indexes to prevent duplicate accounts by type and currency
+CREATE UNIQUE INDEX ux_escrow_master ON escrow_accounts(account_type, currency) 
+  WHERE account_type = 'master';
+
+CREATE UNIQUE INDEX ux_escrow_club ON escrow_accounts(account_type, club_id, currency) 
+  WHERE account_type = 'club';
+
+CREATE UNIQUE INDEX ux_escrow_event ON escrow_accounts(account_type, event_id, currency) 
+  WHERE account_type = 'event';
 ```
 
 #### `escrow_transactions`
@@ -167,11 +180,25 @@ CREATE TABLE ledger_entries (
 
 -- Derive account balances from ledger
 CREATE VIEW account_balances AS
+WITH account_activity AS (
+  -- Credits (money coming into accounts)
+  SELECT credit_account_id as account_id, SUM(amount_cents) as credits
+  FROM ledger_entries 
+  WHERE credit_account_id IS NOT NULL
+  GROUP BY credit_account_id
+  
+  UNION ALL
+  
+  -- Debits (money going out of accounts)
+  SELECT debit_account_id as account_id, -SUM(amount_cents) as debits
+  FROM ledger_entries 
+  WHERE debit_account_id IS NOT NULL
+  GROUP BY debit_account_id
+)
 SELECT 
   account_id,
-  SUM(CASE WHEN credit_account_id = account_id THEN amount_cents ELSE 0 END) -
-  SUM(CASE WHEN debit_account_id = account_id THEN amount_cents ELSE 0 END) as balance_cents
-FROM ledger_entries
+  SUM(COALESCE(credits, 0) + COALESCE(debits, 0)) as balance_cents
+FROM account_activity
 GROUP BY account_id;
 ```
 
@@ -208,6 +235,26 @@ CREATE INDEX ix_point_liabilities_user ON point_liabilities(
 
 -- Note: cents_value removed - derive as points * 0.01 when needed
 -- This prevents data inconsistency and ensures single source of truth
+```
+
+#### `spend_liability_allocations`
+```sql
+CREATE TABLE spend_liability_allocations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  spend_id UUID NOT NULL, -- References the spend transaction
+  liability_id UUID NOT NULL REFERENCES point_liabilities(id),
+  points_allocated INTEGER NOT NULL CHECK (points_allocated > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  
+  -- Prevent duplicate allocations for same spend/liability pair
+  CONSTRAINT ux_spend_liability UNIQUE(spend_id, liability_id)
+);
+
+-- Index for liability consumption queries
+CREATE INDEX ix_spend_alloc_liability ON spend_liability_allocations(liability_id, points_allocated);
+
+-- Index for spend audit queries  
+CREATE INDEX ix_spend_alloc_spend ON spend_liability_allocations(spend_id, created_at);
 ```
 
 #### `reservations`
@@ -344,12 +391,21 @@ INSERT INTO reservations (
   'redemption_codes', $expires_at, 'active'
 ) RETURNING id as reservation_id;
 
--- 2. Update escrow account (atomic balance change)
+-- 2. Lock and update escrow account (prevent concurrent reservations)
+SELECT 1 FROM escrow_accounts 
+WHERE id = $escrow_account_id FOR UPDATE;
+
 UPDATE escrow_accounts 
 SET reserved_cents = reserved_cents + $total_cost,
     updated_at = NOW()
 WHERE id = $escrow_account_id 
-  AND balance_cents >= reserved_cents + $total_cost; -- Ensure sufficient funds
+  AND balance_cents >= reserved_cents + $total_cost -- Ensure sufficient funds
+RETURNING id;
+
+-- Explicit check: fail if no rows were updated (insufficient funds or race condition)
+IF NOT FOUND THEN
+  RAISE EXCEPTION 'Insufficient escrow balance or concurrent reservation conflict';
+END IF;
 
 -- 3. Create redemption codes linked to reservation
 INSERT INTO redemption_codes (
@@ -365,14 +421,34 @@ COMMIT;
 - **Partial Completion**: When `remaining_cents = 0`, mark reservation as 'completed'
 - **Expiry Release**: Background job processes expired reservations:
   ```sql
-  -- Release expired reservation funds
+  -- Atomic expiry processing with proper fund release
+  WITH expired_reservations AS (
+    SELECT id, escrow_account_id, remaining_cents
+    FROM reservations 
+    WHERE expires_at < NOW() AND status IN ('active', 'partial')
+    FOR UPDATE
+  ),
+  expired_totals AS (
+    SELECT escrow_account_id, SUM(remaining_cents) as total_to_release
+    FROM expired_reservations
+    GROUP BY escrow_account_id
+  )
   UPDATE escrow_accounts 
-  SET reserved_cents = reserved_cents - expired_reservation.remaining_cents
-  WHERE id = expired_reservation.escrow_account_id;
+  SET reserved_cents = GREATEST(0, reserved_cents - expired_totals.total_to_release),
+      updated_at = NOW()
+  FROM expired_totals
+  WHERE escrow_accounts.id = expired_totals.escrow_account_id;
   
-  -- Mark reservation and codes as expired
-  UPDATE reservations SET status = 'expired', completed_at = NOW() 
+  -- Mark reservations and codes as expired
+  UPDATE reservations 
+  SET status = 'expired', completed_at = NOW()
   WHERE expires_at < NOW() AND status IN ('active', 'partial');
+  
+  UPDATE redemption_codes 
+  SET status = 'expired'
+  WHERE reservation_id IN (
+    SELECT id FROM reservations WHERE status = 'expired'
+  );
   ```
 
 ### 3. Point Spending Settlement
@@ -437,24 +513,58 @@ WHERE idempotency_key = $idempotency_key;
 -- 2. Acquire user spend lock (prevents concurrent spends)
 SELECT user_id FROM users WHERE id = $user_id FOR UPDATE;
 
--- 3. Select oldest active liabilities (FIFO order)
-SELECT id, points FROM point_liabilities 
-WHERE user_id = $user_id AND status = 'active'
-ORDER BY created_at ASC
+-- 3. Select oldest active liabilities (FIFO order) with remaining points
+SELECT id, points, 
+       COALESCE(points - COALESCE(SUM(allocated_points), 0), points) as points_remaining
+FROM point_liabilities pl
+LEFT JOIN spend_liability_allocations sla ON pl.id = sla.liability_id
+WHERE pl.user_id = $user_id AND pl.status = 'active'
+GROUP BY pl.id, pl.points, pl.created_at
+HAVING COALESCE(points - COALESCE(SUM(allocated_points), 0), points) > 0
+ORDER BY pl.created_at ASC
 FOR UPDATE;
 
--- 4. Deduct points (atomic balance update)
+-- 4. Create allocation records for this spend (supports partial allocation)
+INSERT INTO spend_liability_allocations (
+  spend_id, liability_id, points_allocated, created_at
+) 
+SELECT $spend_id, liability_id, allocated_amount, NOW()
+FROM (
+  -- Calculate allocation per liability (FIFO distribution)
+  SELECT id as liability_id,
+         LEAST(points_remaining, 
+               GREATEST(0, $amount_points - LAG(running_total, 1, 0) OVER (ORDER BY created_at))
+         ) as allocated_amount
+  FROM (
+    SELECT id, points_remaining, created_at,
+           SUM(points_remaining) OVER (ORDER BY created_at ROWS UNBOUNDED PRECEDING) as running_total
+    FROM selected_liabilities
+  ) t
+  WHERE allocated_amount > 0
+) allocations;
+
+-- 5. Mark fully consumed liabilities as spent
 UPDATE point_liabilities 
 SET status = 'spent', spent_at = NOW()
-WHERE id IN (selected_liability_ids);
+WHERE id IN (
+  SELECT pl.id 
+  FROM point_liabilities pl
+  JOIN (
+    SELECT liability_id, SUM(points_allocated) as total_allocated
+    FROM spend_liability_allocations 
+    WHERE liability_id IN (SELECT id FROM selected_liabilities)
+    GROUP BY liability_id
+  ) alloc ON pl.id = alloc.liability_id
+  WHERE pl.points = alloc.total_allocated
+);
 
--- 5. Create settlement transaction
+-- 6. Create settlement transaction
 INSERT INTO escrow_transactions (
   from_escrow_account_id, to_escrow_account_id,
   type, amount_cents, idempotency_key
 ) VALUES (...);
 
--- 6. Store idempotency record
+-- 7. Store idempotency record
 INSERT INTO spend_idempotency (
   idempotency_key, user_id, request_hash, response_data
 ) VALUES (...);
@@ -585,11 +695,57 @@ Alert: < 1.0 (underfunded - critical issue)
 | Data Retention Policy | Privacy Team | 1-2 weeks | Pending | Retention_Policy.pdf |
 | Financial Audit Readiness | Finance Team | 2-3 weeks | Pending | Audit_Checklist.pdf |
 
-### Regulatory Thresholds
-- **KYC Trigger**: Individual users exceeding $3,000 annual point purchases
-- **KYB Requirement**: All merchants receiving >$600 annual payouts
-- **Reporting Threshold**: 1099-K for merchants with >$600 and >200 transactions
-- **Record Retention**: 7 years for all financial transactions and user data
+### Regulatory Thresholds (Configuration-Driven)
+
+**⚠️ All threshold values must be read from compliance configuration, not hard-coded:**
+
+- **KYC Trigger**: `compliance.thresholds.kyc.annual_purchase_limit` (fallback: $3,000)
+- **KYB Requirement**: `compliance.thresholds.kyb.annual_payout_limit` (fallback: $600)
+- **1099-K Reporting**: 
+  - 2023+: `compliance.thresholds.reporting.1099k.2023` (fallback: $600)
+  - Pre-2023: `compliance.thresholds.reporting.1099k.legacy` (fallback: $20,000 + 200 transactions)
+  - Per-jurisdiction overrides: `compliance.thresholds.reporting.1099k.state.{STATE_CODE}`
+- **Record Retention**: `compliance.recordRetention.years` (fallback: 7 years)
+
+**Configuration Keys:**
+```json
+{
+  "compliance": {
+    "thresholds": {
+      "kyc": {
+        "annual_purchase_limit": 3000,
+        "description": "USD cents - trigger individual KYC"
+      },
+      "kyb": {
+        "annual_payout_limit": 60000,
+        "description": "USD cents - trigger business verification"
+      },
+      "reporting": {
+        "1099k": {
+          "2023": 60000,
+          "legacy": 2000000,
+          "transaction_count_legacy": 200,
+          "state": {
+            "VT": 60000,
+            "MA": 60000
+          }
+        }
+      }
+    },
+    "recordRetention": {
+      "years": 7,
+      "description": "Financial transaction and user data retention period"
+    }
+  }
+}
+```
+
+**Implementation Requirements:**
+- Load thresholds from configuration service at runtime
+- Cache values with TTL for performance
+- Fall back to documented defaults only when config is unavailable
+- Update configuration when IRS/state regulations change
+- Log threshold changes for audit compliance
 
 **⚠️ Implementation cannot begin until all compliance requirements are satisfied**
 

@@ -205,31 +205,15 @@ export default function ClubCard({
   };
 
   const handleQRScan = (data: string) => {
-    console.log('QR Code scanned:', data);
     setShowQRScanner(false);
-    
-    // Check if it's a tap-in URL for this club
-    if (data.includes('/tap') && data.includes(`club=${club.id}`)) {
-      try {
-        const url = new URL(data);
-        // Extract the path and search params for local navigation
-        const tapPath = `${url.pathname}${url.search}`;
-        router.push(tapPath);
-      } catch (error) {
-        // If URL parsing fails, try direct navigation
-        router.push(data.replace(window.location.origin, ''));
-      }
-    } else {
-      // Generic QR code - show info and allow manual navigation
-      toast({
-        title: "QR Code Detected",
-        description: "Opening link...",
-      });
-      if (data.startsWith('http')) {
-        const w = window.open(data, '_blank');
-        if (w) w.opener = null;
-      }
+    // QRScanner handles '/tap' internally; treat everything else as generic
+    if (data.startsWith('http')) {
+      toast({ title: "QR Code Detected", description: "Opening link..." });
+      const w = window.open(data, '_blank');
+      if (w) w.opener = null; // prevent reverse tabnabbing
+      return;
     }
+    toast({ title: "QR Code Detected", description: data });
   };
 
   const getTierGradientColors = (tier: ClubStatus) => {
@@ -262,6 +246,7 @@ export default function ClubCard({
             strokeWidth={4}
             useGradient={true}
             gradientColors={tierColors}
+            gradientId={`club-${club.id}-ring`}
             className="absolute inset-0"
           />
           
@@ -284,7 +269,10 @@ export default function ClubCard({
             )}
             
             {!membership && (
-              <div 
+              <button
+                type="button"
+                aria-label={`Join ${club.name}`}
+                title={`Join ${club.name}`}
                 className={cn(
                   "absolute inset-0 bg-black/40 rounded-full flex items-center justify-center transition-opacity duration-300",
                   isHovered ? "opacity-100" : "opacity-0"
@@ -301,11 +289,14 @@ export default function ClubCard({
                     <Plus size={20} className="text-black" />
                   )}
                 </div>
-              </div>
+              </button>
             )}
 
             {membership && (
-              <div 
+              <button
+                type="button"
+                aria-label="Open QR scanner"
+                title="Open QR scanner"
                 className="absolute -bottom-1 -right-1 p-1 bg-background rounded-full border-2"
                 style={{ borderColor: tierColors[0] }}
                 onClick={(e) => {
@@ -314,7 +305,7 @@ export default function ClubCard({
                 }}
               >
                 <QrCode size={16} style={{ color: tierColors[0] }} />
-              </div>
+              </button>
             )}
           </div>
         </div>
