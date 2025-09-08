@@ -3,7 +3,8 @@
 import type React from "react";
 
 import { useMemo, useState, useRef, useEffect } from "react";
-import { Users, Star, Crown, Trophy, Shield, Plus, QrCode } from "lucide-react";
+import Image from "next/image";
+import { Plus, QrCode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
 import dynamic from "next/dynamic";
@@ -43,7 +44,8 @@ const CircleProgress = ({
 }: CircleProgressProps) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const fillPercentage = Math.min(value / maxValue, 1);
+  const normalized = maxValue > 0 ? value / maxValue : 0;
+  const fillPercentage = Math.min(1, Math.max(0, normalized));
   const strokeDashoffset = circumference * (1 - fillPercentage);
 
   const uniqueGradientId = useRef(
@@ -105,31 +107,10 @@ const CircleProgress = ({
 
 interface ClubCardProps {
   club: Club;
-  index: number;
   membership?: ClubMembership | null;
 }
 
-// Status icon mapping
-const STATUS_ICONS = {
-  cadet: Users,
-  resident: Star,
-  headliner: Trophy,
-  superfan: Crown,
-};
-
-const STATUS_COLORS = {
-  cadet: "text-gray-400",
-  resident: "text-blue-400", 
-  headliner: "text-purple-400",
-  superfan: "text-yellow-400",
-};
-
-const STATUS_BG_COLORS = {
-  cadet: "bg-gray-500/20",
-  resident: "bg-blue-500/20",
-  headliner: "bg-purple-500/20", 
-  superfan: "bg-yellow-500/20",
-};
+// (removed unused STATUS_* constants)
 
 const STATUS_GRADIENT_COLORS = {
   cadet: ["#ec4899", "#be185d"], // Pink gradient - matches our primary brand
@@ -141,7 +122,6 @@ const STATUS_GRADIENT_COLORS = {
 
 export default function ClubCard({
   club,
-  index,
   membership: propMembership,
 }: ClubCardProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
@@ -163,17 +143,18 @@ export default function ClubCard({
   
   // Use prop membership if provided, otherwise use fetched
   const membership = propMembership || fetchedMembership;
+  const isMember = Boolean(membership);
   
-  // Get unified points data - same as club details modal
-  const { breakdown } = useUnifiedPoints(club.id);
+  // Get unified points data - only when authenticated and has membership
+  const enabled = Boolean(club.id && isMember && isAuthenticated);
+  const { breakdown } = useUnifiedPoints(club.id, { enabled });
   
   const joinClubMutation = useJoinClub();
 
-  // Status calculation - use unified points for consistency
+  // Status calculation - use status_points for tier progression with nullish coalescing
   const currentStatus = membership?.current_status || 'cadet';
-  const currentPoints = breakdown?.wallet.earned_points || membership?.points || 0;
+  const currentPoints = breakdown?.wallet.status_points ?? membership?.status_points ?? membership?.points ?? 0;
   const nextStatus = getNextStatus(currentStatus);
-  const pointsToNext = getPointsToNext(currentPoints, currentStatus);
   
   // Progress calculation - show progress relative to current tier
   const statusProgress = useMemo(() => {
@@ -196,8 +177,7 @@ export default function ClubCard({
     return progress;
   }, [currentPoints, nextStatus, membership, currentStatus]);
 
-  // Visual indicators
-  const StatusIcon = STATUS_ICONS[currentStatus];
+  // (removed unused StatusIcon)
 
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -246,13 +226,14 @@ export default function ClubCard({
         description: "Opening link...",
       });
       if (data.startsWith('http')) {
-        window.open(data, '_blank');
+        const w = window.open(data, '_blank');
+        if (w) w.opener = null;
       }
     }
   };
 
-  const getTierGradientColors = (tier: string) => {
-    return STATUS_GRADIENT_COLORS[tier as keyof typeof STATUS_GRADIENT_COLORS] || STATUS_GRADIENT_COLORS.cadet;
+  const getTierGradientColors = (tier: ClubStatus) => {
+    return STATUS_GRADIENT_COLORS[tier] ?? STATUS_GRADIENT_COLORS.cadet;
   };
 
   const tierColors = getTierGradientColors(currentStatus);
@@ -286,10 +267,13 @@ export default function ClubCard({
           
           <div className="relative w-[104px] h-[104px] m-2">
             {primaryImage || club.image_url ? (
-              <img
+              <Image
                 src={primaryImage?.file_path || club.image_url || "/placeholder.svg"}
                 alt={primaryImage?.alt_text || club.name}
+                width={104}
+                height={104}
                 className="w-full h-full object-cover rounded-full"
+                priority={false}
               />
             ) : (
               <div className="w-full h-full bg-primary/20 rounded-full flex items-center justify-center">

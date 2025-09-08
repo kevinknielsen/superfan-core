@@ -10,6 +10,19 @@ The Superfan points system requires financial backing to maintain integrity betw
 
 Every point in circulation must be backed by real money in escrow to prevent infinite money creation and ensure venues/merchants get paid when points are spent.
 
+### Monetary Peg and Accounting Rules
+
+- **USD Peg**: Points are pegged to USD cents (1 point = 0.01 USD)
+- **Internal Accounting**: All escrow and settlement accounting is maintained in USD cents
+- **Rounding Rules**: Use banker's rounding (round-to-even) for all point↔USD conversions
+- **Rounding Boundaries**: Round only at conversion boundaries and display; track fractional cents separately
+- **FX Handling**: 
+  - Authorized FX rate source: Real-time rates from authorized provider (timestamp recorded)
+  - Convert non-USD transactions to USD at transaction time using current rate
+  - Record FX rate and rounding adjustments in transaction/audit log
+  - Escrow and settlement remain in USD to avoid peg drift
+  - Periodic reconciliation frequency: Daily balance checks with 0.1% tolerance threshold
+
 ## System Architecture
 
 ### 1. Point Earning (Backed by Real Money)
@@ -72,26 +85,94 @@ CREATE TABLE escrow_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   account_type TEXT NOT NULL, -- 'master', 'club', 'event'
   entity_id UUID, -- club_id or event_id (null for master)
-  balance_cents INTEGER NOT NULL DEFAULT 0,
-  reserved_cents INTEGER NOT NULL DEFAULT 0, -- Outstanding point liabilities
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  currency CHAR(3) NOT NULL DEFAULT 'USD', -- ISO 4217 currency code
+  balance_cents INTEGER NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
+  reserved_cents INTEGER NOT NULL DEFAULT 0 CHECK (reserved_cents >= 0 AND reserved_cents <= balance_cents),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  
+  -- Prevent duplicate accounts
+  CONSTRAINT ux_escrow_account_entity UNIQUE(account_type, entity_id),
+  
+  -- Foreign key references (when tables exist)
+  CONSTRAINT fk_escrow_club FOREIGN KEY (entity_id) REFERENCES clubs(id) 
+    WHEN account_type = 'club',
+  CONSTRAINT fk_escrow_event FOREIGN KEY (entity_id) REFERENCES events(id) 
+    WHEN account_type = 'event'
 );
+
+-- Automatic updated_at maintenance
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_escrow_accounts_updated_at 
+  BEFORE UPDATE ON escrow_accounts 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 ```
 
 #### `escrow_transactions`
 ```sql
 CREATE TABLE escrow_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  escrow_account_id UUID NOT NULL REFERENCES escrow_accounts(id),
-  type TEXT NOT NULL, -- 'deposit', 'reserve', 'settle', 'refund'
-  amount_cents INTEGER NOT NULL,
+  from_escrow_account_id UUID REFERENCES escrow_accounts(id),
+  to_escrow_account_id UUID REFERENCES escrow_accounts(id),
+  type TEXT NOT NULL, -- 'deposit', 'reserve', 'settle', 'refund', 'release'
+  amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
   reference_type TEXT, -- 'claim_code', 'point_spend', 'settlement'
   reference_id UUID,
   description TEXT,
   stripe_payment_intent_id TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  idempotency_key TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  
+  -- Ensure at least one account is specified
+  CONSTRAINT chk_escrow_tx_accounts CHECK (
+    from_escrow_account_id IS NOT NULL OR to_escrow_account_id IS NOT NULL
+  )
 );
+
+-- Unique idempotency constraint
+CREATE UNIQUE INDEX ux_escrow_tx_idem ON escrow_transactions(idempotency_key) 
+  WHERE idempotency_key IS NOT NULL;
+
+-- Performance indexes
+CREATE INDEX ix_escrow_tx_from_account ON escrow_transactions(from_escrow_account_id, created_at);
+CREATE INDEX ix_escrow_tx_to_account ON escrow_transactions(to_escrow_account_id, created_at);
+CREATE INDEX ix_escrow_tx_reference ON escrow_transactions(reference_type, reference_id);
+```
+
+**Alternative: Strict Double-Entry Ledger**
+For full double-entry accounting, consider this alternative structure:
+```sql
+CREATE TABLE ledger_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transaction_id UUID NOT NULL, -- Groups debit/credit pairs
+  debit_account_id UUID REFERENCES escrow_accounts(id),
+  credit_account_id UUID REFERENCES escrow_accounts(id),
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  
+  -- Each entry must have exactly one debit OR credit
+  CONSTRAINT chk_ledger_entry_single_side CHECK (
+    (debit_account_id IS NOT NULL AND credit_account_id IS NULL) OR
+    (debit_account_id IS NULL AND credit_account_id IS NOT NULL)
+  )
+);
+
+-- Derive account balances from ledger
+CREATE VIEW account_balances AS
+SELECT 
+  account_id,
+  SUM(CASE WHEN credit_account_id = account_id THEN amount_cents ELSE 0 END) -
+  SUM(CASE WHEN debit_account_id = account_id THEN amount_cents ELSE 0 END) as balance_cents
+FROM ledger_entries
+GROUP BY account_id;
 ```
 
 #### `point_liabilities`
@@ -99,15 +180,64 @@ CREATE TABLE escrow_transactions (
 CREATE TABLE point_liabilities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id),
-  points INTEGER NOT NULL,
-  cents_value INTEGER NOT NULL, -- points * 1 cent
+  points INTEGER NOT NULL CHECK (points >= 0),
   source_type TEXT NOT NULL, -- 'claim_code', 'tap_in', 'purchase'
   source_id UUID,
   escrow_account_id UUID NOT NULL REFERENCES escrow_accounts(id),
-  status TEXT NOT NULL DEFAULT 'active', -- 'active', 'spent', 'expired'
-  created_at TIMESTAMP DEFAULT NOW(),
-  spent_at TIMESTAMP
+  reservation_id UUID REFERENCES reservations(id), -- Link to escrow hold
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'spent', 'expired')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  spent_at TIMESTAMPTZ,
+  
+  -- Spent liabilities must have spent_at timestamp
+  CONSTRAINT chk_point_liability_spent CHECK (
+    (status = 'spent' AND spent_at IS NOT NULL) OR 
+    (status != 'spent' AND spent_at IS NULL)
+  )
 );
+
+-- Index for FIFO spend ordering and reporting
+CREATE INDEX ix_point_liabilities_fifo ON point_liabilities(
+  escrow_account_id, status, created_at
+) WHERE status = 'active';
+
+-- Index for user balance queries
+CREATE INDEX ix_point_liabilities_user ON point_liabilities(
+  user_id, status, created_at
+);
+
+-- Note: cents_value removed - derive as points * 0.01 when needed
+-- This prevents data inconsistency and ensures single source of truth
+```
+
+#### `reservations`
+```sql
+CREATE TABLE reservations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  escrow_account_id UUID NOT NULL REFERENCES escrow_accounts(id),
+  reserved_cents INTEGER NOT NULL CHECK (reserved_cents > 0),
+  remaining_cents INTEGER NOT NULL CHECK (remaining_cents >= 0 AND remaining_cents <= reserved_cents),
+  purpose TEXT NOT NULL, -- 'redemption_codes', 'point_spend', 'settlement'
+  reference_type TEXT, -- 'claim_code_batch', 'user_spend', 'merchant_payout'
+  reference_id UUID,
+  expires_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'partial', 'completed', 'expired', 'cancelled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  
+  -- Completed reservations must have completion timestamp
+  CONSTRAINT chk_reservation_completed CHECK (
+    (status IN ('completed', 'expired', 'cancelled') AND completed_at IS NOT NULL) OR 
+    (status NOT IN ('completed', 'expired', 'cancelled') AND completed_at IS NULL)
+  )
+);
+
+-- Index for expiry cleanup jobs
+CREATE INDEX ix_reservations_expiry ON reservations(expires_at, status) 
+  WHERE expires_at IS NOT NULL AND status IN ('active', 'partial');
+
+-- Index for account balance calculations
+CREATE INDEX ix_reservations_account ON reservations(escrow_account_id, status);
 ```
 
 ### Modified Tables
@@ -115,8 +245,13 @@ CREATE TABLE point_liabilities (
 #### `redemption_codes` (Add Escrow Backing)
 ```sql
 ALTER TABLE redemption_codes ADD COLUMN escrow_account_id UUID REFERENCES escrow_accounts(id);
+ALTER TABLE redemption_codes ADD COLUMN reservation_id UUID REFERENCES reservations(id);
 ALTER TABLE redemption_codes ADD COLUMN requires_funding BOOLEAN DEFAULT true;
-ALTER TABLE redemption_codes ADD COLUMN funded_at TIMESTAMP;
+ALTER TABLE redemption_codes ADD COLUMN funded_at TIMESTAMPTZ;
+
+-- Ensure funded codes have funding timestamp
+ALTER TABLE redemption_codes ADD CONSTRAINT chk_redemption_funding 
+  CHECK (requires_funding = false OR funded_at IS NOT NULL);
 ```
 
 #### `house_transactions` (Link to Escrow)
@@ -133,11 +268,31 @@ ALTER TABLE house_transactions ADD COLUMN escrow_transaction_id UUID REFERENCES 
 // Admin deposits real money to back point claims
 {
   amount_cents: number,
+  currency: string, // ISO 4217 code (e.g., 'USD', 'EUR')
   entity_type: 'club' | 'event' | 'master',
   entity_id?: string,
-  stripe_payment_intent_id: string
+  stripe_payment_intent_id: string,
+  idempotency_key: string, // Client-supplied or auto-generated
+  actor_id: string, // Admin user ID
+  actor_type: 'admin' | 'system' | 'api_key'
+}
+
+// Response includes deposit tracking ID and webhook expectations
+Response: {
+  deposit_id: string,
+  status: 'pending' | 'confirmed' | 'failed',
+  expected_webhook_events: ['payment_intent.succeeded', 'payment_intent.payment_failed'],
+  webhook_timeout_seconds: 300
 }
 ```
+
+**Stripe Webhook Reconciliation Flow:**
+1. **Webhook Receipt**: Verify Stripe signature and extract event data
+2. **Event Mapping**: Match `payment_intent.succeeded/failed` to deposit by `stripe_payment_intent_id`
+3. **Idempotent Processing**: Use stored `idempotency_key` to prevent duplicate processing
+4. **Status Update**: Update deposit status and escrow balance atomically
+5. **Audit Logging**: Record all state changes with timestamp and event correlation
+6. **Error Handling**: Log mismatches or verification failures for manual reconciliation
 
 #### `GET /api/admin/escrow/balance`
 ```typescript
@@ -160,15 +315,65 @@ Response: {
   quantity: number,
   total_cost: number, // value_cents * quantity
   escrow_account_id: string, // Must have sufficient balance
-  requires_funding: true
+  expires_at?: string, // ISO 8601 timestamp, optional TTL
+  requires_funding: true,
+  idempotency_key: string
 }
 
-// Process:
-// 1. Check escrow account has sufficient balance
-// 2. Reserve the funds (move to reserved_cents)
-// 3. Create redemption codes
-// 4. Link codes to escrow reservation
+// Response includes reservation tracking
+Response: {
+  batch_id: string,
+  reservation_id: string,
+  codes: string[],
+  reserved_cents: number,
+  expires_at?: string,
+  status: 'active'
+}
 ```
+
+**Atomic Redemption Code Creation Process:**
+```sql
+BEGIN TRANSACTION;
+
+-- 1. Create reservation (atomic fund hold)
+INSERT INTO reservations (
+  escrow_account_id, reserved_cents, remaining_cents, 
+  purpose, expires_at, status
+) VALUES (
+  $escrow_account_id, $total_cost, $total_cost,
+  'redemption_codes', $expires_at, 'active'
+) RETURNING id as reservation_id;
+
+-- 2. Update escrow account (atomic balance change)
+UPDATE escrow_accounts 
+SET reserved_cents = reserved_cents + $total_cost,
+    updated_at = NOW()
+WHERE id = $escrow_account_id 
+  AND balance_cents >= reserved_cents + $total_cost; -- Ensure sufficient funds
+
+-- 3. Create redemption codes linked to reservation
+INSERT INTO redemption_codes (
+  code, value_cents, escrow_account_id, reservation_id,
+  requires_funding, funded_at, expires_at
+) VALUES ... ; -- Bulk insert all codes
+
+COMMIT;
+```
+
+**Partial Redemption & Expiry Handling:**
+- **On Code Redemption**: Decrement `reservation.remaining_cents`, create `point_liabilities`
+- **Partial Completion**: When `remaining_cents = 0`, mark reservation as 'completed'
+- **Expiry Release**: Background job processes expired reservations:
+  ```sql
+  -- Release expired reservation funds
+  UPDATE escrow_accounts 
+  SET reserved_cents = reserved_cents - expired_reservation.remaining_cents
+  WHERE id = expired_reservation.escrow_account_id;
+  
+  -- Mark reservation and codes as expired
+  UPDATE reservations SET status = 'expired', completed_at = NOW() 
+  WHERE expires_at < NOW() AND status IN ('active', 'partial');
+  ```
 
 ### 3. Point Spending Settlement
 
@@ -180,15 +385,89 @@ Response: {
   amount_points: number,
   spend_type: 'qr_code' | 'digital_purchase',
   merchant_id: string,
-  transaction_reference: string
+  transaction_reference: string, // Must be unique per user
+  idempotency_key: string, // Client-supplied or auto-generated
+  sequence_number?: number // Optional client-side ordering
 }
 
-// Process:
-// 1. Deduct points from user balance
-// 2. Create escrow settlement transaction
-// 3. Queue payment to merchant
-// 4. Update point liability status to 'spent'
+// Response includes spend tracking and settlement info
+Response: {
+  spend_id: string,
+  amount_points: number,
+  amount_cents: number,
+  settlement_id: string,
+  status: 'completed' | 'queued' | 'failed',
+  processed_at: string,
+  merchant_payout_eta: string
+}
 ```
+
+**FIFO Spend Processing with Concurrency Protection:**
+```sql
+-- Idempotency table for request deduplication
+CREATE TABLE spend_idempotency (
+  idempotency_key TEXT PRIMARY KEY,
+  user_id UUID NOT NULL,
+  request_hash TEXT NOT NULL,
+  response_data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours'
+);
+
+-- Per-user spend queue for FIFO ordering
+CREATE TABLE user_spend_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  sequence_number BIGINT NOT NULL,
+  spend_request JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed_at TIMESTAMPTZ,
+  
+  UNIQUE(user_id, sequence_number)
+);
+
+-- Atomic spend processing with FIFO guarantee
+BEGIN TRANSACTION;
+
+-- 1. Check idempotency (return stored response if duplicate)
+SELECT response_data FROM spend_idempotency 
+WHERE idempotency_key = $idempotency_key;
+
+-- 2. Acquire user spend lock (prevents concurrent spends)
+SELECT user_id FROM users WHERE id = $user_id FOR UPDATE;
+
+-- 3. Select oldest active liabilities (FIFO order)
+SELECT id, points FROM point_liabilities 
+WHERE user_id = $user_id AND status = 'active'
+ORDER BY created_at ASC
+FOR UPDATE;
+
+-- 4. Deduct points (atomic balance update)
+UPDATE point_liabilities 
+SET status = 'spent', spent_at = NOW()
+WHERE id IN (selected_liability_ids);
+
+-- 5. Create settlement transaction
+INSERT INTO escrow_transactions (
+  from_escrow_account_id, to_escrow_account_id,
+  type, amount_cents, idempotency_key
+) VALUES (...);
+
+-- 6. Store idempotency record
+INSERT INTO spend_idempotency (
+  idempotency_key, user_id, request_hash, response_data
+) VALUES (...);
+
+COMMIT;
+```
+
+**Concurrency & Deduplication Guarantees:**
+- **Request Deduplication**: `idempotency_key` ensures identical responses for retries
+- **User-Level Locking**: `SELECT ... FOR UPDATE` prevents concurrent spends per user
+- **FIFO Enforcement**: Liability selection by `created_at ASC` ensures oldest-first spending
+- **Unique Constraints**: `(user_id, transaction_reference)` prevents duplicate transactions
+- **TTL Cleanup**: Background job removes expired idempotency records
 
 ### 4. Settlement System
 
@@ -272,10 +551,46 @@ Alert: < 1.0 (underfunded - critical issue)
 
 ## Next Steps
 
-1. **Review and approve this architecture**
-2. **Set up escrow bank accounts with Stripe**
-3. **Begin Phase 1 implementation**
-4. **Create admin tools for escrow management**
-5. **Test with small amounts before full deployment**
+### Pre-Implementation Requirements
+1. **Money Transmitter Licensing Review**
+   - Assess MT license requirements by jurisdiction
+   - Document exemptions (if applicable) with legal counsel
+   - File necessary applications and await approvals
+
+2. **KYC/KYB Process Implementation**
+   - Design KYC flows for high-value users (>$3,000/year)
+   - Implement KYB processes for merchant onboarding
+   - Set up identity verification and risk scoring
+
+3. **Tax & Reporting Impact Assessment**
+   - Define reporting thresholds (1099-K, etc.)
+   - Set up data retention policies (7+ years)
+   - Implement tax reporting automation
+
+### Implementation Phases
+4. **Review and approve this architecture**
+5. **Set up escrow bank accounts with Stripe**
+6. **Begin Phase 1 implementation**
+7. **Create admin tools for escrow management**
+8. **Test with small amounts before full deployment**
+
+## Compliance Checklist
+
+### Required Approvals
+| Requirement | Owner | Timeline | Status | Documentation |
+|-------------|-------|----------|---------|---------------|
+| Money Transmitter License Review | Legal Team | 4-8 weeks | Pending | MT_Analysis.pdf |
+| KYC/AML Policy Documentation | Compliance | 2-3 weeks | Pending | KYC_Policy.pdf |
+| Tax Reporting Framework | Tax Advisor | 3-4 weeks | Pending | Tax_Framework.pdf |
+| Data Retention Policy | Privacy Team | 1-2 weeks | Pending | Retention_Policy.pdf |
+| Financial Audit Readiness | Finance Team | 2-3 weeks | Pending | Audit_Checklist.pdf |
+
+### Regulatory Thresholds
+- **KYC Trigger**: Individual users exceeding $3,000 annual point purchases
+- **KYB Requirement**: All merchants receiving >$600 annual payouts
+- **Reporting Threshold**: 1099-K for merchants with >$600 and >200 transactions
+- **Record Retention**: 7 years for all financial transactions and user data
+
+**⚠️ Implementation cannot begin until all compliance requirements are satisfied**
 
 This system ensures financial integrity while maintaining the user experience of seamless point earning and spending across both digital and physical channels.
