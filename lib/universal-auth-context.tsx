@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, User, QrCode, Crown, Shield, Users, Star } from 'lucide-react';
-import { usePrivy } from '@/lib/auth-context';
+import { usePrivy } from '@privy-io/react-auth';
 import { useFarcaster } from '@/lib/farcaster-context';
 import { useRouter } from 'next/navigation';
 
@@ -82,7 +82,17 @@ export function useUniversalAuthModal() {
 export function useAuthAction() {
   const { showAuthModal } = useUniversalAuthModal();
   const { isInWalletApp, user } = useFarcaster();
-  const { authenticated } = usePrivy();
+  
+  // Always call the hook at the top level (Rules of Hooks)
+  const privyAuth = usePrivy();
+  
+  // Safely access Privy auth state
+  let authenticated = false;
+  try {
+    authenticated = privyAuth?.authenticated || false;
+  } catch (error) {
+    console.warn('Privy not available:', error);
+  }
 
   const requireAuth = (action: AuthAction, callback?: () => void) => {
     if (isInWalletApp) {
@@ -110,7 +120,20 @@ export function useAuthAction() {
 function UniversalAuthModal() {
   const { isAuthModalOpen, hideAuthModal, resolveAuthSuccess, authAction, authCallback } = useUniversalAuthModal();
   const { isInWalletApp, user } = useFarcaster();
-  const { login, authenticated } = usePrivy();
+  
+  // Always call the hook at the top level (Rules of Hooks)
+  const privyAuth = usePrivy();
+  
+  // Safely access Privy auth state
+  let login = null;
+  let authenticated = false;
+  try {
+    login = privyAuth?.login || null;
+    authenticated = privyAuth?.authenticated || false;
+  } catch (error) {
+    console.warn('Privy not available:', error);
+  }
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -167,10 +190,14 @@ function UniversalAuthModal() {
         resolveAuthSuccess();
       } else {
         // Web context - use Privy login (same as login page)
-        login(); // This opens Privy's native modal
-        // Don't close our modal immediately - wait for authentication to complete
-        // The useEffect will handle closing and callback execution
-        setIsLoading(false); // Reset loading state since Privy modal is now handling it
+        if (login) {
+          login(); // This opens Privy's native modal
+          // Don't close our modal immediately - wait for authentication to complete
+          // The useEffect will handle closing and callback execution
+          setIsLoading(false); // Reset loading state since Privy modal is now handling it
+        } else {
+          throw new Error('Privy login not available. Please ensure NEXT_PUBLIC_PRIVY_APP_ID is set in your environment variables.');
+        }
       }
     } catch (error) {
       console.error('Authentication error:', error);

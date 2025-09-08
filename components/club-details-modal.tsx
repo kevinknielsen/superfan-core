@@ -17,7 +17,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
-import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
+import { getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
+import { STATUS_THRESHOLDS } from "@/lib/status";
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
 import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
@@ -99,9 +100,9 @@ export default function ClubDetailsModal({
   // Get unified points data - same as wallet component
   const { breakdown } = useUnifiedPoints(club.id);
 
-  // Status calculations
+  // Status calculations - use unified points data if available
   const currentStatus = membership?.current_status || 'cadet';
-  const currentPoints = membership?.points || 0;
+  const currentPoints = breakdown?.wallet.earned_points || membership?.points || 0;
   const nextStatus = getNextStatus(currentStatus);
   // Use unified points data if available, fallback to manual calculation
   const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
@@ -296,7 +297,6 @@ export default function ClubDetailsModal({
               onClick={async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Share button clicked');
                 if (!club) return;
                 const url = `${window.location.origin}/clubs/${club.id}`;
                 try {
@@ -444,10 +444,10 @@ export default function ClubDetailsModal({
               </div>
             </div>
 
-            {/* Available Perks Section - Grid Layout */}
+            {/* Perks and Benefits Section - Grid Layout */}
             {membership && (
               <div className="mb-8">
-                <h3 className="mb-4 text-xl font-semibold">Available Perks</h3>
+                <h3 className="mb-4 text-xl font-semibold">Perks and Benefits</h3>
                 <UnlockRedemption
                   clubId={club.id}
                   clubName={club.name}
@@ -486,7 +486,7 @@ export default function ClubDetailsModal({
                         {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
                       </h4>
                       <p className="text-gray-400">
-                        {currentPoints.toLocaleString()} points • {nextStatus ? `${pointsToNext} to ${nextStatus}` : "Max level!"}
+                        {currentPoints.toLocaleString()} points • {nextStatus ? `${Number(pointsToNext).toLocaleString()} to ${nextStatus}` : "Max level!"}
                       </p>
                     </div>
                   </div>

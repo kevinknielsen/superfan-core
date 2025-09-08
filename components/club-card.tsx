@@ -3,139 +3,133 @@
 import type React from "react";
 
 import { useMemo, useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
-import { Users, Play, Pause, MapPin, Star, Crown, Trophy, Shield, Plus, QrCode } from "lucide-react";
+import Image from "next/image";
+import { Plus, QrCode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ClubDetailsModal from "./club-details-modal";
 import dynamic from "next/dynamic";
 const QRScanner = dynamic(() => import("./qr-scanner"), { ssr: false });
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
-import { STATUS_THRESHOLDS, getNextStatus, getPointsToNext } from "@/types/club.types";
+import { getNextStatus, getPointsToNext } from "@/types/club.types";
+import { STATUS_THRESHOLDS } from "@/lib/status";
 import { useUserClubMembership, useJoinClub } from "@/hooks/use-clubs";
 import { useClubImages } from "@/hooks/use-club-media";
+import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
 import Spinner from "./ui/spinner";
+import { cn } from "@/lib/utils";
+
+interface CircleProgressProps {
+  value: number;
+  maxValue: number;
+  size?: number;
+  strokeWidth?: number;
+  className?: string;
+  useGradient?: boolean;
+  gradientColors?: string[];
+  gradientId?: string;
+}
+
+const CircleProgress = ({
+  value,
+  maxValue,
+  size = 120,
+  strokeWidth = 4,
+  className,
+  useGradient = true,
+  gradientColors = ["#1ED760", "#1DB954", "#1AA34A"],
+  gradientId,
+}: CircleProgressProps) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const normalized = maxValue > 0 ? value / maxValue : 0;
+  const fillPercentage = Math.min(1, Math.max(0, normalized));
+  const strokeDashoffset = circumference * (1 - fillPercentage);
+
+  const uniqueGradientId = useRef(
+    gradientId || `circle-progress-gradient-${Math.random().toString(36).substring(2, 9)}`
+  ).current;
+
+  return (
+    <div className={cn(className)}>
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className="transform -rotate-90"
+      >
+        {useGradient && (
+          <defs>
+            <linearGradient
+              id={uniqueGradientId}
+              gradientUnits="userSpaceOnUse"
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              {(gradientColors.length > 1 ? gradientColors : [gradientColors[0], gradientColors[0]]).map((color, index, arr) => (
+                <stop
+                  key={index}
+                  offset={`${(index / (arr.length - 1)) * 100}%`}
+                  stopColor={color}
+                />
+              ))}
+            </linearGradient>
+          </defs>
+        )}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          className="fill-transparent stroke-gray-200 dark:stroke-gray-700"
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          className="fill-transparent transition-all duration-300"
+          style={
+            useGradient ? { stroke: `url(#${uniqueGradientId})` } : { stroke: '#1ED760' }
+          }
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  );
+};
 
 interface ClubCardProps {
   club: Club;
-  index: number;
   membership?: ClubMembership | null;
 }
 
-// Status icon mapping
-const STATUS_ICONS = {
-  cadet: Users,
-  resident: Star,
-  headliner: Trophy,
-  superfan: Crown,
+// (removed unused STATUS_* constants)
+
+const STATUS_GRADIENT_COLORS = {
+  cadet: ["#ec4899", "#be185d"], // Pink gradient - matches our primary brand
+  resident: ["#3b82f6", "#1d4ed8"], // Blue gradient
+  headliner: ["#8b5cf6", "#7c3aed"], // Purple gradient  
+  superfan: ["#f59e0b", "#d97706"], // Gold/amber gradient for max tier
 };
 
-const STATUS_COLORS = {
-  cadet: "text-gray-400",
-  resident: "text-blue-400", 
-  headliner: "text-purple-400",
-  superfan: "text-yellow-400",
-};
-
-const STATUS_BG_COLORS = {
-  cadet: "bg-gray-500/20",
-  resident: "bg-blue-500/20",
-  headliner: "bg-purple-500/20", 
-  superfan: "bg-yellow-500/20",
-};
-
-// Premium card configurations based on membership status
-const CARD_CONFIGS = {
-  cadet: {
-    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
-    accent: "#374151",
-    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
-    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
-    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
-  },
-  resident: {
-    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
-    accent: "#374151",
-    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
-    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
-    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
-  },
-  headliner: {
-    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
-    accent: "#374151",
-    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
-    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
-    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
-  },
-  superfan: {
-    gradient: "linear-gradient(135deg, #0F141E 0%, #0A0E16 100%)",
-    accent: "#374151",
-    shimmer: "linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%)",
-    glow: "0 0 20px rgba(55, 65, 81, 0.3)",
-    pattern: "radial-gradient(circle at 20% 80%, rgba(55, 65, 81, 0.15) 0%, transparent 50%)",
-  },
-};
 
 export default function ClubCard({
   club,
-  index,
   membership: propMembership,
 }: ClubCardProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
+  const router = useRouter();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const [autoAnimate, setAutoAnimate] = useState(false);
-
-  // Mobile detection
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const router = useRouter();
-
-  // Mobile auto-animation effect
-  useEffect(() => {
-    if (isMobile) {
-      // Auto-cycle shimmer effect every 3-5 seconds for mobile
-      const interval = setInterval(() => {
-        setAutoAnimate(true);
-        setTimeout(() => setAutoAnimate(false), 2000);
-      }, 3000 + Math.random() * 2000); // Randomize timing to avoid sync
-
-      return () => clearInterval(interval);
-    }
-  }, [isMobile]);
-
-  // Intersection observer for scroll-triggered animations on mobile
-  useEffect(() => {
-    if (!isMobile) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            // Trigger animation when card comes into view
-            setAutoAnimate(true);
-            setTimeout(() => setAutoAnimate(false), 1500);
-          }
-        });
-      },
-      { threshold: 0.3, rootMargin: '-50px' }
-    );
-
-    const cardElement = document.getElementById(`club-card-${club.id}`);
-    if (cardElement) {
-      observer.observe(cardElement);
-    }
-
-    return () => {
-      if (cardElement) {
-        observer.unobserve(cardElement);
-      }
-    };
-  }, [club.id, isMobile]);
   const { toast } = useToast();
 
   // Get club images for enhanced display
@@ -149,41 +143,41 @@ export default function ClubCard({
   
   // Use prop membership if provided, otherwise use fetched
   const membership = propMembership || fetchedMembership;
+  const isMember = Boolean(membership);
+  
+  // Get unified points data - only when authenticated and has membership
+  const enabled = Boolean(club.id && isMember && isAuthenticated);
+  const { breakdown } = useUnifiedPoints(club.id, { enabled });
   
   const joinClubMutation = useJoinClub();
 
-  // Status calculation
+  // Status calculation - use status_points for tier progression with nullish coalescing
   const currentStatus = membership?.current_status || 'cadet';
-  const currentPoints = membership?.points || 0;
+  const currentPoints = breakdown?.wallet.status_points ?? membership?.status_points ?? membership?.points ?? 0;
   const nextStatus = getNextStatus(currentStatus);
-  const pointsToNext = getPointsToNext(currentPoints, currentStatus);
   
-  // Progress calculation for status bar (matches funding progress calculation)
+  // Progress calculation - show progress relative to current tier
   const statusProgress = useMemo(() => {
+    if (!membership) return 0; // No membership = no progress
     if (!nextStatus) return 100; // Already at max status
     
     const currentThreshold = STATUS_THRESHOLDS[currentStatus];
     const nextThreshold = STATUS_THRESHOLDS[nextStatus];
-    const progressInTier = currentPoints - currentThreshold;
-    const tierRange = nextThreshold - currentThreshold;
     
-    return Math.min(100, (progressInTier / tierRange) * 100);
-  }, [currentPoints, currentStatus, nextStatus]);
+    // Guard against division by zero
+    if (nextThreshold === currentThreshold) {
+      return 100;
+    }
+    
+    // Calculate progress relative to current tier: (currentPoints - currentThreshold) / (nextThreshold - currentThreshold)
+    const relativePoints = currentPoints - currentThreshold;
+    const tierRange = nextThreshold - currentThreshold;
+    const progress = Math.min(100, Math.max(0, (relativePoints / tierRange) * 100));
+    
+    return progress;
+  }, [currentPoints, nextStatus, membership, currentStatus]);
 
-  // Visual indicators
-  const StatusIcon = STATUS_ICONS[currentStatus];
-  const statusColor = STATUS_COLORS[currentStatus];
-  const statusBgColor = STATUS_BG_COLORS[currentStatus];
-  const cardConfig = CARD_CONFIGS[currentStatus];
-
-  // Generate waveform data for visual consistency (static for clubs)
-  const waveformData = useMemo(() => {
-    // Generate consistent waveform heights based on club name
-    const seed = club.name.charCodeAt(0);
-    return Array(40)
-      .fill(0)
-      .map((_, i) => Math.abs(Math.sin(seed + i * 0.5)) * 100);
-  }, [club.name]);
+  // (removed unused StatusIcon)
 
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -211,298 +205,134 @@ export default function ClubCard({
   };
 
   const handleQRScan = (data: string) => {
-    console.log('QR Code scanned:', data);
     setShowQRScanner(false);
-    
-    // Check if it's a tap-in URL for this club
-    if (data.includes('/tap') && data.includes(`club=${club.id}`)) {
-      try {
-        const url = new URL(data);
-        // Extract the path and search params for local navigation
-        const tapPath = `${url.pathname}${url.search}`;
-        router.push(tapPath);
-      } catch (error) {
-        // If URL parsing fails, try direct navigation
-        router.push(data.replace(window.location.origin, ''));
-      }
-    } else {
-      // Generic QR code - show info and allow manual navigation
-      toast({
-        title: "QR Code Detected",
-        description: "Opening link...",
-      });
-      if (data.startsWith('http')) {
-        window.open(data, '_blank');
-      }
+    // QRScanner handles '/tap' internally; treat everything else as generic
+    if (data.startsWith('http')) {
+      toast({ title: "QR Code Detected", description: "Opening link..." });
+      const w = window.open(data, '_blank');
+      if (w) w.opener = null; // prevent reverse tabnabbing
+      return;
     }
+    toast({ title: "QR Code Detected", description: data });
+  };
+
+  const getTierGradientColors = (tier: ClubStatus) => {
+    return STATUS_GRADIENT_COLORS[tier] ?? STATUS_GRADIENT_COLORS.cadet;
+  };
+
+  const tierColors = getTierGradientColors(currentStatus);
+
+  const handleClick = () => {
+    setShowDetails(true);
   };
 
   return (
     <>
-      <motion.div
+      <div
         id={`club-card-${club.id}`}
-        className={`relative overflow-hidden rounded-[20px] cursor-pointer group ${
-          !membership ? "opacity-90" : ""
-        }`}
-        style={{
-          background: cardConfig.gradient,
-          boxShadow: `
-            0 8px 25px -8px ${cardConfig.accent}40,
-            0 0 0 1px rgba(255, 255, 255, 0.1),
-            inset 0 1px 0 rgba(255, 255, 255, 0.1)
-          `,
-        }}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ 
-          opacity: 1, 
-          y: autoAnimate && isMobile ? -6 : 0,
-          rotateX: autoAnimate && isMobile ? 1.5 : 0,
-          rotateY: autoAnimate && isMobile ? 1.5 : 0,
-        }}
-        transition={{ delay: index * 0.05, duration: 0.4 }}
-        whileHover={{
-          y: -12,
-          rotateX: 3,
-          rotateY: 3,
-          boxShadow: `
-            0 25px 50px -12px ${cardConfig.accent}60,
-            ${cardConfig.glow},
-            0 0 0 1px rgba(255, 255, 255, 0.2),
-            inset 0 2px 0 rgba(255, 255, 255, 0.15)
-          `,
-        }}
-        whileTap={{ scale: 0.98 }}
-        onHoverStart={() => setIsHovered(true)}
-        onHoverEnd={() => setIsHovered(false)}
-        onClick={() => setShowDetails(true)}
-      >
-        {/* Background Pattern */}
-        <div 
-          className="absolute inset-0 opacity-60"
-          style={{ background: cardConfig.pattern }}
-        />
-
-        {/* Holographic Shimmer */}
-        <motion.div
-          className="absolute inset-0 opacity-0"
-          style={{
-            background: cardConfig.shimmer,
-            backgroundSize: "200% 200%",
-          }}
-          animate={{
-            opacity: (isHovered || autoAnimate) ? 0.8 : 0,
-            backgroundPosition: (isHovered || autoAnimate) ? ["0% 0%", "100% 100%"] : "0% 0%",
-          }}
-          transition={{
-            duration: 2,
-            repeat: (isHovered || autoAnimate) ? Infinity : 0,
-            ease: "linear"
-          }}
-        />
-
-        {/* Floating Particles on Hover or Auto-Animate */}
-        {(isHovered || autoAnimate) && (
-          <div className="absolute inset-0 pointer-events-none">
-            {[...Array(6)].map((_, i) => (
-              <motion.div
-                key={i}
-                className="absolute w-1 h-1 rounded-full bg-white opacity-60"
-                initial={{
-                  x: Math.random() * 300,
-                  y: Math.random() * 200,
-                  scale: 0,
-                }}
-                animate={{
-                  y: [null, Math.random() * 200],
-                  x: [null, Math.random() * 300],
-                  scale: [0, 1, 0],
-                  opacity: [0, 0.8, 0],
-                }}
-                transition={{
-                  duration: 2 + Math.random() * 2,
-                  repeat: Infinity,
-                  delay: Math.random() * 2,
-                }}
-              />
-            ))}
-          </div>
+        className={cn(
+          "relative flex flex-col items-center p-4 cursor-pointer transition-all duration-300",
+          "hover:scale-105"
         )}
-
-        {/* Card Content */}
-        <div className="relative z-20 p-6">
-          {/* Top-right status badge or plus icon */}
-          {membership ? (
-            <span className={`absolute top-3 right-3 ${statusBgColor} border border-current/30 text-xs px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium flex items-center gap-1 ${statusColor}`}>
-              <StatusIcon className="h-3 w-3" />
-              {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
-            </span>
-          ) : (
-            <button
-              onClick={handleJoinClub}
-              disabled={joinClubMutation.isPending}
-              className="absolute top-3 right-3 h-8 w-8 bg-primary hover:bg-primary/90 rounded-full flex items-center justify-center shadow z-30 transition-colors disabled:opacity-50"
-              aria-label="Add membership"
-            >
-              {joinClubMutation.isPending ? (
-                <Spinner size="sm" color="white" />
-              ) : (
-                <Plus className="h-4 w-4 text-white" />
-              )}
-            </button>
-          )}
-
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center">
-              <div className="relative mr-3 h-12 w-12 overflow-hidden rounded-full bg-primary/20 flex items-center justify-center">
-                {primaryImage || club.image_url ? (
-                  <img
-                    src={primaryImage?.file_path || club.image_url || "/placeholder.svg"}
-                    alt={primaryImage?.alt_text || club.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="text-lg font-bold text-primary">
-                    {club.name.charAt(0)}
-                  </span>
-                )}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onClick={handleClick}
+      >
+        <div className="relative">
+          <CircleProgress
+            value={membership ? statusProgress : 0}
+            maxValue={100}
+            size={120}
+            strokeWidth={4}
+            useGradient={true}
+            gradientColors={tierColors}
+            gradientId={`club-${club.id}-ring`}
+            className="absolute inset-0"
+          />
+          
+          <div className="relative w-[104px] h-[104px] m-2">
+            {primaryImage || club.image_url ? (
+              <Image
+                src={primaryImage?.file_path || club.image_url || "/placeholder.svg"}
+                alt={primaryImage?.alt_text || club.name}
+                width={104}
+                height={104}
+                className="w-full h-full object-cover rounded-full"
+                priority={false}
+              />
+            ) : (
+              <div className="w-full h-full bg-primary/20 rounded-full flex items-center justify-center">
+                <span className="text-2xl font-bold text-primary">
+                  {club.name.charAt(0)}
+                </span>
               </div>
-
-              <div>
-                <h3 className="font-medium text-white cursor-pointer hover:text-primary transition-colors" onClick={(e) => {
+            )}
+            
+            {!membership && (
+              <button
+                type="button"
+                aria-label={`Join ${club.name}`}
+                title={`Join ${club.name}`}
+                className={cn(
+                  "absolute inset-0 bg-black/40 rounded-full flex items-center justify-center transition-opacity duration-300",
+                  isHovered ? "opacity-100" : "opacity-0"
+                )}
+                onClick={(e) => {
                   e.stopPropagation();
-                  setShowDetails(true);
-                }}>{club.name}</h3>
-                <div className="text-sm text-muted-foreground">
-                  {club.city && (
-                    <>
-                      <MapPin className="h-3 w-3 mr-1 inline" />
-                      {club.city}
-                    </>
+                  handleJoinClub(e);
+                }}
+              >
+                <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                  {joinClubMutation.isPending ? (
+                    <Spinner size="sm" color="slate" />
+                  ) : (
+                    <Plus size={20} className="text-black" />
                   )}
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Integrated Waveform Visualization (matches project card) */}
-          <div className="relative mb-6 mt-2 group">
-            {/* Status indicator overlay (replaces play button) */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 bg-primary rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
-              <StatusIcon className="h-4 w-4 text-white" />
-            </div>
-
-            {/* Waveform Visualization */}
-            <div className="flex items-end justify-between h-12 gap-[2px] overflow-hidden">
-              {waveformData.map((height, i) => {
-                // Calculate if this bar should be highlighted based on status progress
-                const isActive = (i / waveformData.length) * 100 <= statusProgress;
-
-                return (
-                  <div
-                    key={i}
-                    className={`w-full rounded-sm transition-all duration-200 ${
-                      isActive
-                        ? currentStatus === 'superfan' ? 'bg-yellow-500' : 'bg-primary'
-                        : "bg-gray-700 group-hover:bg-gray-600"
-                    }`}
-                    style={{
-                      height: `${Math.max(15, height)}%`,
-                    }}
-                  />
-                );
-              })}
-            </div>
-
-            {/* Track Label (adapted for club) */}
-            <div className="flex justify-between mt-1">
-              <span className="text-xs text-muted-foreground">
-                {membership ? "Cadet (0)" : "Start here"}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {membership 
-                  ? nextStatus 
-                    ? `${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)} (${STATUS_THRESHOLDS[nextStatus]})`
-                    : "Max Level!"
-                  : "Add membership"
-                }
-              </span>
-            </div>
-          </div>
-
-          {/* Status Progress (replaces funding progress) */}
-          <div className="mt-4">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-              <motion.div
-                className={`h-full ${
-                  currentStatus === 'superfan' 
-                    ? 'bg-yellow-500' 
-                    : 'bg-primary'
-                }`}
-                style={{
-                  width: membership ? `${statusProgress}%` : "0%",
-                }}
-                animate={{
-                  width: membership ? `${statusProgress}%` : "0%",
-                }}
-                transition={{ duration: 1, delay: 0.2 }}
-              />
-            </div>
-            <div className="mt-2 flex justify-between text-xs">
-              <span className="text-white">
-                {membership 
-                  ? `${currentPoints.toLocaleString()} points (${Math.round(statusProgress)}%)`
-                  : "--"
-                }
-              </span>
-              <span className="text-muted-foreground">
-                {membership && nextStatus 
-                  ? `${pointsToNext} to ${nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}`
-                  : membership 
-                    ? "Max Status!" 
-                    : "Add membership to start"
-                }
-              </span>
-            </div>
-
-            <div className="mt-1 flex items-center text-xs text-muted-foreground">
-              <Users className="h-3 w-3 mr-1" />
-              {membership ? (
-                <span>{currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} tier</span>
-              ) : (
-                <span>-- members</span>
-              )}
-            </div>
-          </div>
-
-
-
-          {/* Action Button (matches project card structure) */}
-          <div className="mt-4" onClick={(e) => e.stopPropagation()}>
-            {membership ? (
-              <button
-                onClick={() => setShowQRScanner(true)}
-                className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
-              >
-                <QrCode className="h-4 w-4 mr-1" />
-                Check In
               </button>
-            ) : (
+            )}
+
+            {membership && (
               <button
-                onClick={handleJoinClub}
-                disabled={joinClubMutation.isPending}
-                className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50"
+                type="button"
+                aria-label="Open QR scanner"
+                title="Open QR scanner"
+                className="absolute -bottom-1 -right-1 p-1 bg-background rounded-full border-2"
+                style={{ borderColor: tierColors[0] }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowQRScanner(true);
+                }}
               >
-                {joinClubMutation.isPending ? (
-                  <Spinner size="sm" className="mr-2" />
-                ) : (
-                  <Users className="h-4 w-4 mr-1" />
-                )}
-                {joinClubMutation.isPending ? "Adding..." : "Add Membership"}
+                <QrCode size={16} style={{ color: tierColors[0] }} />
               </button>
             )}
           </div>
         </div>
-      </motion.div>
+        
+        <div className="text-center mt-3">
+          <h3 className="font-medium text-foreground text-sm mb-1">
+            {club.name}
+          </h3>
+          {membership ? (
+            <div className="text-xs text-muted-foreground">
+              <span style={{ color: tierColors[0] }} className="font-medium">
+                {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
+              </span>
+              <span className="mx-1">•</span>
+              <span>{Math.round(statusProgress)}%</span>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              {club.city && (
+                <>
+                  {club.city}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
       
       {showDetails && (
         <ClubDetailsModal
