@@ -402,6 +402,115 @@ CREATE INDEX idx_upgrade_transactions_stripe ON upgrade_transactions(stripe_paym
 CREATE INDEX idx_upgrade_transactions_status ON upgrade_transactions(status, created_at);
 ```
 
+#### `webhook_events`
+```sql
+CREATE TABLE webhook_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stripe_event_id TEXT NOT NULL UNIQUE,
+  event_type TEXT NOT NULL,
+  processed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Event metadata
+  event_data JSONB,
+  processing_attempts INTEGER DEFAULT 0,
+  last_error TEXT,
+  
+  -- Constraints
+  CONSTRAINT chk_webhook_events_processing CHECK (
+    (processed_at IS NULL AND processing_attempts >= 0) OR
+    (processed_at IS NOT NULL AND processing_attempts > 0)
+  )
+);
+
+-- Indexes
+CREATE INDEX idx_webhook_events_stripe_id ON webhook_events(stripe_event_id);
+CREATE INDEX idx_webhook_events_type ON webhook_events(event_type, created_at DESC);
+CREATE INDEX idx_webhook_events_processed ON webhook_events(processed_at) WHERE processed_at IS NOT NULL;
+CREATE INDEX idx_webhook_events_pending ON webhook_events(created_at) WHERE processed_at IS NULL;
+
+-- Database function for atomic upgrade processing
+CREATE OR REPLACE FUNCTION process_successful_upgrade(
+  p_transaction_id UUID,
+  p_payment_intent_id TEXT
+)
+RETURNS VOID AS $$
+DECLARE
+  v_transaction upgrade_transactions%ROWTYPE;
+  v_current_quarter_year INTEGER;
+  v_current_quarter_number INTEGER;
+  v_quarter_end TIMESTAMPTZ;
+BEGIN
+  -- Get transaction details
+  SELECT * INTO v_transaction 
+  FROM upgrade_transactions 
+  WHERE id = p_transaction_id;
+  
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Transaction not found: %', p_transaction_id;
+  END IF;
+  
+  -- Complete the transaction
+  UPDATE upgrade_transactions 
+  SET 
+    status = 'completed',
+    completed_at = NOW()
+  WHERE id = p_transaction_id;
+  
+  -- Get current quarter
+  SELECT year, quarter INTO v_current_quarter_year, v_current_quarter_number
+  FROM get_current_quarter();
+  
+  IF v_transaction.purchase_type = 'tier_boost' THEN
+    -- Create temporary tier boost for current quarter
+    v_quarter_end := calculate_quarter_end(v_current_quarter_year, v_current_quarter_number);
+    
+    INSERT INTO temporary_tier_boosts (
+      user_id,
+      club_id,
+      boosted_tier,
+      quarter_year,
+      quarter_number,
+      upgrade_transaction_id,
+      expires_at
+    ) VALUES (
+      v_transaction.user_id,
+      v_transaction.club_id,
+      v_transaction.target_tier,
+      v_current_quarter_year,
+      v_current_quarter_number,
+      p_payment_intent_id,
+      v_quarter_end
+    );
+    
+  ELSE -- direct_unlock
+    -- Create immediate reward claim
+    INSERT INTO reward_claims (
+      user_id,
+      reward_id,
+      club_id,
+      claim_method,
+      user_tier_at_claim,
+      user_points_at_claim,
+      upgrade_transaction_id,
+      upgrade_amount_cents,
+      access_code
+    ) VALUES (
+      v_transaction.user_id,
+      v_transaction.reward_id,
+      v_transaction.club_id,
+      'upgrade_purchased',
+      v_transaction.user_tier_at_purchase,
+      v_transaction.user_points_at_purchase,
+      p_payment_intent_id,
+      v_transaction.amount_cents,
+      'AC' || UPPER(SUBSTRING(gen_random_uuid()::text, 1, 8)) -- Generate access code
+    );
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+```
+
 ### Views
 
 #### `v_tier_rewards_with_stats`
@@ -464,8 +573,11 @@ interface CreateTierRewardRequest {
   description: string;
   tier: 'cadet' | 'resident' | 'headliner' | 'superfan';
   reward_type: 'access' | 'digital_product' | 'physical_product' | 'experience';
-  artist_cost_estimate_cents: number; // Artist's cost estimate for upgrade pricing (0 = free access only)
-  safety_factor?: number; // Default 1.25, will be dynamically adjusted
+  
+  // Pricing fields with validation constraints
+  artist_cost_estimate_cents: number; // Min: 0, Max: 100000 (Artist's cost estimate for upgrade pricing, 0 = free access only)
+  safety_factor?: number; // Min: 1.1, Max: 2.0, Default: 1.25, will be dynamically adjusted
+  
   availability_type?: 'permanent' | 'seasonal' | 'limited_time';
   available_start?: string; // ISO date
   available_end?: string; // ISO date
@@ -481,8 +593,138 @@ interface CreateTierRewardRequest {
   };
 }
 
+// Request validation middleware
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
+
+function validateCreateTierRewardRequest(request: CreateTierRewardRequest): ValidationResult {
+  const errors: string[] = [];
+  
+  // Validate artist_cost_estimate_cents
+  if (typeof request.artist_cost_estimate_cents !== 'number' || 
+      request.artist_cost_estimate_cents < 0 || 
+      request.artist_cost_estimate_cents > 100000) {
+    errors.push('artist_cost_estimate_cents must be between 0 and 100000 cents');
+  }
+  
+  // Validate safety_factor
+  if (request.safety_factor !== undefined) {
+    if (typeof request.safety_factor !== 'number' ||
+        request.safety_factor < 1.1 ||
+        request.safety_factor > 2.0) {
+      errors.push('safety_factor must be between 1.1 and 2.0');
+    }
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+// Server-side create handler with validation and defaults
+export async function createTierReward(request: CreateTierRewardRequest): Promise<TierReward> {
+  // Validate request
+  const validation = validateCreateTierRewardRequest(request);
+  if (!validation.isValid) {
+    throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+  }
+  
+  // Apply default safety_factor if omitted
+  const safetyFactor = request.safety_factor ?? 1.25;
+  
+  // Ensure safety_factor is within bounds after applying default
+  if (safetyFactor < 1.1 || safetyFactor > 2.0) {
+    throw new Error('safety_factor must be between 1.1 and 2.0');
+  }
+  
+  // Use validated values for pricing calculations
+  const tierRewardData = {
+    ...request,
+    safety_factor: safetyFactor,
+    // upgrade_price_cents will be auto-calculated by database trigger
+  };
+  
+  const { data, error } = await supabase
+    .from('tier_rewards')
+    .insert(tierRewardData)
+    .select()
+    .single();
+    
+  if (error) {
+    throw new Error(`Failed to create tier reward: ${error.message}`);
+  }
+  
+  return data;
+}
+
+// API endpoint with validation middleware
+export async function POST_createTierReward(req: Request, res: Response) {
+  try {
+    const request = req.body as CreateTierRewardRequest;
+    
+    // Validate request
+    const validation = validateCreateTierRewardRequest(request);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: validation.errors
+      });
+    }
+    
+    const tierReward = await createTierReward(request);
+    
+    res.status(201).json(tierReward);
+  } catch (error) {
+    console.error('Create tier reward error:', error);
+    
+    if (error.message.includes('Validation failed')) {
+      return res.status(400).json({
+        error: error.message
+      });
+    }
+    
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to create tier reward'
+    });
+  }
+}
+
 // Auto-calculates upgrade_price_cents using the formula
 // Returns created reward with calculated pricing
+
+// API Documentation Examples:
+/*
+Valid request example:
+{
+  "club_id": "uuid",
+  "title": "Limited Edition Vinyl",
+  "tier": "headliner",
+  "reward_type": "physical_product",
+  "artist_cost_estimate_cents": 1200,  // $12.00 - within 0-100000 range
+  "safety_factor": 1.35,               // Within 1.1-2.0 range
+  "metadata": {
+    "instructions": "Use this link to claim your vinyl"
+  }
+}
+
+Invalid request examples:
+{
+  "artist_cost_estimate_cents": -100   // Error: must be >= 0
+}
+{
+  "artist_cost_estimate_cents": 150000 // Error: must be <= 100000
+}
+{
+  "safety_factor": 0.8                 // Error: must be >= 1.1
+}
+{
+  "safety_factor": 3.0                 // Error: must be <= 2.0
+}
+*/
 ```
 
 #### `GET /api/admin/tier-rewards`
@@ -1015,28 +1257,148 @@ export async function checkFreeClaimEligibility(
   };
 }
 
-// Atomic free claim processing with concurrency protection
+// Error code mappings for database failures
+interface ClaimErrorMapping {
+  errorCode: string;
+  userMessage: string;
+}
+
+function mapDatabaseErrorToCode(error: any): ClaimErrorMapping {
+  const errorMessage = error.message?.toLowerCase() || '';
+  const errorCode = error.code || '';
+  
+  // Check for unique constraint violations (already claimed)
+  if (errorCode === '23505' || errorMessage.includes('unique') || errorMessage.includes('already claimed')) {
+    return {
+      errorCode: 'ALREADY_CLAIMED',
+      userMessage: 'You have already claimed this reward'
+    };
+  }
+  
+  // Check for inventory-related errors (sold out)
+  if (errorMessage.includes('inventory') || 
+      errorMessage.includes('sold out') || 
+      errorMessage.includes('stock') ||
+      errorMessage.includes('limit exceeded')) {
+    return {
+      errorCode: 'SOLD_OUT',
+      userMessage: 'This reward is no longer available'
+    };
+  }
+  
+  // Check for quarter-related errors (quarter limit exceeded)
+  if (errorMessage.includes('quarter') || 
+      errorMessage.includes('quarterly') ||
+      errorMessage.includes('claim limit')) {
+    return {
+      errorCode: 'QUARTER_LIMIT_EXCEEDED',
+      userMessage: 'You have already used your free claim for this quarter'
+    };
+  }
+  
+  // Check for tier qualification errors
+  if (errorMessage.includes('tier') || 
+      errorMessage.includes('qualification') ||
+      errorMessage.includes('insufficient points')) {
+    return {
+      errorCode: 'INSUFFICIENT_TIER',
+      userMessage: 'You do not meet the tier requirements for this reward'
+    };
+  }
+  
+  // Default database error
+  return {
+    errorCode: 'DATABASE_ERROR',
+    userMessage: 'A database error occurred while processing your claim'
+  };
+}
+
+// Atomic free claim processing with robust error handling
 export async function processFreeClaim(
   userId: string,
   rewardId: string,
   clubId: string
-): Promise<{ success: boolean; claimId?: string; error?: string }> {
+): Promise<{ 
+  success: boolean; 
+  claimId?: string; 
+  error?: string; 
+  errorCode?: string;
+  userMessage?: string;
+}> {
   const currentQuarter = getCurrentQuarter();
   
-  // Use transaction to prevent race conditions
-  const { data, error } = await supabase.rpc('atomic_free_claim', {
-    p_user_id: userId,
-    p_reward_id: rewardId,
-    p_club_id: clubId,
-    p_quarter_year: currentQuarter.year,
-    p_quarter_number: currentQuarter.quarter
-  });
-  
-  if (error) {
-    return { success: false, error: error.message };
+  try {
+    // Use transaction to prevent race conditions
+    const { data, error } = await supabase.rpc('atomic_free_claim', {
+      p_user_id: userId,
+      p_reward_id: rewardId,
+      p_club_id: clubId,
+      p_quarter_year: currentQuarter.year,
+      p_quarter_number: currentQuarter.quarter
+    });
+    
+    if (error) {
+      // Map database error to structured error code
+      const errorMapping = mapDatabaseErrorToCode(error);
+      
+      // Log the raw error for debugging
+      console.error('Database error in processFreeClaim:', {
+        userId,
+        rewardId,
+        clubId,
+        quarter: currentQuarter,
+        error: error.message,
+        code: error.code,
+        mappedErrorCode: errorMapping.errorCode
+      });
+      
+      return {
+        success: false,
+        error: errorMapping.userMessage,
+        errorCode: errorMapping.errorCode,
+        userMessage: errorMapping.userMessage
+      };
+    }
+    
+    if (!data || !data.claim_id) {
+      console.error('Unexpected response from atomic_free_claim:', {
+        userId,
+        rewardId,
+        clubId,
+        data
+      });
+      
+      return {
+        success: false,
+        error: 'Claim processing failed',
+        errorCode: 'PROCESSING_ERROR',
+        userMessage: 'An unexpected error occurred while processing your claim'
+      };
+    }
+    
+    return { 
+      success: true, 
+      claimId: data.claim_id 
+    };
+    
+  } catch (error) {
+    // Log the raw error for debugging
+    console.error('Unexpected error in processFreeClaim:', {
+      userId,
+      rewardId,
+      clubId,
+      quarter: currentQuarter,
+      error: error.message,
+      stack: error.stack
+    });
+    
+    return {
+      success: false,
+      error: 'Claim processing failed',
+      errorCode: 'PROCESSING_ERROR',
+      userMessage: 'An unexpected error occurred while processing your claim'
+    };
   }
-  
-  return { success: true, claimId: data.claim_id };
 }
 ```
 
@@ -1220,8 +1582,135 @@ export async function createUpgradeCheckoutSession({
 
 #### Webhook Processing
 ```typescript
-export async function processUpgradeWebhook(event: Stripe.Event) {
-  if (event.type === 'payment_intent.succeeded') {
+// Webhook signature verification and idempotency handler
+export async function processUpgradeWebhook(
+  rawBody: string | Buffer, 
+  signature: string,
+  event?: Stripe.Event
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Verify webhook signature
+    let verifiedEvent: Stripe.Event;
+    
+    if (!event) {
+      if (!process.env.STRIPE_WEBHOOK_SECRET) {
+        console.error('STRIPE_WEBHOOK_SECRET not configured');
+        return { success: false, error: 'Webhook secret not configured' };
+      }
+      
+      try {
+        verifiedEvent = stripe.webhooks.constructEvent(
+          rawBody,
+          signature,
+          process.env.STRIPE_WEBHOOK_SECRET
+        );
+      } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return { success: false, error: 'Invalid webhook signature' };
+      }
+    } else {
+      verifiedEvent = event;
+    }
+    
+    // Check for idempotency - has this event been processed before?
+    const { data: existingEvent } = await supabase
+      .from('webhook_events')
+      .select('id, processed_at')
+      .eq('stripe_event_id', verifiedEvent.id)
+      .single();
+    
+    if (existingEvent) {
+      if (existingEvent.processed_at) {
+        console.log(`Event ${verifiedEvent.id} already processed, skipping`);
+        return { success: true };
+      }
+      
+      // Event exists but not processed - increment attempts
+      await supabase
+        .from('webhook_events')
+        .update({ 
+          processing_attempts: supabase.sql`processing_attempts + 1`,
+          event_data: verifiedEvent
+        })
+        .eq('stripe_event_id', verifiedEvent.id);
+    } else {
+      // Insert new event record to reserve it
+      const { error: insertError } = await supabase
+        .from('webhook_events')
+        .insert({
+          stripe_event_id: verifiedEvent.id,
+          event_type: verifiedEvent.type,
+          event_data: verifiedEvent,
+          processing_attempts: 1,
+          processed_at: null
+        });
+      
+      if (insertError) {
+        // Handle race condition - another instance may have inserted it
+        if (insertError.code === '23505') { // Unique constraint violation
+          console.log(`Event ${verifiedEvent.id} being processed by another instance`);
+          return { success: true };
+        }
+        
+        console.error('Failed to insert webhook event:', insertError);
+        return { success: false, error: 'Failed to track webhook event' };
+      }
+    }
+    
+    // Process the webhook based on event type
+    let processingResult: { success: boolean; error?: string };
+    
+    if (verifiedEvent.type === 'payment_intent.succeeded') {
+      processingResult = await processPaymentIntentSucceeded(verifiedEvent);
+    } else {
+      console.log(`Ignoring webhook event type: ${verifiedEvent.type}`);
+      processingResult = { success: true };
+    }
+    
+    // Update webhook event record based on processing result
+    if (processingResult.success) {
+      await supabase
+        .from('webhook_events')
+        .update({ 
+          processed_at: new Date().toISOString(),
+          last_error: null
+        })
+        .eq('stripe_event_id', verifiedEvent.id);
+      
+      console.log(`Successfully processed webhook event ${verifiedEvent.id}`);
+    } else {
+      await supabase
+        .from('webhook_events')
+        .update({ 
+          last_error: processingResult.error || 'Unknown processing error'
+        })
+        .eq('stripe_event_id', verifiedEvent.id);
+      
+      console.error(`Failed to process webhook event ${verifiedEvent.id}:`, processingResult.error);
+    }
+    
+    return processingResult;
+    
+  } catch (error) {
+    console.error('Unexpected error in webhook processing:', error);
+    
+    // Try to log the error to the webhook_events table if we have the event ID
+    if (event?.id) {
+      await supabase
+        .from('webhook_events')
+        .update({ 
+          last_error: `Unexpected error: ${error.message}`
+        })
+        .eq('stripe_event_id', event.id);
+    }
+    
+    return { success: false, error: 'Unexpected webhook processing error' };
+  }
+}
+
+// Process payment_intent.succeeded events
+async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ success: boolean; error?: string }> {
+  try {
     const paymentIntent = event.data.object as Stripe.PaymentIntent;
     
     // Find the upgrade transaction
@@ -1232,51 +1721,46 @@ export async function processUpgradeWebhook(event: Stripe.Event) {
       .single();
     
     if (!transaction) {
-      console.error('Upgrade transaction not found:', paymentIntent.id);
-      return;
+      const error = `Upgrade transaction not found for payment intent: ${paymentIntent.id}`;
+      console.error(error);
+      return { success: false, error };
     }
     
-    // Complete the transaction
-    await supabase
-      .from('upgrade_transactions')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString()
-      })
-      .eq('id', transaction.id);
+    // Use database transaction to ensure atomicity
+    const { error: dbError } = await supabase.rpc('process_successful_upgrade', {
+      p_transaction_id: transaction.id,
+      p_payment_intent_id: paymentIntent.id
+    });
     
-    if (transaction.purchase_type === 'tier_boost') {
-      // Create temporary tier boost for current quarter
-      const currentQuarter = getCurrentQuarter();
-      const quarterEnd = new Date(currentQuarter.year, currentQuarter.quarter * 3, 0, 23, 59, 59);
-      
-      await supabase.from('temporary_tier_boosts').insert({
-        user_id: transaction.user_id,
-        club_id: transaction.club_id,
-        boosted_tier: transaction.target_tier,
-        quarter_year: currentQuarter.year,
-        quarter_number: currentQuarter.quarter,
-        upgrade_transaction_id: paymentIntent.id,
-        expires_at: quarterEnd.toISOString()
-      });
-      
-      console.log(`Tier boost created: User ${transaction.user_id} boosted to ${transaction.target_tier} for Q${currentQuarter.quarter} ${currentQuarter.year}`);
-    } else {
-      // Direct unlock - create immediate reward claim
-      await supabase.from('reward_claims').insert({
-        user_id: transaction.user_id,
-        reward_id: transaction.reward_id,
-        club_id: transaction.club_id,
-        claim_method: 'upgrade_purchased',
-        user_tier_at_claim: transaction.user_tier_at_purchase,
-        user_points_at_claim: transaction.user_points_at_purchase,
-        upgrade_transaction_id: paymentIntent.id,
-        upgrade_amount_cents: transaction.amount_cents,
-        access_code: generateAccessCode()
-      });
-      
-      console.log(`Direct unlock completed: User ${transaction.user_id} unlocked reward ${transaction.reward_id}`);
+    if (dbError) {
+      console.error('Database error processing upgrade:', dbError);
+      return { success: false, error: `Database error: ${dbError.message}` };
     }
+    
+    console.log(`Successfully processed upgrade for transaction ${transaction.id}`);
+    return { success: true };
+    
+  } catch (error) {
+    console.error('Error processing payment_intent.succeeded:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// API endpoint for webhook handling
+export async function POST_webhookHandler(req: Request, res: Response) {
+  const signature = req.headers['stripe-signature'] as string;
+  
+  if (!signature) {
+    return res.status(400).json({ error: 'Missing stripe-signature header' });
+  }
+  
+  const result = await processUpgradeWebhook(req.body, signature);
+  
+  if (result.success) {
+    res.status(200).json({ received: true });
+  } else {
+    console.error('Webhook processing failed:', result.error);
+    res.status(400).json({ error: result.error });
   }
 }
 ```
