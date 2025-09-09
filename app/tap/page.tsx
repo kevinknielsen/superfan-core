@@ -206,6 +206,7 @@ function TapPageContent() {
         club_id: clubId,
         source: source,
         location: location || additionalData.location,
+        points_earned: (additionalData as any).points, // Use custom points from QR code
         metadata: {
           qr_id: qrId,
           scanned_at: new Date().toISOString(),
@@ -775,7 +776,7 @@ function TapPageContent() {
                   </button>
                   
                   <button
-                    onClick={() => router.push(`/dashboard?club=${tapResult.membership.club_id}`)}
+                    onClick={() => router.push(`/dashboard?club=${clubId}`)}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details

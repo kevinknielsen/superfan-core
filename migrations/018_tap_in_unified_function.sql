@@ -125,7 +125,7 @@ BEGIN
   ) VALUES (
     p_user_id, p_club_id, p_source, p_points, p_location, p_metadata, p_ref,
     old_status, old_status, total_points_after  -- current_status will be updated below
-  ) ON CONFLICT (ref) DO NOTHING
+  ) ON CONFLICT (ref) WHERE ref IS NOT NULL DO NOTHING
   RETURNING * INTO tap_in_record;
 
   -- Check if insert actually created a new row
@@ -183,7 +183,7 @@ BEGIN
   INSERT INTO point_transactions (
     wallet_id, type, source, pts, ref, affects_status, metadata
   ) VALUES (
-    wallet_record.id, 'BONUS', p_source, p_points, tap_in_record.id, true,
+    wallet_record.id, 'BONUS', 'earned', p_points, tap_in_record.id, true,
     json_build_object(
       'source', p_source,
       'location', p_location,
