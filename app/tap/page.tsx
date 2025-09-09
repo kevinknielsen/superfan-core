@@ -213,11 +213,11 @@ function TapPageContent() {
         club_id: clubId,
         source: source,
         location: location || qrData.location,
-        points_earned: qrData.points, // Use custom points from QR code
+        // points_earned must be computed server-side. Do not include client-provided points.
         metadata: {
+          ...(qrData.metadata ?? {}),
           qr_id: qrId,
           scanned_at: new Date().toISOString(),
-          ...qrData.metadata
         }
       };
 
@@ -308,9 +308,13 @@ function TapPageContent() {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
   };
 
-  // Get the correct points value (custom from QR or default)
+  // Get the estimated points value for UI display (server has final authority)
   const getPointsValue = () => {
-    return qrData.points || POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default;
+    const fallback =
+      POINT_VALUES[(source as keyof typeof POINT_VALUES)] ?? POINT_VALUES.default;
+    const candidate = (qrData.points ?? fallback);
+    const n = Number(candidate);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
   };
 
   // Show split-screen club preview for unauthenticated users
@@ -424,7 +428,7 @@ function TapPageContent() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 text-sm">Points</span>
-                    <span className="text-green-400 text-sm">+{getPointsValue()} on join</span>
+                    <span className="text-green-400 text-sm">+{getPointsValue().toLocaleString()} on join</span>
                   </div>
                 </div>
 
@@ -523,7 +527,7 @@ function TapPageContent() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{getPointsValue()} on join</span>
+                        <span className="text-green-400 text-xs">+{getPointsValue().toLocaleString()} on join</span>
                       </div>
                     </div>
                   </div>
@@ -550,7 +554,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{getPointsValue()} points
+                  +{getPointsValue().toLocaleString()} points
                 </span>
               </div>
             </motion.div>
