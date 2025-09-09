@@ -24,7 +24,7 @@ export async function GET(
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
   const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
-  if (!skipAdmin && !(await isAdminByDatabase(auth.userId))) {
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
@@ -80,7 +80,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
   const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
-  if (!skipAdmin && !(await isAdminByDatabase(auth.userId))) {
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 

@@ -61,7 +61,7 @@ BEGIN
       v_transaction.target_tier,
       v_current_quarter_year,
       v_current_quarter_number,
-      p_payment_intent_id,
+      v_transaction.id,
       v_quarter_end
     );
     
@@ -84,7 +84,7 @@ BEGIN
       'upgrade_purchased',
       v_transaction.user_tier_at_purchase,
       v_transaction.user_points_at_purchase,
-      p_payment_intent_id,
+      v_transaction.id,
       v_transaction.amount_cents,
       'AC' || UPPER(SUBSTRING(gen_random_uuid()::text, 1, 8)) -- Generate access code
     );

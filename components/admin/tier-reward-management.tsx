@@ -65,6 +65,8 @@ interface TierReward {
   reward_type: string;
   artist_cost_estimate_cents: number;
   upgrade_price_cents: number | null;
+  total_inventory?: number;
+  max_free_allocation?: number;
   safety_factor: number;
   availability_type: string;
   available_start: string | null;
@@ -166,15 +168,36 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
       
-      if (response.ok) {
-        const data = await response.json() as TierReward[];
-        setRewards(Array.isArray(data) ? data : []);
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          // Handle authentication/authorization errors
+          throw new Error('Authentication required. Please log in again.');
+        } else if (response.status >= 500) {
+          // Handle server errors
+          throw new Error('Server error occurred. Please try again later.');
+        } else {
+          // Handle other HTTP errors
+          const errorData = await response.json().catch(() => null);
+          throw new Error(errorData?.error || `Request failed with status ${response.status}`);
+        }
       }
+
+      const data = await response.json() as TierReward[];
+      setRewards(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error loading tier rewards:', error);
+      
+      // Provide user-friendly error messages based on error type
+      let errorMessage = "Failed to load tier rewards";
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        errorMessage = "Network error. Please check your connection and try again.";
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: "Failed to load tier rewards",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -345,6 +368,8 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
       tier: reward.tier,
       reward_type: reward.reward_type,
       artist_cost_estimate_cents: reward.artist_cost_estimate_cents,
+      total_inventory: reward.total_inventory || 100,
+      max_free_allocation: reward.max_free_allocation || 0,
       safety_factor: reward.safety_factor,
       availability_type: reward.availability_type,
       available_start: reward.available_start || '',

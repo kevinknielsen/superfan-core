@@ -103,12 +103,31 @@ export async function GET(request: NextRequest) {
     const upgradeClaims = claims?.filter(claim => claim.claim_method === 'upgrade_purchased').length || 0;
     const averageUpgradeConversionRate = totalClaims > 0 ? (upgradeClaims / totalClaims) : 0;
 
+    // Build Sets of claimed reward IDs by tier and type for O(n) lookups
+    const claimedRewardIdsByTier = new Map<string, Set<string>>();
+    const claimedRewardIdsByType = new Map<string, Set<string>>();
+    
+    claims?.forEach(claim => {
+      if (claim.tier_rewards?.tier) {
+        if (!claimedRewardIdsByTier.has(claim.tier_rewards.tier)) {
+          claimedRewardIdsByTier.set(claim.tier_rewards.tier, new Set());
+        }
+        claimedRewardIdsByTier.get(claim.tier_rewards.tier)!.add(claim.tier_rewards.id);
+      }
+      
+      if (claim.tier_rewards?.reward_type) {
+        if (!claimedRewardIdsByType.has(claim.tier_rewards.reward_type)) {
+          claimedRewardIdsByType.set(claim.tier_rewards.reward_type, new Set());
+        }
+        claimedRewardIdsByType.get(claim.tier_rewards.reward_type)!.add(claim.tier_rewards.id);
+      }
+    });
+
     // Analytics by tier
     const byTier = ['cadet', 'resident', 'headliner', 'superfan'].map(tier => {
       const tierClaims = claims?.filter(claim => claim.tier_rewards?.tier === tier) || [];
-      const tierRewards = allRewards?.filter(reward => 
-        claims?.some(claim => claim.tier_rewards?.tier === tier && claim.tier_rewards?.id === reward.id)
-      ) || [];
+      const claimedRewardIds = claimedRewardIdsByTier.get(tier) || new Set();
+      const tierRewards = allRewards?.filter(reward => claimedRewardIds.has(reward.id)) || [];
 
       return {
         tier,
@@ -123,9 +142,8 @@ export async function GET(request: NextRequest) {
     // Analytics by reward type
     const byRewardType = ['access', 'digital_product', 'physical_product', 'experience'].map(rewardType => {
       const typeClaims = claims?.filter(claim => claim.tier_rewards?.reward_type === rewardType) || [];
-      const typeRewards = allRewards?.filter(reward => 
-        claims?.some(claim => claim.tier_rewards?.reward_type === rewardType && claim.tier_rewards?.id === reward.id)
-      ) || [];
+      const claimedRewardIds = claimedRewardIdsByType.get(rewardType) || new Set();
+      const typeRewards = allRewards?.filter(reward => claimedRewardIds.has(reward.id)) || [];
 
       const totalRevenue = typeClaims.reduce((sum, claim) => sum + (claim.upgrade_amount_cents || 0), 0);
       const marginSamples = typeClaims

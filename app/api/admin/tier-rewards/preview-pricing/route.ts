@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
         max_free_requested: previewData.max_free_allocation,
         calculated_free_allocation: result.calculated_free_allocation,
         expected_paid_purchases: result.expected_paid_purchases,
-        free_allocation_percentage: result.calculated_free_allocation > 0 
+        free_allocation_percentage: result.calculated_free_allocation > 0 && previewData.total_inventory > 0
           ? Math.round((result.calculated_free_allocation / previewData.total_inventory) * 100)
           : 0
       },
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     if (result.profit_margin_cents > result.total_cogs_cents) {
       response.insights.push({
         type: 'success',
-        message: `High profit margin (${Math.round((result.profit_margin_cents / result.total_potential_revenue_cents) * 100)}%) - consider reducing price or increasing free allocation`
+        message: `High profit margin (${result.total_potential_revenue_cents > 0 ? Math.round((result.profit_margin_cents / result.total_potential_revenue_cents) * 100) : 0}%) - consider reducing price or increasing free allocation`
       });
     }
 
