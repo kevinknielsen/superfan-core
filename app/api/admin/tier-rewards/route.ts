@@ -15,11 +15,13 @@ const createTierRewardSchema = type({
   tier: "'cadet'|'resident'|'headliner'|'superfan'",
   reward_type: "'access'|'digital_product'|'physical_product'|'experience'",
   artist_cost_estimate_cents: "number", // Will validate range manually
+  total_inventory: "number?", // Total units to produce
+  max_free_allocation: "number?", // Max free units for existing tier holders
   safety_factor: "number?", // Optional, defaults to 1.25
   availability_type: "'permanent'|'seasonal'|'limited_time'?",
-  available_start: "string?", // ISO date
-  available_end: "string?", // ISO date
-  inventory_limit: "number?",
+  available_start: "string|null?", // ISO date or null
+  available_end: "string|null?", // ISO date or null
+  inventory_limit: "number|null?", // Legacy field for backward compatibility
   rolling_window_days: "number?", // Defaults to 60
   metadata: {
     instructions: "string",
@@ -41,9 +43,9 @@ const updateTierRewardSchema = type({
   artist_cost_estimate_cents: "number",
   safety_factor: "number?",
   availability_type: "'permanent'|'seasonal'|'limited_time'?",
-  available_start: "string?",
-  available_end: "string?",
-  inventory_limit: "number?",
+  available_start: "string|null?",
+  available_end: "string|null?",
+  inventory_limit: "number|null?",
   rolling_window_days: "number?",
   metadata: {
     instructions: "string",

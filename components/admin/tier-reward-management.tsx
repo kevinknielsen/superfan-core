@@ -121,6 +121,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
   // Load clubs for selection
   const { data: clubs = [] } = useClubs();
@@ -134,6 +135,8 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
     tier: 'cadet' as string,
     reward_type: 'access' as string,
     artist_cost_estimate_cents: 0,
+    total_inventory: 100,
+    max_free_allocation: 0,
     safety_factor: 1.25,
     availability_type: 'permanent' as string,
     available_start: '',
@@ -250,11 +253,13 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
         tier: formData.tier,
         reward_type: formData.reward_type,
         artist_cost_estimate_cents: formData.artist_cost_estimate_cents,
+        total_inventory: formData.total_inventory,
+        max_free_allocation: formData.max_free_allocation,
         safety_factor: formData.safety_factor,
         availability_type: formData.availability_type,
         available_start: formData.availability_type !== 'permanent' ? formData.available_start : null,
         available_end: formData.availability_type !== 'permanent' ? formData.available_end : null,
-        inventory_limit: formData.inventory_limit ? parseInt(formData.inventory_limit) : null,
+        inventory_limit: formData.inventory_limit ? parseInt(formData.inventory_limit) : formData.total_inventory,
         rolling_window_days: formData.rolling_window_days,
         metadata: {
           instructions: formData.instructions,
@@ -279,6 +284,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
         await loadRewards();
         onStatsUpdate?.();
         resetForm();
+        setIsCreateModalOpen(false); // Close the modal
         toast({
           title: "Success!",
           description: `Tier reward ${editingReward ? 'updated' : 'created'} successfully`,
@@ -306,6 +312,8 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
       tier: 'cadet',
       reward_type: 'access',
       artist_cost_estimate_cents: 0,
+      total_inventory: 100,
+      max_free_allocation: 0,
       safety_factor: 1.25,
       availability_type: 'permanent',
       available_start: '',
@@ -317,9 +325,15 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
       details: '',
       estimated_shipping: '',
       location: '',
-      requirements: ''
+      requirements: '',
+      image_url: ''
     });
     setEditingReward(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    resetForm();
+    setIsCreateModalOpen(true);
   };
 
   const handleEdit = (reward: TierReward) => {
@@ -444,6 +458,177 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
     }
   };
 
+  // PricingPreview component for real-time impact analysis
+  const PricingPreview = ({ clubId, tier, artistCostCents, totalInventory, maxFreeAllocation, safetyFactor }: {
+    clubId: string;
+    tier: string;
+    artistCostCents: number;
+    totalInventory: number;
+    maxFreeAllocation: number;
+    safetyFactor: number;
+  }) => {
+    const [previewData, setPreviewData] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+      const fetchPreview = async () => {
+        setIsLoading(true);
+        try {
+          const accessToken = await getAccessToken();
+          if (!accessToken) return;
+
+          const response = await fetch('/api/admin/tier-rewards/preview-pricing', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+              club_id: clubId,
+              tier: tier,
+              artist_cost_estimate_cents: artistCostCents,
+              total_inventory: totalInventory,
+              max_free_allocation: maxFreeAllocation,
+              safety_factor: safetyFactor
+            })
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setPreviewData(data);
+          }
+        } catch (error) {
+          console.error('Error fetching pricing preview:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      const timeoutId = setTimeout(fetchPreview, 500); // Debounce
+      return () => clearTimeout(timeoutId);
+    }, [clubId, tier, artistCostCents, totalInventory, maxFreeAllocation, safetyFactor]);
+
+    if (isLoading) {
+      return (
+        <div className="p-4 bg-muted rounded-lg">
+          <div className="animate-pulse">
+            <div className="h-4 bg-muted-foreground/20 rounded w-1/3 mb-2"></div>
+            <div className="h-6 bg-muted-foreground/20 rounded w-1/2"></div>
+          </div>
+        </div>
+      );
+    }
+
+    if (!previewData) return null;
+
+    const { allocation_plan, financial_analysis, insights } = previewData;
+
+    return (
+      <div className="space-y-4">
+        {/* Existing Tier Holders Info */}
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <Users className="h-4 w-4 text-blue-600" />
+            <span className="font-medium text-blue-900">Existing {tier.charAt(0).toUpperCase() + tier.slice(1)}s</span>
+          </div>
+          <p className="text-2xl font-bold text-blue-600">
+            {previewData.existing_tier_holders} fans
+          </p>
+          <p className="text-xs text-blue-700">
+            Currently qualify for this tier in this club
+          </p>
+        </div>
+
+        {/* Allocation Plan */}
+        <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <Package className="h-4 w-4 text-purple-600" />
+            <span className="font-medium text-purple-900">Allocation Plan</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <div className="text-purple-600 font-medium">{allocation_plan.calculated_free_allocation}</div>
+              <div className="text-xs text-purple-700">Free units</div>
+            </div>
+            <div>
+              <div className="text-purple-600 font-medium">{allocation_plan.expected_paid_purchases}</div>
+              <div className="text-xs text-purple-700">Paid units</div>
+            </div>
+            <div>
+              <div className="text-purple-600 font-medium">{allocation_plan.free_allocation_percentage}%</div>
+              <div className="text-xs text-purple-700">Free allocation</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Financial Analysis */}
+        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <DollarSign className="h-4 w-4 text-green-600" />
+            <span className="font-medium text-green-900">Profitability Analysis</span>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-green-700">Upgrade Price:</span>
+              <span className="text-lg font-bold text-green-600">
+                {formatCurrency(financial_analysis.upgrade_price_cents)}
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <div className="text-green-600 font-medium">
+                  {formatCurrency(financial_analysis.total_potential_revenue_cents)}
+                </div>
+                <div className="text-green-700">Total Revenue</div>
+              </div>
+              <div>
+                <div className="text-green-600 font-medium">
+                  {formatCurrency(financial_analysis.total_cogs_cents)}
+                </div>
+                <div className="text-green-700">Total COGS</div>
+              </div>
+            </div>
+            
+            <div className="pt-2 border-t border-green-200">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-green-700">Profit:</span>
+                <span className={`text-lg font-bold ${
+                  financial_analysis.is_profitable ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {formatCurrency(financial_analysis.profit_margin_cents)}
+                  <span className="text-xs ml-1">
+                    ({financial_analysis.profit_margin_percentage}%)
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Insights */}
+        {insights.length > 0 && (
+          <div className="space-y-2">
+            {insights.map((insight: any, index: number) => (
+              <div
+                key={index}
+                className={`p-3 rounded-lg text-sm ${
+                  insight.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' :
+                  insight.type === 'warning' ? 'bg-yellow-50 border border-yellow-200 text-yellow-700' :
+                  insight.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' :
+                  'bg-blue-50 border border-blue-200 text-blue-700'
+                }`}
+              >
+                {insight.message}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -477,9 +662,9 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
             <BarChart3 className="h-4 w-4 mr-2" />
             Analytics
           </Button>
-          <Dialog>
+          <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
             <DialogTrigger asChild>
-              <Button onClick={resetForm}>
+              <Button onClick={handleOpenCreateModal}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Reward
               </Button>
@@ -596,7 +781,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="artist_cost_estimate_cents">
-                          Artist Cost Estimate (USD)
+                          Cost Per Unit (USD)
                           <span className="text-xs text-muted-foreground ml-1">
                             (Set to $0 for free-only rewards)
                           </span>
@@ -615,7 +800,57 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                           placeholder="0.00"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Your estimated cost for fulfillment (shipping, manufacturing, etc.)
+                          Your cost per unit (manufacturing, shipping, etc.)
+                        </p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="total_inventory">
+                          Total Inventory
+                          <span className="text-xs text-muted-foreground ml-1">
+                            (Total units to produce)
+                          </span>
+                        </Label>
+                        <Input
+                          id="total_inventory"
+                          type="number"
+                          min="1"
+                          max="10000"
+                          value={formData.total_inventory}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            total_inventory: parseInt(e.target.value || '100')
+                          })}
+                          placeholder="100"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Total units you'll produce (free + paid)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="max_free_allocation">
+                          Max Free for Existing Fans
+                          <span className="text-xs text-muted-foreground ml-1">
+                            (Reward loyal tier holders)
+                          </span>
+                        </Label>
+                        <Input
+                          id="max_free_allocation"
+                          type="number"
+                          min="0"
+                          max={formData.total_inventory}
+                          value={formData.max_free_allocation}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            max_free_allocation: parseInt(e.target.value || '0')
+                          })}
+                          placeholder="0"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Max free units for existing tier holders
                         </p>
                       </div>
                       
@@ -639,24 +874,21 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                           })}
                         />
                         <p className="text-xs text-muted-foreground">
-                          Multiplier for upgrade pricing (auto-tuned based on demand)
+                          Profit margin multiplier
                         </p>
                       </div>
                     </div>
-                    
-                    {formData.artist_cost_estimate_cents > 0 && (
-                      <div className="p-4 bg-muted rounded-lg">
-                        <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="h-4 w-4 text-green-600" />
-                          <span className="font-medium">Estimated Upgrade Price</span>
-                        </div>
-                        <p className="text-2xl font-bold text-green-600">
-                          {formatCurrency(Math.ceil((formData.artist_cost_estimate_cents / 0.96) * formData.safety_factor))}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Calculated: (${(formData.artist_cost_estimate_cents / 100).toFixed(2)} ÷ 0.96) × {formData.safety_factor}
-                        </p>
-                      </div>
+
+                    {/* Real-time Pricing Preview */}
+                    {formData.club_id && formData.tier && formData.artist_cost_estimate_cents > 0 && formData.total_inventory > 0 && (
+                      <PricingPreview
+                        clubId={formData.club_id}
+                        tier={formData.tier}
+                        artistCostCents={formData.artist_cost_estimate_cents}
+                        totalInventory={formData.total_inventory}
+                        maxFreeAllocation={formData.max_free_allocation}
+                        safetyFactor={formData.safety_factor}
+                      />
                     )}
                   </TabsContent>
                   
@@ -817,6 +1049,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                         placeholder="e.g., Must be 18+, valid ID required"
                       />
                     </div>
+                    
                   </TabsContent>
                 </Tabs>
                 
@@ -824,7 +1057,10 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={resetForm}
+                    onClick={() => {
+                      resetForm();
+                      setIsCreateModalOpen(false);
+                    }}
                   >
                     Cancel
                   </Button>

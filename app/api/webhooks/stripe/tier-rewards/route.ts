@@ -48,21 +48,35 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
     
     console.log(`[Tier Rewards Webhook] Processing payment_intent.succeeded: ${paymentIntent.id}`);
     
-    // Find the upgrade transaction
-    const { data: transaction, error: transactionError } = await supabaseAny
+    // Find the upgrade transaction - try by payment intent first, then by session ID
+    let { data: transaction, error: transactionError } = await supabaseAny
       .from('upgrade_transactions')
       .select('*')
       .eq('stripe_payment_intent_id', paymentIntent.id)
       .single();
     
-    if (transactionError) {
-      if (transactionError.code === 'PGRST116') {
-        const error = `Upgrade transaction not found for payment intent: ${paymentIntent.id}`;
-        console.error('[Tier Rewards Webhook]', error);
-        return { success: false, error };
+    // If not found by payment intent, try by session ID (for new transactions)
+    if (transactionError?.code === 'PGRST116') {
+      const sessionId = paymentIntent.metadata?.stripe_session_id;
+      if (sessionId) {
+        console.log('[Tier Rewards Webhook] Trying lookup by session ID:', sessionId);
+        const { data: sessionTransaction, error: sessionError } = await supabaseAny
+          .from('upgrade_transactions')
+          .select('*')
+          .eq('stripe_session_id', sessionId)
+          .single();
+          
+        if (!sessionError && sessionTransaction) {
+          transaction = sessionTransaction;
+          transactionError = null;
+        }
       }
-      console.error('[Tier Rewards Webhook] Error fetching transaction:', transactionError);
-      return { success: false, error: `Database error: ${transactionError.message}` };
+    }
+    
+    if (transactionError || !transaction) {
+      const error = `Upgrade transaction not found for payment intent: ${paymentIntent.id}`;
+      console.error('[Tier Rewards Webhook]', error);
+      return { success: false, error };
     }
     
     // Check if transaction is already processed
@@ -71,15 +85,31 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
       return { success: true };
     }
     
-    // Use the atomic database function to process the upgrade
-    const { error: processError } = await supabaseAny.rpc('process_successful_upgrade', {
-      p_transaction_id: transaction.id,
-      p_payment_intent_id: paymentIntent.id
-    });
+    // Get the session ID from the payment intent metadata to find the transaction
+    const sessionId = paymentIntent.metadata?.stripe_session_id;
     
-    if (processError) {
-      console.error('[Tier Rewards Webhook] Database error processing upgrade:', processError);
-      return { success: false, error: `Database error: ${processError.message}` };
+    if (sessionId) {
+      // Use session-based processing for new tier rewards transactions
+      const { error: processError } = await supabaseAny.rpc('process_successful_upgrade_by_session', {
+        p_session_id: sessionId,
+        p_payment_intent_id: paymentIntent.id
+      });
+      
+      if (processError) {
+        console.error('[Tier Rewards Webhook] Database error processing upgrade by session:', processError);
+        return { success: false, error: `Database error: ${processError.message}` };
+      }
+    } else {
+      // Fallback to original processing for backward compatibility
+      const { error: processError } = await supabaseAny.rpc('process_successful_upgrade', {
+        p_transaction_id: transaction.id,
+        p_payment_intent_id: paymentIntent.id
+      });
+      
+      if (processError) {
+        console.error('[Tier Rewards Webhook] Database error processing upgrade:', processError);
+        return { success: false, error: `Database error: ${processError.message}` };
+      }
     }
     
     console.log(`[Tier Rewards Webhook] Successfully processed upgrade for transaction ${transaction.id}`);

@@ -122,6 +122,13 @@ export default function UnlockRedemption({
             redemption_instructions: reward.metadata.instructions,
             ...reward.metadata
           },
+          // Add club information for details modal
+          club_info: reward.clubs ? {
+            id: reward.clubs.id,
+            name: reward.clubs.name,
+            description: reward.clubs.description,
+            city: reward.clubs.city
+          } : null,
           // Add tier rewards specific fields
           user_can_claim_free: reward.user_can_claim_free,
           claim_options: reward.claim_options,

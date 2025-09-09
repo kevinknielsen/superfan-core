@@ -4,6 +4,9 @@ import { supabase } from "../../../../../supabase";
 import { type } from "arktype";
 import Stripe from "stripe";
 
+// Type assertion for new tier rewards tables
+const supabaseAny = supabase as any;
+
 // Minimal row typings used in this route
 type UsersRow = { id: string; email: string | null; privy_id?: string | null; farcaster_id?: string | null };
 type TierRewardRow = {
@@ -250,14 +253,14 @@ export async function POST(
       }
     });
 
-    // Store pending transaction
-    const { data: transaction, error: transactionError } = await supabase
-      .from<UpgradeTransactionRow>('upgrade_transactions')
+    // Store pending transaction using session ID (payment intent comes later)
+    const { data: transaction, error: transactionError } = await supabaseAny
+      .from('upgrade_transactions')
       .insert({
         user_id: actualUserId,
         club_id: clubId,
         reward_id: rewardId,
-        stripe_payment_intent_id: session.payment_intent as string,
+        stripe_payment_intent_id: null, // Will be updated by webhook when payment intent is created
         stripe_session_id: session.id,
         amount_cents: reward.upgrade_price_cents,
         purchase_type: upgradeData.purchase_type,

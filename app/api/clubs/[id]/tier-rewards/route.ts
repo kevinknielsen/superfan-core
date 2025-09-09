@@ -72,7 +72,7 @@ export async function GET(
 
     const quarter = currentQuarter?.[0] || { year: 2024, quarter: 1 };
 
-    // Get all available tier rewards for this club
+    // Get all available tier rewards for this club with club info
     const { data: availableRewards, error: rewardsError } = await supabaseAny
       .from('tier_rewards')
       .select(`
@@ -91,7 +91,14 @@ export async function GET(
         rolling_window_days,
         metadata,
         is_active,
-        created_at
+        created_at,
+        clubs!inner(
+          id,
+          name,
+          description,
+          city,
+          image_url
+        )
       `)
       .eq('club_id', clubId)
       .eq('is_active', true)
