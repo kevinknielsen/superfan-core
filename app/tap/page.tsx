@@ -58,6 +58,24 @@ function TapPageContent() {
   // Load club information first (even for unauthenticated users)
   const [clubInfo, setClubInfo] = useState<any>(null);
   
+  // Decode QR data early for use in UI
+  const [qrData, setQrData] = useState<AdditionalData & { points?: number }>({});
+  
+  // Decode QR data when component loads
+  useEffect(() => {
+    if (data) {
+      try {
+        const decoded = JSON.parse(atob(data)) as AdditionalData & { points?: number };
+        setQrData(decoded);
+      } catch (e) {
+        console.warn("Could not decode QR data:", e);
+        setQrData({});
+      }
+    } else {
+      setQrData({});
+    }
+  }, [data]);
+
   // Reset processing when URL parameters change
   useEffect(() => {
     processingStarted.current = false;
@@ -191,26 +209,15 @@ function TapPageContent() {
     setError(null);
 
     try {
-      // Decode additional data if present
-      let additionalData: AdditionalData = {};
-      if (data) {
-        try {
-          const decoded = JSON.parse(atob(data)) as AdditionalData;
-          additionalData = decoded;
-        } catch (e) {
-          console.warn("Could not decode QR data:", e);
-        }
-      }
-
       const tapInPayload = {
         club_id: clubId,
         source: source,
-        location: location || additionalData.location,
-        points_earned: (additionalData as any).points, // Use custom points from QR code
+        location: location || qrData.location,
+        points_earned: qrData.points, // Use custom points from QR code
         metadata: {
           qr_id: qrId,
           scanned_at: new Date().toISOString(),
-          ...additionalData.metadata
+          ...qrData.metadata
         }
       };
 
@@ -299,6 +306,11 @@ function TapPageContent() {
 
   const getStatusColor = (status: string) => {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
+  };
+
+  // Get the correct points value (custom from QR or default)
+  const getPointsValue = () => {
+    return qrData.points || POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default;
   };
 
   // Show split-screen club preview for unauthenticated users
@@ -412,7 +424,7 @@ function TapPageContent() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 text-sm">Points</span>
-                    <span className="text-green-400 text-sm">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                    <span className="text-green-400 text-sm">+{getPointsValue()} on join</span>
                   </div>
                 </div>
 
@@ -511,7 +523,7 @@ function TapPageContent() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-xs">+{getPointsValue()} on join</span>
                       </div>
                     </div>
                   </div>
@@ -538,7 +550,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} points
+                  +{getPointsValue()} points
                 </span>
               </div>
             </motion.div>
