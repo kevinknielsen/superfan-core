@@ -16,7 +16,8 @@ import {
   ShoppingBag,
   Award,
   Globe,
-  ExternalLink
+  ExternalLink,
+  Zap
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -194,6 +195,14 @@ export default function UnlockRedemption({
   const formatCurrency = (cents: number | undefined) => {
     if (!cents) return 'Free';
     return `$${(cents / 100).toFixed(2)}`;
+  };
+
+  const getCurrentQuarter = () => {
+    const now = new Date();
+    return {
+      year: now.getFullYear(),
+      quarter: Math.floor(now.getMonth() / 3) + 1
+    };
   };
 
   const handleRedeem = async (unlock: Unlock) => {
@@ -455,7 +464,7 @@ export default function UnlockRedemption({
                       : isAvailable 
                         ? (unlock as any).user_can_claim_free 
                           ? 'Claim Free'
-                          : `Upgrade for ${formatCurrency((unlock as any).tier_boost_price_cents)}`
+                          : `Boost for ${formatCurrency((unlock as any).tier_boost_price_cents)}`
                         : 'Locked'
                     }
                   </button>
@@ -487,7 +496,17 @@ export default function UnlockRedemption({
                 {selectedUnlock.description}
               </p>
               
-              {selectedUnlock.metadata?.redemption_instructions && (
+              {/* Boost explanation for non-qualified users */}
+              {!(selectedUnlock as any).user_can_claim_free && isUnlockAvailable(selectedUnlock) && (
+                <div className="p-3 bg-muted/50 rounded-lg border border-muted">
+                  <p className="text-sm text-muted-foreground">
+                    Boost your status to <strong>{(selectedUnlock as any).tier || selectedUnlock.min_status}</strong> temporarily to claim and redeem this item for free.
+                  </p>
+                </div>
+              )}
+              
+              {/* Only show redemption instructions if user has already redeemed */}
+              {selectedUnlock.metadata?.redemption_instructions && isUnlockRedeemed(selectedUnlock) && (
                 <div className="bg-muted p-3 rounded-lg">
                   <h4 className="font-medium mb-2">How to Redeem:</h4>
                   <p className="text-sm">
@@ -542,7 +561,10 @@ export default function UnlockRedemption({
                   onClick={() => handleRedeem(selectedUnlock)}
                   disabled={!isUnlockAvailable(selectedUnlock) || isRedeeming}
                 >
-                  {isRedeeming ? 'Redeeming...' : 'Redeem Now'}
+                  {isRedeeming ? 'Processing...' : 
+                   (selectedUnlock as any).user_can_claim_free ? 'Claim Free' :
+                   `Boost for ${formatCurrency((selectedUnlock as any).tier_boost_price_cents)}`
+                  }
                 </Button>
               </div>
             </div>
