@@ -776,7 +776,7 @@ function TapPageContent() {
                   </button>
                   
                   <button
-                    onClick={() => router.push(`/dashboard?club=${clubId}`)}
+                    onClick={() => router.push(clubId ? `/dashboard?club=${clubId}` : '/dashboard')}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details
