@@ -3,8 +3,24 @@ import { verifyUnifiedAuth } from "../../../auth";
 import { isAdminByDatabase } from "@/lib/admin-utils";
 import { supabase } from "../../../supabase";
 
-// Type assertion for new tier rewards tables
-const supabaseAny = supabase as any;
+// Minimal row typings used in this route
+type TierRewardRow = {
+  id: string;
+  is_active?: boolean;
+  club_id: string;
+  tier: 'cadet' | 'resident' | 'headliner' | 'superfan';
+  reward_type: 'access' | 'digital_product' | 'physical_product' | 'experience';
+  artist_cost_estimate_cents?: number | null;
+  created_at?: string;
+};
+type RewardClaimRow = {
+  id: string;
+  claim_method: string;
+  upgrade_amount_cents: number | null;
+  claimed_at: string;
+  reward_id?: string;
+  tier_rewards?: Pick<TierRewardRow, 'id' | 'tier' | 'reward_type' | 'club_id' | 'artist_cost_estimate_cents'>;
+};
 
 // Get tier rewards analytics (admin only)
 export async function GET(request: NextRequest) {
@@ -31,8 +47,8 @@ export async function GET(request: NextRequest) {
     const clubId = searchParams.get('club_id');
 
     // Summary statistics
-    const summaryQuery = supabaseAny
-      .from('tier_rewards')
+    const summaryQuery = supabase
+      .from<TierRewardRow>('tier_rewards')
       .select('id, is_active');
     
     if (clubId) {
@@ -50,14 +66,14 @@ export async function GET(request: NextRequest) {
     const activeRewards = allRewards?.filter(r => r.is_active).length || 0;
 
     // Claims and revenue statistics
-    let claimsQuery = supabaseAny
-      .from('reward_claims')
+    let claimsQuery = supabase
+      .from<RewardClaimRow>('reward_claims')
       .select(`
         id,
         claim_method,
         upgrade_amount_cents,
         claimed_at,
-        tier_rewards!inner(tier, reward_type, club_id)
+        tier_rewards!inner(id, tier, reward_type, club_id, artist_cost_estimate_cents)
       `);
 
     if (clubId) {
@@ -91,7 +107,7 @@ export async function GET(request: NextRequest) {
     const byTier = ['cadet', 'resident', 'headliner', 'superfan'].map(tier => {
       const tierClaims = claims?.filter(claim => claim.tier_rewards?.tier === tier) || [];
       const tierRewards = allRewards?.filter(reward => 
-        claims?.some(claim => claim.tier_rewards?.tier === tier && claim.reward_id === reward.id)
+        claims?.some(claim => claim.tier_rewards?.tier === tier && claim.tier_rewards?.id === reward.id)
       ) || [];
 
       return {
@@ -108,19 +124,30 @@ export async function GET(request: NextRequest) {
     const byRewardType = ['access', 'digital_product', 'physical_product', 'experience'].map(rewardType => {
       const typeClaims = claims?.filter(claim => claim.tier_rewards?.reward_type === rewardType) || [];
       const typeRewards = allRewards?.filter(reward => 
-        claims?.some(claim => claim.tier_rewards?.reward_type === rewardType && claim.reward_id === reward.id)
+        claims?.some(claim => claim.tier_rewards?.reward_type === rewardType && claim.tier_rewards?.id === reward.id)
       ) || [];
 
       const totalRevenue = typeClaims.reduce((sum, claim) => sum + (claim.upgrade_amount_cents || 0), 0);
-      const avgMargin = typeClaims.length > 0 ? 25 : 0; // Simplified - would need actual cost data
+      const marginSamples = typeClaims
+        .filter(c => typeof c.upgrade_amount_cents === 'number' && (c.upgrade_amount_cents as number) > 0 && typeof c.tier_rewards?.artist_cost_estimate_cents === 'number')
+        .map(c => {
+          const revenue = Number(c.upgrade_amount_cents || 0);
+          const cost = Number(c.tier_rewards?.artist_cost_estimate_cents || 0);
+          if (revenue <= 0) return 0;
+          const pct = ((revenue - cost) / revenue) * 100;
+          return isFinite(pct) ? pct : 0;
+        });
+      const averageMarginPercent = marginSamples.length > 0
+        ? Number((marginSamples.reduce((a, b) => a + b, 0) / marginSamples.length).toFixed(2))
+        : 0;
 
       return {
         reward_type: rewardType,
         reward_count: typeRewards.length,
         total_claims: typeClaims.length,
         upgrade_revenue_cents: totalRevenue,
-        average_fulfillment_cost_cents: 0, // Would need to calculate from artist_cost_estimate_cents
-        average_margin_percent: avgMargin
+        average_fulfillment_cost_cents: 0,
+        average_margin_percent: averageMarginPercent
       };
     });
 
@@ -128,13 +155,13 @@ export async function GET(request: NextRequest) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    let recentActivityQuery = supabaseAny
-      .from('reward_claims')
-      .select('claimed_at, upgrade_amount_cents')
+    let recentActivityQuery = supabase
+      .from<RewardClaimRow>('reward_claims')
+      .select('claimed_at, upgrade_amount_cents, tier_rewards!inner(club_id)')
       .gte('claimed_at', thirtyDaysAgo.toISOString());
 
     if (clubId) {
-      recentActivityQuery = recentActivityQuery.eq('club_id', clubId);
+      recentActivityQuery = recentActivityQuery.eq('tier_rewards.club_id', clubId);
     }
 
     const { data: recentClaims, error: recentError } = await recentActivityQuery;
@@ -162,8 +189,8 @@ export async function GET(request: NextRequest) {
     });
 
     // Get new rewards created in the same period
-    let newRewardsQuery = supabaseAny
-      .from('tier_rewards')
+    let newRewardsQuery = supabase
+      .from<TierRewardRow>('tier_rewards')
       .select('created_at')
       .gte('created_at', thirtyDaysAgo.toISOString());
 

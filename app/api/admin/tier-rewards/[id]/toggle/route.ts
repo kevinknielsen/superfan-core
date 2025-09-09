@@ -3,8 +3,13 @@ import { verifyUnifiedAuth } from "../../../../auth";
 import { isAdminByDatabase } from "@/lib/admin-utils";
 import { supabase } from "../../../../supabase";
 
-// Type assertion for new tier rewards tables
-const supabaseAny = supabase as any;
+// Minimal typing for tier_rewards rows used in this route
+type TierRewardRow = {
+  id: string;
+  is_active: boolean;
+  title: string;
+  club_id: string;
+};
 
 // Toggle tier reward active status (admin only)
 export async function POST(
@@ -30,8 +35,8 @@ export async function POST(
 
   try {
     // Get current status
-    const { data: currentReward, error: fetchError } = await supabaseAny
-      .from('tier_rewards')
+    const { data: currentReward, error: fetchError } = await supabase
+      .from<TierRewardRow>('tier_rewards')
       .select('is_active, title, club_id')
       .eq('id', id)
       .single();
@@ -47,8 +52,8 @@ export async function POST(
     // Toggle the status
     const newStatus = !currentReward.is_active;
 
-    const { data: updatedReward, error: updateError } = await supabaseAny
-      .from('tier_rewards')
+    const { data: updatedReward, error: updateError } = await supabase
+      .from<TierRewardRow>('tier_rewards')
       .update({ is_active: newStatus })
       .eq('id', id)
       .select()

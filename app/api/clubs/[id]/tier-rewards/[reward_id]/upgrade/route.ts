@@ -4,13 +4,34 @@ import { supabase } from "../../../../../supabase";
 import { type } from "arktype";
 import Stripe from "stripe";
 
-// Type assertion for new tier rewards tables
-const supabaseAny = supabase as any;
+// Minimal row typings used in this route
+type UsersRow = { id: string; email: string | null; privy_id?: string | null; farcaster_id?: string | null };
+type TierRewardRow = {
+  id: string;
+  club_id: string;
+  title: string;
+  description: string;
+  tier: 'cadet' | 'resident' | 'headliner' | 'superfan';
+  reward_type: 'access' | 'digital_product' | 'physical_product' | 'experience';
+  upgrade_price_cents: number | null;
+  inventory_limit: number | null;
+  inventory_claimed: number | null;
+  is_active: boolean;
+  metadata: any;
+};
+type RewardClaimsRow = { id: string };
+type TemporaryBoostRow = { id: string };
+type ClubsRow = { name: string };
+type UpgradeTransactionRow = { id: string };
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
-});
+// Lazy Stripe initializer with env validation
+function getStripe(): Stripe {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error('Missing STRIPE_SECRET_KEY');
+  }
+  return new Stripe(key, { apiVersion: '2024-06-20' });
+}
 
 // Validation schema for upgrade purchase
 const upgradeRequestSchema = type({
@@ -34,9 +55,9 @@ export async function POST(
   try {
     // Get the user from our database (support both auth types) - same pattern as existing APIs
     const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabaseAny
-      .from('users')
-      .select('id')
+    const { data: user, error: userError } = await supabase
+      .from<UsersRow>('users')
+      .select('id, email')
       .eq(userColumn, auth.userId)
       .single();
 
@@ -59,8 +80,8 @@ export async function POST(
     }
 
     // Get the reward details
-    const { data: reward, error: rewardError } = await supabaseAny
-      .from('tier_rewards')
+    const { data: reward, error: rewardError } = await supabase
+      .from<TierRewardRow>('tier_rewards')
       .select(`
         id,
         club_id,
@@ -95,14 +116,11 @@ export async function POST(
       return NextResponse.json({ error: "Reward is not available for purchase" }, { status: 400 });
     }
 
-    // Check inventory
-    if (reward.inventory_limit && reward.inventory_claimed >= reward.inventory_limit) {
-      return NextResponse.json({ error: "Reward is sold out" }, { status: 409 });
-    }
+    // Do not perform app-level sold out check here to avoid races; inventory is enforced atomically at claim time
 
     // Check if user already claimed this reward
-    const { data: existingClaim, error: claimError } = await supabaseAny
-      .from('reward_claims')
+    const { data: existingClaim, error: claimError } = await supabase
+      .from<RewardClaimsRow>('reward_claims')
       .select('id')
       .eq('user_id', actualUserId)
       .eq('reward_id', rewardId)
@@ -118,7 +136,7 @@ export async function POST(
     }
 
     // Get user's current tier qualification
-    const { data: qualification, error: qualificationError } = await supabaseAny
+    const { data: qualification, error: qualificationError } = await supabase
       .rpc('check_tier_qualification', {
         p_user_id: actualUserId,
         p_club_id: clubId,
@@ -137,7 +155,7 @@ export async function POST(
     }
 
     // Get current quarter
-    const { data: currentQuarter, error: quarterError } = await supabaseAny
+    const { data: currentQuarter, error: quarterError } = await supabase
       .rpc('get_current_quarter');
 
     if (quarterError) {
@@ -152,8 +170,8 @@ export async function POST(
 
     // For tier_boost purchases, check if user already has a boost for this quarter
     if (upgradeData.purchase_type === 'tier_boost') {
-      const { data: existingBoost, error: boostError } = await supabaseAny
-        .from('temporary_tier_boosts')
+      const { data: existingBoost, error: boostError } = await supabase
+        .from<TemporaryBoostRow>('temporary_tier_boosts')
         .select('id')
         .eq('user_id', actualUserId)
         .eq('club_id', clubId)
@@ -174,8 +192,8 @@ export async function POST(
     }
 
     // Get club details for product naming
-    const { data: club, error: clubError } = await supabaseAny
-      .from('clubs')
+    const { data: club, error: clubError } = await supabase
+      .from<ClubsRow>('clubs')
       .select('name')
       .eq('id', clubId)
       .single();
@@ -195,6 +213,7 @@ export async function POST(
       : `Unlock "${reward.title}" in ${club.name}`;
 
     // Create Stripe checkout session
+    const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [{
@@ -216,7 +235,7 @@ export async function POST(
       }],
       success_url: upgradeData.success_url,
       cancel_url: upgradeData.cancel_url,
-      customer_email: actualUserId, // Use user UUID as customer reference
+      customer_email: user.email || undefined,
       metadata: {
         type: 'tier_upgrade',
         user_id: actualUserId,
@@ -232,8 +251,8 @@ export async function POST(
     });
 
     // Store pending transaction
-    const { data: transaction, error: transactionError } = await supabaseAny
-      .from('upgrade_transactions')
+    const { data: transaction, error: transactionError } = await supabase
+      .from<UpgradeTransactionRow>('upgrade_transactions')
       .insert({
         user_id: actualUserId,
         club_id: clubId,

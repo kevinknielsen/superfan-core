@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      if (new Date(finalData.available_start) >= new Date(finalData.available_end)) {
+      if (new Date(finalData.available_start) > new Date(finalData.available_end)) {
         return NextResponse.json(
           { error: "available_start must be before available_end" },
           { status: 400 }
@@ -319,7 +319,7 @@ export async function PUT(request: NextRequest) {
         );
       }
       
-      if (new Date(tierRewardData.available_start) >= new Date(tierRewardData.available_end)) {
+      if (new Date(tierRewardData.available_start) > new Date(tierRewardData.available_end)) {
         return NextResponse.json(
           { error: "available_start must be before available_end" },
           { status: 400 }

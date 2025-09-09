@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../supabase";
 import Stripe from "stripe";
 
+export const runtime = 'node';
+
 // Type assertion for new tier rewards tables
 const supabaseAny = supabase as any;
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
-});
+// Guarded Stripe initializer (avoid top-level init for Edge compatibility)
+function getStripe(): Stripe {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    throw new Error('Missing STRIPE_SECRET_KEY');
+  }
+  return new Stripe(key, { apiVersion: '2024-06-20' });
+}
 
 // Helper function to verify webhook signature
 async function verifyWebhookSignature(
@@ -21,6 +27,7 @@ async function verifyWebhookSignature(
       return null;
     }
     
+    const stripe = getStripe();
     const event = stripe.webhooks.constructEvent(
       rawBody,
       signature,
@@ -96,7 +103,7 @@ async function processPaymentIntentFailed(event: Stripe.Event): Promise<{ succes
     console.log(`[Tier Rewards Webhook] Processing payment_intent.payment_failed: ${paymentIntent.id}`);
     
     // Mark transaction as failed
-    const { error: updateError } = await supabaseAny
+    const { error: updateError } = await supabase
       .from('upgrade_transactions')
       .update({ 
         status: 'failed',
@@ -105,7 +112,8 @@ async function processPaymentIntentFailed(event: Stripe.Event): Promise<{ succes
           failed_at: new Date().toISOString()
         }
       })
-      .eq('stripe_payment_intent_id', paymentIntent.id);
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+      .eq('status', 'pending');
     
     if (updateError) {
       console.error('[Tier Rewards Webhook] Error updating failed transaction:', updateError);
@@ -142,7 +150,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Tier Rewards Webhook] Received event: ${event.type} (${event.id})`);
     
     // Check for idempotency - has this event been processed before?
-    const { data: existingEvent, error: existingError } = await supabaseAny
+    const { data: existingEvent, error: existingError } = await supabase
       .from('webhook_events')
       .select('id, processed_at, processing_attempts')
       .eq('stripe_event_id', event.id)
@@ -160,16 +168,20 @@ export async function POST(request: NextRequest) {
       }
       
       // Event exists but not processed - increment attempts
-      await supabaseAny
+      const { error: attemptsUpdateError } = await supabase
         .from('webhook_events')
         .update({ 
           processing_attempts: existingEvent.processing_attempts + 1,
           event_data: event
         })
         .eq('stripe_event_id', event.id);
+      if (attemptsUpdateError) {
+        console.error('[Tier Rewards Webhook] Failed to increment processing_attempts:', attemptsUpdateError);
+        return NextResponse.json({ error: 'Failed to update webhook attempt' }, { status: 500 });
+      }
     } else {
       // Insert new event record to reserve it for processing
-      const { error: insertError } = await supabaseAny
+      const { error: insertError } = await supabase
         .from('webhook_events')
         .insert({
           stripe_event_id: event.id,
@@ -224,10 +236,14 @@ export async function POST(request: NextRequest) {
           last_error: processingResult.error || 'Unknown processing error'
         };
     
-    await supabaseAny
+    const { error: finalUpdateError } = await supabase
       .from('webhook_events')
       .update(updateData)
       .eq('stripe_event_id', event.id);
+    if (finalUpdateError) {
+      console.error('[Tier Rewards Webhook] Failed to update webhook event final state:', finalUpdateError);
+      return NextResponse.json({ error: 'Failed to finalize webhook event' }, { status: 500 });
+    }
     
     if (processingResult.success) {
       console.log(`[Tier Rewards Webhook] Successfully processed event ${event.id}`);

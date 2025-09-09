@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../../../auth";
 import { supabase } from "../../../../../supabase";
 
-// Type assertion for new tier rewards tables
-const supabaseAny = supabase as any;
+// Minimal typings for rows used in this route
+type UsersRow = { id: string; email: string | null; privy_id?: string | null; farcaster_id?: string | null };
+type TierRewardRow = { id: string; title: string; description: string; reward_type: string; metadata: any };
+type RewardClaimRow = {
+  id: string;
+  access_code: string | null;
+  claimed_at: string;
+  tier_rewards: TierRewardRow;
+};
 
 // Claim a tier reward for free (if user qualifies)
 export async function POST(
@@ -20,8 +27,8 @@ export async function POST(
   try {
     // Get the user from our database (support both auth types) - same pattern as existing APIs
     const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabaseAny
-      .from('users')
+    const { data: user, error: userError } = await supabase
+      .from<UsersRow>('users')
       .select('id')
       .eq(userColumn, auth.userId)
       .single();
@@ -34,7 +41,7 @@ export async function POST(
     const actualUserId = user.id;
 
     // Get current quarter for tracking
-    const { data: currentQuarter, error: quarterError } = await supabaseAny
+    const { data: currentQuarter, error: quarterError } = await supabase
       .rpc('get_current_quarter');
 
     if (quarterError) {
@@ -48,7 +55,7 @@ export async function POST(
     }
 
     // Use the atomic free claim function to handle all business logic and concurrency
-    const { data: claimResult, error: claimError } = await supabaseAny
+    const { data: claimResult, error: claimError } = await supabase
       .rpc('atomic_free_claim', {
         p_user_id: actualUserId,
         p_reward_id: rewardId,
@@ -88,8 +95,8 @@ export async function POST(
     }
 
     // Get the full claim details for response
-    const { data: claimDetails, error: detailsError } = await supabaseAny
-      .from('reward_claims')
+    const { data: claimDetails, error: detailsError } = await supabase
+      .from<RewardClaimRow>('reward_claims')
       .select(`
         id,
         access_code,
