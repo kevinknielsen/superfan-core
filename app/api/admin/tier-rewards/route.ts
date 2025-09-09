@@ -84,8 +84,18 @@ export async function GET(request: NextRequest) {
     const rewardType = searchParams.get('reward_type');
     const availabilityType = searchParams.get('availability_type');
     const isActive = searchParams.get('is_active');
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
+    // Robust pagination validation
+    const limitParam = searchParams.get('limit');
+    const offsetParam = searchParams.get('offset');
+    
+    const parsedLimit = limitParam ? parseInt(limitParam) : 50;
+    const parsedOffset = offsetParam ? parseInt(offsetParam) : 0;
+    
+    // Validate and clamp limit (1-100)
+    const limit = isNaN(parsedLimit) ? 50 : Math.max(1, Math.min(100, parsedLimit));
+    
+    // Validate and clamp offset (0+)
+    const offset = isNaN(parsedOffset) ? 0 : Math.max(0, parsedOffset);
 
     console.log('[Admin Tier Rewards API] Query parameters:', { clubId, tier, rewardType, availabilityType, isActive, limit, offset });
 

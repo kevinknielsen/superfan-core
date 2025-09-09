@@ -142,6 +142,16 @@ export async function DELETE(
       if (error.code === 'PGRST116') {
         return NextResponse.json({ error: "Tier reward not found" }, { status: 404 });
       }
+      
+      // Handle foreign key violation race condition
+      if (error.code === '23503') {
+        console.warn('Delete failed due to FK violation race condition:', error);
+        return NextResponse.json({ 
+          error: "Tier reward is in use",
+          message: "This reward cannot be deleted because it's currently being used."
+        }, { status: 409 });
+      }
+      
       console.error('Error deleting tier reward:', error);
       return NextResponse.json({ error: "Failed to delete tier reward" }, { status: 500 });
     }

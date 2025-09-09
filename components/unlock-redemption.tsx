@@ -119,8 +119,8 @@ export default function UnlockRedemption({
           min_status: reward.tier,
           is_active: reward.current_status === 'available',
           metadata: {
-            redemption_instructions: reward.metadata.instructions,
-            ...reward.metadata
+            ...(reward.metadata ?? {}),
+            redemption_instructions: reward.metadata?.instructions
           },
           // Add club information for details modal
           club_info: reward.clubs ? {

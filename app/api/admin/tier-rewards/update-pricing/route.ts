@@ -102,12 +102,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate what the dynamic safety factor would be
-    const { data: dynamicFactor, error: factorError } = await supabaseAny
+    const { data: dynamicFactorRaw, error: factorError } = await supabaseAny
       .rpc('calculate_dynamic_safety_factor', { p_reward_id: rewardId });
 
     if (factorError) {
       console.error('Error calculating dynamic factor:', factorError);
       return NextResponse.json({ error: "Failed to calculate dynamic factor" }, { status: 500 });
+    }
+
+    // Parse and validate the dynamic factor (RPC returns DECIMAL as string)
+    const dynamicFactor = dynamicFactorRaw ? Number(dynamicFactorRaw) : null;
+    if (dynamicFactor === null || isNaN(dynamicFactor)) {
+      console.error('Invalid dynamic factor returned from RPC:', dynamicFactorRaw);
+      return NextResponse.json({ error: "Failed to parse dynamic factor" }, { status: 500 });
     }
 
     // Get recent upgrade statistics

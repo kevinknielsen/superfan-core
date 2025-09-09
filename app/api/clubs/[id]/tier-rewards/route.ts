@@ -70,7 +70,16 @@ export async function GET(
       return NextResponse.json({ error: "Failed to get current quarter" }, { status: 500 });
     }
 
-    const quarter = currentQuarter?.[0] || { year: 2024, quarter: 1 };
+    // Helper function to compute current quarter from runtime
+    const computeCurrentQuarter = () => {
+      const now = new Date();
+      return {
+        year: now.getFullYear(),
+        quarter: Math.floor(now.getMonth() / 3) + 1
+      };
+    };
+
+    const quarter = currentQuarter?.[0] || computeCurrentQuarter();
 
     // Get all available tier rewards for this club with club info
     const { data: availableRewards, error: rewardsError } = await supabaseAny

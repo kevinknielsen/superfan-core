@@ -82,6 +82,31 @@ export async function POST(
       );
     }
 
+    // Validate URLs are from allowed origins (prevent open redirect)
+    const allowedOrigins = [
+      process.env.NEXT_PUBLIC_APP_URL,
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://superfan.one',
+      'https://app.superfan.one'
+    ].filter(Boolean);
+
+    const isValidUrl = (url: string) => {
+      try {
+        const urlObj = new URL(url);
+        return allowedOrigins.some(origin => url.startsWith(origin));
+      } catch {
+        return false;
+      }
+    };
+
+    if (!isValidUrl(upgradeData.success_url) || !isValidUrl(upgradeData.cancel_url)) {
+      return NextResponse.json({ 
+        error: "Invalid redirect URLs",
+        message: "Success and cancel URLs must be from allowed origins"
+      }, { status: 400 });
+    }
+
     // Get the reward details
     const { data: reward, error: rewardError } = await supabase
       .from<TierRewardRow>('tier_rewards')
@@ -115,8 +140,16 @@ export async function POST(
       return NextResponse.json({ error: "Reward is not active" }, { status: 400 });
     }
 
-    if (!reward.upgrade_price_cents || reward.upgrade_price_cents <= 0) {
-      return NextResponse.json({ error: "Reward is not available for purchase" }, { status: 400 });
+    // Check pricing availability based on purchase type
+    const relevantPrice = upgradeData.purchase_type === 'direct_unlock' 
+      ? reward.direct_unlock_price_cents || reward.upgrade_price_cents
+      : reward.upgrade_price_cents;
+
+    if (!relevantPrice || relevantPrice <= 0) {
+      return NextResponse.json({ 
+        error: "Reward is not available for purchase",
+        message: `No pricing available for ${upgradeData.purchase_type}` 
+      }, { status: 400 });
     }
 
     // Do not perform app-level sold out check here to avoid races; inventory is enforced atomically at claim time
