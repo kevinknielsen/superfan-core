@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../supabase";
 import Stripe from "stripe";
 
-export const runtime = 'node';
+export const runtime = 'nodejs';
 
 // Type assertion for new tier rewards tables
 const supabaseAny = supabase as any;
