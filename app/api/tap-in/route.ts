@@ -128,6 +128,28 @@ export async function POST(request: NextRequest) {
       club_name: club.name
     };
 
+    // Update QR code usage tracking if this was from a QR scan
+    const qrId = tapInData.metadata?.qr_id;
+    if (qrId && typeof qrId === 'string') {
+      try {
+        const { error: qrUpdateError } = await supabase
+          .from('qr_codes')
+          .update({
+            usage_count: supabase.raw('usage_count + 1'),
+            last_used_at: new Date().toISOString()
+          })
+          .eq('qr_id', qrId);
+        
+        if (qrUpdateError) {
+          console.warn(`[Tap-in API] Failed to update QR usage count for ${qrId}:`, qrUpdateError);
+        } else {
+          console.log(`[Tap-in API] Updated QR usage count for ${qrId}`);
+        }
+      } catch (qrError) {
+        console.warn(`[Tap-in API] Error updating QR usage:`, qrError);
+      }
+    }
+
     console.log(`[Tap-in API] Success: ${tapInResult.points_earned} points awarded to user ${auth.userId} in club ${club.name}`);
     if (tapInResult.status_changed) {
       console.log(`[Tap-in API] Status upgraded: ${tapInResult.previous_status} → ${tapInResult.current_status}`);
