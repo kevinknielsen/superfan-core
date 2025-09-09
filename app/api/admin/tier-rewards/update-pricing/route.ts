@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../auth";
-import { isAdminByDatabase } from "@/lib/admin-utils";
+import { isAdmin } from "@/lib/security.server";
 import { supabase } from "../../../supabase";
 
 // Type assertion for new tier rewards tables

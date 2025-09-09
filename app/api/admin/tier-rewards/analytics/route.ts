@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../auth";
-import { isAdminByDatabase } from "@/lib/admin-utils";
+import { isAdmin } from "@/lib/security.server";
 import { supabase } from "../../../supabase";
 
 // Minimal row typings used in this route
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
   const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
-  if (!skipAdmin && !(await isAdminByDatabase(auth.userId))) {
+  if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
