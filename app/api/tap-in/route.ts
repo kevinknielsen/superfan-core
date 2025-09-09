@@ -163,8 +163,8 @@ export async function POST(request: NextRequest) {
     };
 
     // Update QR code usage tracking if this was from a QR scan
-    const qrId = tapInData.metadata?.qr_id;
-    if (qrId && typeof qrId === 'string') {
+    const qrIdForTracking = tapInData.metadata?.qr_id;
+    if (qrIdForTracking && typeof qrIdForTracking === 'string') {
       try {
         const { error: qrUpdateError } = await supabase
           .from('qr_codes')
@@ -172,12 +172,12 @@ export async function POST(request: NextRequest) {
             usage_count: supabase.raw('usage_count + 1'),
             last_used_at: new Date().toISOString()
           })
-          .eq('qr_id', qrId);
+          .eq('qr_id', qrIdForTracking);
         
         if (qrUpdateError) {
-          console.warn(`[Tap-in API] Failed to update QR usage count for ${qrId}:`, qrUpdateError);
+          console.warn(`[Tap-in API] Failed to update QR usage count for ${qrIdForTracking}:`, qrUpdateError);
         } else {
-          console.log(`[Tap-in API] Updated QR usage count for ${qrId}`);
+          console.log(`[Tap-in API] Updated QR usage count for ${qrIdForTracking}`);
         }
       } catch (qrError) {
         console.warn(`[Tap-in API] Error updating QR usage:`, qrError);
