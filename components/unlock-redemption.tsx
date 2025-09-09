@@ -101,31 +101,52 @@ export default function UnlockRedemption({
         throw new Error('User not authenticated');
       }
 
-      // Load unlocks and redemptions in parallel
-      const [unlocksResponse, redemptionsResponse] = await Promise.all([
-        fetch(`/api/unlocks?club_id=${clubId}`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        }),
-        fetch(`/api/unlocks/redemptions?clubId=${clubId}`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        })
-      ]);
+      // Load tier rewards data using new API
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
 
-      if (unlocksResponse.ok) {
-        const unlocksData = await unlocksResponse.json() as Unlock[];
-        setUnlocks(unlocksData);
-      }
+      if (response.ok) {
+        const tierRewardsData = await response.json();
+        
+        // Convert tier rewards to unlock format for existing UI
+        const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: any) => ({
+          id: reward.id,
+          club_id: clubId,
+          title: reward.title,
+          description: reward.description,
+          type: reward.reward_type,
+          min_status: reward.tier,
+          is_active: reward.current_status === 'available',
+          metadata: {
+            redemption_instructions: reward.metadata.instructions,
+            ...reward.metadata
+          },
+          // Add tier rewards specific fields
+          user_can_claim_free: reward.user_can_claim_free,
+          claim_options: reward.claim_options,
+          tier_boost_price_cents: reward.tier_boost_price_cents,
+          direct_unlock_price_cents: reward.direct_unlock_price_cents,
+          inventory_status: reward.inventory_status
+        }));
+        
+        // Convert claimed rewards to redemption format
+        const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: any) => ({
+          id: claim.id,
+          unlock_id: claim.reward_id,
+          user_id: 'current_user',
+          status: claim.access_status === 'granted' ? 'confirmed' : 'cancelled',
+          metadata: {
+            access_code: claim.access_code
+          },
+          redeemed_at: claim.claimed_at
+        }));
 
-      if (redemptionsResponse.ok) {
-        const redemptionsData = await redemptionsResponse.json() as { redemptions: any[] };
-        setRedemptions(redemptionsData.redemptions || []);
+        setUnlocks(convertedUnlocks);
+        setRedemptions(convertedRedemptions);
       } else {
-        // Handle different error scenarios
-        if (redemptionsResponse.status === 404) {
-          console.warn('Redemptions API not available yet');
-        } else {
-          console.error(`Failed to fetch redemptions: ${redemptionsResponse.status}`);
-        }
+        console.error('Failed to fetch tier rewards:', response.status);
+        setUnlocks([]);
         setRedemptions([]);
       }
     } catch (error) {
@@ -138,6 +159,13 @@ export default function UnlockRedemption({
   };
 
   const isUnlockAvailable = (unlock: Unlock) => {
+    // For tier rewards, check if user can claim free or has upgrade options
+    const tierReward = unlock as any;
+    if (tierReward.user_can_claim_free !== undefined) {
+      return tierReward.user_can_claim_free || (tierReward.claim_options?.length > 0);
+    }
+    
+    // Fallback to original logic for backward compatibility
     const requiredPoints = STATUS_POINTS[unlock.min_status as ClubStatus] ?? 0;
     return userPoints >= requiredPoints;
   };
@@ -156,7 +184,21 @@ export default function UnlockRedemption({
     return progress;
   };
 
+  const formatCurrency = (cents: number | undefined) => {
+    if (!cents) return 'Free';
+    return `$${(cents / 100).toFixed(2)}`;
+  };
+
   const handleRedeem = async (unlock: Unlock) => {
+    // Check if this is a tier reward with upgrade options
+    const tierReward = unlock as any;
+    
+    if (!tierReward.user_can_claim_free && tierReward.claim_options?.length > 0) {
+      // Handle upgrade purchase flow
+      handleUpgradePurchase(tierReward);
+      return;
+    }
+
     if (!isUnlockAvailable(unlock)) {
       toast({
         title: "Unlock Not Available",
@@ -175,20 +217,16 @@ export default function UnlockRedemption({
         throw new Error('User not authenticated');
       }
 
-      const response = await fetch('/api/unlocks/redeem', {
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${unlock.id}/claim`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          unlock_id: unlock.id,
-          club_id: clubId
-        }),
+        }
       });
 
       if (response.ok) {
-        const redemptionData = await response.json() as { redemption: any };
+        const result = await response.json();
         
         // Close current modal
         setSelectedUnlock(null);
@@ -267,6 +305,44 @@ export default function UnlockRedemption({
       </Card>
     );
   }
+
+  const handleUpgradePurchase = async (reward: any) => {
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      // Use tier boost as default upgrade type
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          purchase_type: 'tier_boost',
+          success_url: `${window.location.origin}/dashboard?upgrade_success=true`,
+          cancel_url: `${window.location.origin}/dashboard?upgrade_cancelled=true`
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Redirect to Stripe checkout
+        window.location.href = result.stripe_session_url;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start upgrade purchase');
+      }
+    } catch (error) {
+      toast({
+        title: "Purchase Failed",
+        description: error instanceof Error ? error.message : "Failed to start purchase",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <>
@@ -370,7 +446,9 @@ export default function UnlockRedemption({
                     {isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
                       : isAvailable 
-                        ? 'Redeem Now' 
+                        ? (unlock as any).user_can_claim_free 
+                          ? 'Claim Free'
+                          : `Upgrade for ${formatCurrency((unlock as any).tier_boost_price_cents)}`
                         : 'Locked'
                     }
                   </button>

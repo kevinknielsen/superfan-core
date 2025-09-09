@@ -18,10 +18,28 @@ export async function GET(
   }
 
   try {
+    console.log('[Club Tier Rewards API] Starting request for auth:', auth);
+    
+    // Get the user from our database (support both auth types) - same pattern as existing APIs
+    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    const { data: user, error: userError } = await supabaseAny
+      .from('users')
+      .select('id')
+      .eq(userColumn, auth.userId)
+      .single();
+
+    if (userError || !user) {
+      console.error('[Club Tier Rewards API] User not found:', userError);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const actualUserId = user.id;
+    console.log('[Club Tier Rewards API] Found user UUID:', actualUserId, 'for auth:', auth);
+
     // Get user's tier qualification for this club
     const { data: qualification, error: qualificationError } = await supabaseAny
       .rpc('check_tier_qualification', {
-        p_user_id: auth.userId,
+        p_user_id: actualUserId,
         p_club_id: clubId,
         p_target_tier: 'superfan', // Check highest tier to get all info
         p_rolling_window_days: 60
@@ -97,7 +115,7 @@ export async function GET(
         access_code,
         tier_rewards!inner(title)
       `)
-      .eq('user_id', auth.userId)
+      .eq('user_id', actualUserId)
       .eq('club_id', clubId);
 
     if (claimsError) {

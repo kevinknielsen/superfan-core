@@ -14,13 +14,13 @@ const createTierRewardSchema = type({
   description: "string",
   tier: "'cadet'|'resident'|'headliner'|'superfan'",
   reward_type: "'access'|'digital_product'|'physical_product'|'experience'",
-  artist_cost_estimate_cents: "number>=0<=100000", // 0 to $1000
-  safety_factor: "number>=1.1<=2.0?", // Optional, defaults to 1.25
+  artist_cost_estimate_cents: "number", // Will validate range manually
+  safety_factor: "number?", // Optional, defaults to 1.25
   availability_type: "'permanent'|'seasonal'|'limited_time'?",
   available_start: "string?", // ISO date
   available_end: "string?", // ISO date
-  inventory_limit: "number>0?",
-  rolling_window_days: "number>0?", // Defaults to 60
+  inventory_limit: "number?",
+  rolling_window_days: "number?", // Defaults to 60
   metadata: {
     instructions: "string",
     redemption_url: "string?",
@@ -38,13 +38,13 @@ const updateTierRewardSchema = type({
   description: "string",
   tier: "'cadet'|'resident'|'headliner'|'superfan'",
   reward_type: "'access'|'digital_product'|'physical_product'|'experience'",
-  artist_cost_estimate_cents: "number>=0<=100000",
-  safety_factor: "number>=1.1<=2.0?",
+  artist_cost_estimate_cents: "number",
+  safety_factor: "number?",
   availability_type: "'permanent'|'seasonal'|'limited_time'?",
   available_start: "string?",
   available_end: "string?",
-  inventory_limit: "number>0?",
-  rolling_window_days: "number>0?",
+  inventory_limit: "number?",
+  rolling_window_days: "number?",
   metadata: {
     instructions: "string",
     redemption_url: "string?",
@@ -73,6 +73,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    console.log('[Admin Tier Rewards API] Starting GET request for user:', auth.userId);
+
     // Get query parameters for filtering
     const { searchParams } = new URL(request.url);
     const clubId = searchParams.get('club_id');
@@ -83,10 +85,34 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // Use the analytics view for comprehensive stats
+    console.log('[Admin Tier Rewards API] Query parameters:', { clubId, tier, rewardType, availabilityType, isActive, limit, offset });
+
+    // First, test if the table exists with a simple query
+    console.log('[Admin Tier Rewards API] Testing tier_rewards table access...');
+    const { data: testData, error: testError } = await supabaseAny
+      .from('tier_rewards')
+      .select('id')
+      .limit(1);
+
+    if (testError) {
+      console.error('[Admin Tier Rewards API] tier_rewards table test failed:', testError);
+      return NextResponse.json({ 
+        error: "Database table access failed", 
+        details: testError.message,
+        code: testError.code,
+        hint: "The tier_rewards table may not exist. Please run the database migrations first."
+      }, { status: 500 });
+    }
+
+    console.log('[Admin Tier Rewards API] tier_rewards table accessible, proceeding with full query...');
+
+    // Use the base table for now, we'll add analytics later
     let query = supabaseAny
-      .from('v_tier_rewards_with_stats')
-      .select('*');
+      .from('tier_rewards')
+      .select(`
+        *,
+        clubs!inner(name)
+      `);
 
     // Apply filters
     if (clubId) query = query.eq('club_id', clubId);
@@ -101,11 +127,24 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error('Error fetching tier rewards:', error);
-      return NextResponse.json({ error: "Failed to fetch tier rewards" }, { status: 500 });
+      console.error('[Admin Tier Rewards API] Error fetching tier rewards:', error);
+      return NextResponse.json({ 
+        error: "Failed to fetch tier rewards", 
+        details: error.message,
+        code: error.code 
+      }, { status: 500 });
     }
 
-    return NextResponse.json(tierRewards || []);
+    console.log('[Admin Tier Rewards API] Successfully fetched', tierRewards?.length || 0, 'tier rewards');
+
+    // Format response with club names (similar to existing unlocks API)
+    const formattedRewards = (tierRewards || []).map((reward: any) => ({
+      ...reward,
+      club_name: reward.clubs?.name,
+      clubs: undefined // Remove the nested object
+    }));
+
+    return NextResponse.json(formattedRewards);
 
   } catch (error) {
     console.error("[Admin Tier Rewards API] Unexpected error:", error);
@@ -142,6 +181,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Manual validation for ranges
+    if (tierRewardData.artist_cost_estimate_cents < 0 || tierRewardData.artist_cost_estimate_cents > 100000) {
+      return NextResponse.json(
+        { error: "artist_cost_estimate_cents must be between 0 and 100000 cents ($0-$1000)" },
+        { status: 400 }
+      );
+    }
+
+    if (tierRewardData.safety_factor && (tierRewardData.safety_factor < 1.1 || tierRewardData.safety_factor > 2.0)) {
+      return NextResponse.json(
+        { error: "safety_factor must be between 1.1 and 2.0" },
+        { status: 400 }
+      );
+    }
+
+    if (tierRewardData.inventory_limit && tierRewardData.inventory_limit <= 0) {
+      return NextResponse.json(
+        { error: "inventory_limit must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    if (tierRewardData.rolling_window_days && tierRewardData.rolling_window_days <= 0) {
+      return NextResponse.json(
+        { error: "rolling_window_days must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
     // Apply default values
     const finalData = {
       ...tierRewardData,
@@ -168,10 +236,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the tier reward (upgrade_price_cents will be auto-calculated by trigger)
+    console.log('[Admin Tier Rewards API] Creating reward with data:', finalData);
+    
     const { data: newReward, error } = await supabaseAny
       .from('tier_rewards')
       .insert(finalData)
-      .select()
+      .select(`
+        *,
+        clubs!inner(name)
+      `)
       .single();
 
     if (error) {
@@ -192,7 +265,15 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Admin Tier Rewards API] Created tier reward: ${newReward.id} for club: ${newReward.club_id}`);
-    return NextResponse.json(newReward, { status: 201 });
+    
+    // Format response with club name
+    const formattedReward = {
+      ...newReward,
+      club_name: newReward.clubs?.name,
+      clubs: undefined
+    };
+    
+    return NextResponse.json(formattedReward, { status: 201 });
 
   } catch (error) {
     console.error("[Admin Tier Rewards API] Unexpected error:", error);

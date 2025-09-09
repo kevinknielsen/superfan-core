@@ -18,6 +18,21 @@ export async function POST(
   }
 
   try {
+    // Get the user from our database (support both auth types) - same pattern as existing APIs
+    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    const { data: user, error: userError } = await supabaseAny
+      .from('users')
+      .select('id')
+      .eq(userColumn, auth.userId)
+      .single();
+
+    if (userError || !user) {
+      console.error('[Club Tier Rewards Claim API] User not found:', userError);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const actualUserId = user.id;
+
     // Get current quarter for tracking
     const { data: currentQuarter, error: quarterError } = await supabaseAny
       .rpc('get_current_quarter');
@@ -35,7 +50,7 @@ export async function POST(
     // Use the atomic free claim function to handle all business logic and concurrency
     const { data: claimResult, error: claimError } = await supabaseAny
       .rpc('atomic_free_claim', {
-        p_user_id: auth.userId,
+        p_user_id: actualUserId,
         p_reward_id: rewardId,
         p_club_id: clubId,
         p_quarter_year: quarter.year,

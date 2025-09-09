@@ -32,6 +32,21 @@ export async function POST(
   }
 
   try {
+    // Get the user from our database (support both auth types) - same pattern as existing APIs
+    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    const { data: user, error: userError } = await supabaseAny
+      .from('users')
+      .select('id')
+      .eq(userColumn, auth.userId)
+      .single();
+
+    if (userError || !user) {
+      console.error('[Tier Rewards Upgrade API] User not found:', userError);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const actualUserId = user.id;
+
     const body = await request.json();
     const upgradeData = upgradeRequestSchema(body);
 
@@ -89,7 +104,7 @@ export async function POST(
     const { data: existingClaim, error: claimError } = await supabaseAny
       .from('reward_claims')
       .select('id')
-      .eq('user_id', auth.userId)
+      .eq('user_id', actualUserId)
       .eq('reward_id', rewardId)
       .single();
 
@@ -105,7 +120,7 @@ export async function POST(
     // Get user's current tier qualification
     const { data: qualification, error: qualificationError } = await supabaseAny
       .rpc('check_tier_qualification', {
-        p_user_id: auth.userId,
+        p_user_id: actualUserId,
         p_club_id: clubId,
         p_target_tier: reward.tier,
         p_rolling_window_days: 60
@@ -140,7 +155,7 @@ export async function POST(
       const { data: existingBoost, error: boostError } = await supabaseAny
         .from('temporary_tier_boosts')
         .select('id')
-        .eq('user_id', auth.userId)
+        .eq('user_id', actualUserId)
         .eq('club_id', clubId)
         .eq('quarter_year', quarter.year)
         .eq('quarter_number', quarter.quarter)
@@ -201,10 +216,10 @@ export async function POST(
       }],
       success_url: upgradeData.success_url,
       cancel_url: upgradeData.cancel_url,
-      customer_email: auth.userId, // Use user ID as customer reference
+      customer_email: actualUserId, // Use user UUID as customer reference
       metadata: {
         type: 'tier_upgrade',
-        user_id: auth.userId,
+        user_id: actualUserId,
         reward_id: rewardId,
         club_id: clubId,
         user_tier: userQualification.earned_tier,
@@ -220,7 +235,7 @@ export async function POST(
     const { data: transaction, error: transactionError } = await supabaseAny
       .from('upgrade_transactions')
       .insert({
-        user_id: auth.userId,
+        user_id: actualUserId,
         club_id: clubId,
         reward_id: rewardId,
         stripe_payment_intent_id: session.payment_intent as string,
@@ -246,7 +261,7 @@ export async function POST(
       return NextResponse.json({ error: "Failed to create transaction record" }, { status: 500 });
     }
 
-    console.log(`[Tier Rewards Upgrade API] Created ${upgradeData.purchase_type} checkout for user ${auth.userId}, reward ${rewardId}`);
+    console.log(`[Tier Rewards Upgrade API] Created ${upgradeData.purchase_type} checkout for user ${actualUserId}, reward ${rewardId}`);
 
     // Prepare boost details for tier_boost purchases
     let boostDetails = undefined;

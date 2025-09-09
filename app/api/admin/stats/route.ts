@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
-import { isAdmin } from "@/lib/security.server";
+import { isAdminByDatabase } from "@/lib/admin-utils";
 import { supabase } from "../../supabase";
 
 // Type assertion needed: database types don't include new club tables yet
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   // Admin check with production safety
   const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
-  if (!skipAdmin && !isAdmin(auth.userId)) {
+  if (!skipAdmin && !(await isAdminByDatabase(auth.userId))) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 

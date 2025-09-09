@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../auth";
-import { isAdmin } from "@/lib/security.server";
+import { isAdminByDatabase } from "@/lib/admin-utils";
 import { supabase } from "../../../supabase";
 
 // Type assertion for new tier rewards tables
@@ -24,15 +24,18 @@ export async function GET(
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
   const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
-  if (!skipAdmin && !isAdmin(auth.userId)) {
+  if (!skipAdmin && !(await isAdminByDatabase(auth.userId))) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
   try {
-    // Get tier reward with comprehensive stats
+    // Get tier reward with club info
     const { data: tierReward, error } = await supabaseAny
-      .from('v_tier_rewards_with_stats')
-      .select('*')
+      .from('tier_rewards')
+      .select(`
+        *,
+        clubs!inner(name)
+      `)
       .eq('id', id)
       .single();
 
@@ -44,7 +47,14 @@ export async function GET(
       return NextResponse.json({ error: "Failed to fetch tier reward" }, { status: 500 });
     }
 
-    return NextResponse.json(tierReward);
+    // Format response with club name
+    const formattedReward = {
+      ...tierReward,
+      club_name: tierReward.clubs?.name,
+      clubs: undefined
+    };
+
+    return NextResponse.json(formattedReward);
 
   } catch (error) {
     console.error("[Admin Tier Rewards API] Unexpected error:", error);
@@ -70,7 +80,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
   }
   const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
-  if (!skipAdmin && !isAdmin(auth.userId)) {
+  if (!skipAdmin && !(await isAdminByDatabase(auth.userId))) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
