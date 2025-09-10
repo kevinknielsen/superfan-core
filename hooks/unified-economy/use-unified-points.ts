@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { getAccessToken } from '@privy-io/react-auth';
+import { useErrorHandler, createMutationErrorHandler } from '@/lib/frontend-error-handling';
 
 export interface PointsBreakdown {
   wallet: {
@@ -58,6 +59,7 @@ export interface TransferPointsRequest {
 export function useUnifiedPoints(clubId: string) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { handlePointsError } = useErrorHandler();
 
   // Fetch points breakdown
   const {
@@ -124,8 +126,8 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const error = await response.json() as any;
-        throw new Error(error.error || 'Failed to spend points');
+        const errorData = await response.json() as any;
+        throw errorData; // Throw the full error response for proper handling
       }
 
       return response.json() as any;
@@ -137,12 +139,8 @@ export function useUnifiedPoints(clubId: string) {
         description: `Successfully spent ${data.transaction?.points_spent || 'some'} points`,
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Spending Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: (error: any) => {
+      handlePointsError(error);
     },
   });
 
@@ -160,8 +158,8 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const error = await response.json() as any;
-        throw new Error(error.error || 'Failed to transfer points');
+        const errorData = await response.json() as any;
+        throw errorData; // Throw the full error response for proper handling
       }
 
       return response.json() as any;
@@ -173,12 +171,8 @@ export function useUnifiedPoints(clubId: string) {
         description: `Sent ${data.transfer?.points_transferred || 'some'} points to ${data.transfer?.recipient_email || 'recipient'}`,
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Transfer Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: (error: any) => {
+      handlePointsError(error);
     },
   });
 

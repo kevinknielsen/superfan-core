@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { computeStatus } from '@/lib/status';
+import { 
+  createStandardError, 
+  createErrorResponse, 
+  handleApiError 
+} from '@/lib/error-handling';
+import { invalidatePointsCache, getCachedUser } from '@/lib/query-cache';
 
 const SpendPointsSchema = z.object({
   clubId: z.string().uuid(),
@@ -18,10 +24,7 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const auth = await verifyUnifiedAuth(request);
     if (!auth) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return createErrorResponse(createStandardError('UNAUTHORIZED'));
     }
 
     const body = await request.json();
@@ -31,19 +34,10 @@ export async function POST(request: NextRequest) {
     // Normalize description: trim and treat empty/whitespace as undefined
     const description = parsed.description?.trim() || 'Point spending';
 
-    // Get user's internal ID (handle both Privy and Farcaster users)
-    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq(userColumn, auth.userId)
-      .single();
-
+    // Get user's internal ID with caching
+    const { data: user, error: userError } = await getCachedUser(supabase, auth.userId);
     if (userError || !user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+      return createErrorResponse(createStandardError('USER_NOT_FOUND', userError));
     }
 
     // Get user's point wallet basic data
@@ -55,10 +49,19 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (walletError || !wallet) {
-      return NextResponse.json(
-        { error: 'Point wallet not found' },
-        { status: 404 }
-      );
+      // Check if user is a member of the club
+      const { data: membership } = await supabase
+        .from('club_memberships')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('club_id', clubId)
+        .single();
+      
+      if (!membership) {
+        return createErrorResponse(createStandardError('NOT_CLUB_MEMBER'));
+      }
+      
+      return createErrorResponse(createStandardError('WALLET_NOT_FOUND', walletError));
     }
 
     // Derive current status from status points (earned - escrow) via view
@@ -86,23 +89,28 @@ export async function POST(request: NextRequest) {
       });
 
     if (spendError) {
-      console.error('Error calling spend_points_unified:', spendError);
-      return NextResponse.json(
-        { error: 'Failed to process spending' },
-        { status: 500 }
-      );
+      return createErrorResponse(createStandardError('DATABASE_ERROR', spendError));
     }
 
     // Check if spending was successful
     if (!spendResult?.success) {
-      return NextResponse.json(
-        { 
-          error: spendResult?.error || 'Spending failed',
-          details: spendResult
-        },
-        { status: 400 }
-      );
+      const errorMessage = spendResult?.error || 'Spending failed';
+      
+      // Handle specific business logic errors
+      if (errorMessage.includes('Insufficient points')) {
+        if (errorMessage.includes('status protection')) {
+          return createErrorResponse(createStandardError('INSUFFICIENT_POINTS_STATUS_PROTECTION', spendResult));
+        } else {
+          return createErrorResponse(createStandardError('INSUFFICIENT_POINTS', spendResult));
+        }
+      }
+      
+      // Generic business logic error
+      return createErrorResponse(createStandardError('BUSINESS_LOGIC', spendResult, errorMessage));
     }
+
+    // Invalidate cached points data after successful spending
+    invalidatePointsCache(user.id, clubId);
 
     // Return success response with atomically handled transaction
     return NextResponse.json({
@@ -122,19 +130,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Points spending error:', error);
-    
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: 'Failed to spend points' },
-      { status: 500 }
-    );
+    return handleApiError(error, 'points/spend');
   }
 }
 
