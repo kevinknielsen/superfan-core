@@ -204,13 +204,6 @@ export default function UnlockRedemption({
   const formatCurrencyOrFree = (cents?: number) =>
     cents ? formatCurrency(cents) : 'Free';
 
-  const getCurrentQuarter = () => {
-    const now = new Date();
-    return {
-      year: now.getFullYear(),
-      quarter: Math.floor(now.getMonth() / 3) + 1
-    };
-  };
 
   const handleRedeem = async (unlock: Unlock) => {
     // Check if this is a tier reward with upgrade options

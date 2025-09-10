@@ -265,7 +265,7 @@ export async function POST(
               purchase_type: upgradeData.purchase_type
             }
           },
-          unit_amount: reward.upgrade_price_cents
+          unit_amount: relevantPrice
         },
         quantity: 1
       }],
@@ -296,7 +296,7 @@ export async function POST(
         reward_id: rewardId,
         stripe_payment_intent_id: null, // Will be updated by webhook when payment intent is created
         stripe_session_id: session.id,
-        amount_cents: reward.upgrade_price_cents,
+        amount_cents: relevantPrice,
         purchase_type: upgradeData.purchase_type,
         user_tier_at_purchase: userQualification.earned_tier,
         user_points_at_purchase: userQualification.current_points,
@@ -336,7 +336,7 @@ export async function POST(
     return NextResponse.json({
       stripe_session_id: session.id,
       stripe_session_url: session.url,
-      upgrade_amount_cents: reward.upgrade_price_cents,
+      upgrade_amount_cents: relevantPrice,
       purchase_type: upgradeData.purchase_type,
       boost_details: boostDetails,
       transaction_id: transaction.id

@@ -10,31 +10,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Restrict to non-production and admin-only
-  if (process.env.NODE_ENV === 'production') {
-    // Allow bypass only with explicit environment variable
-    if (process.env.MANUAL_COMPLETE_UPGRADE_BYPASS !== 'true') {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
+  // Admin check - bypass only allowed in non-production
+  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
+    console.error('[Manual Complete Upgrade API] SKIP_ADMIN_CHECKS must not be enabled in production');
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  if (!skipAdmin && !isAdmin(auth.userId)) {
+    return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
-  // Require admin access
-  if (!isAdmin(auth.userId)) {
-    return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
+  // Restrict to non-production environments
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   // Create service client to bypass RLS
   const supabase = createServiceClient();
-  const supabaseAny = supabase as any;
 
   try {
-    const body = await request.json();
-    const { session_id } = body;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const { session_id } = body as { session_id?: string };
 
-    // Validate session_id is present and is a string
-    if (!session_id || typeof session_id !== 'string') {
+    // Validate session_id shape
+    if (typeof session_id !== 'string' || session_id.length === 0 || !session_id.startsWith('cs_')) {
       return NextResponse.json({ 
-        error: "session_id is required and must be a string" 
+        error: "session_id is required and must be a Stripe Checkout session id (cs_...)" 
       }, { status: 400 });
     }
 
@@ -50,7 +54,7 @@ export async function POST(request: NextRequest) {
     console.log('[Manual Complete] Processing session:', session_id);
 
     // Find the transaction by session ID
-    const { data: transaction, error: transactionError } = await supabaseAny
+    const { data: transaction, error: transactionError } = await supabase
       .from('upgrade_transactions')
       .select('*')
       .eq('stripe_session_id', session_id)
@@ -92,23 +96,20 @@ export async function POST(request: NextRequest) {
     console.log('[Manual Complete] Simulating successful payment with intent:', fakePaymentIntentId);
 
     // Use the session-based processing function
-    const { error: processError } = await supabaseAny.rpc('process_successful_upgrade_by_session', {
+    const { error: processError } = await (supabase as any).rpc('process_successful_upgrade_by_session', {
       p_session_id: session_id,
       p_payment_intent_id: fakePaymentIntentId
     });
 
     if (processError) {
       console.error('[Manual Complete] Error processing upgrade:', processError);
-      return NextResponse.json({ 
-        error: "Failed to process upgrade",
-        details: processError.message 
-      }, { status: 500 });
+      return NextResponse.json({ error: "Failed to process upgrade" }, { status: 500 });
     }
 
     // Get the updated transaction to return
-    const { data: updatedTransaction, error: fetchError } = await supabaseAny
+    const { data: updatedTransaction, error: fetchError } = await supabase
       .from('upgrade_transactions')
-      .select('*')
+      .select('id,user_id,club_id,reward_id,status,stripe_session_id,amount_cents,purchase_type,updated_at,created_at')
       .eq('stripe_session_id', session_id)
       .single();
 
@@ -131,9 +132,6 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error("[Manual Complete] Unexpected error:", error);
-    return NextResponse.json({ 
-      error: "Internal server error",
-      message: error.message 
-    }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

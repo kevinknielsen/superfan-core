@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('end_date');
     const clubId = searchParams.get('club_id');
 
-    // Validate date parameters if provided
+    // Normalize and validate date parameters if provided
+    let normalizedStartDate: string | null = null;
+    let normalizedEndDate: string | null = null;
+    
     if (startDate !== null || endDate !== null) {
       // Check that both dates are provided and non-empty
       if (!startDate || !endDate || startDate.trim() === '' || endDate.trim() === '') {
@@ -55,9 +58,34 @@ export async function GET(request: NextRequest) {
         }, { status: 400 });
       }
 
-      // Parse dates and validate format
-      const startDateObj = new Date(startDate);
-      const endDateObj = new Date(endDate);
+      // Detect date-only format (YYYY-MM-DD without time component)
+      const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+      const isStartDateOnly = dateOnlyPattern.test(startDate) || !startDate.includes('T');
+      const isEndDateOnly = dateOnlyPattern.test(endDate) || !endDate.includes('T');
+
+      // Parse and normalize dates to UTC
+      let startDateObj: Date;
+      let endDateObj: Date;
+
+      if (isStartDateOnly) {
+        // Parse as UTC midnight
+        startDateObj = new Date(startDate + 'T00:00:00.000Z');
+      } else {
+        // Parse datetime to UTC
+        startDateObj = new Date(startDate);
+      }
+
+      if (isEndDateOnly) {
+        // Parse as UTC midnight of the next day for inclusive end date
+        const endDateParts = endDate.split('-');
+        const endYear = parseInt(endDateParts[0]);
+        const endMonth = parseInt(endDateParts[1]) - 1; // Month is 0-indexed
+        const endDay = parseInt(endDateParts[2]);
+        endDateObj = new Date(Date.UTC(endYear, endMonth, endDay + 1, 0, 0, 0, 0));
+      } else {
+        // Parse datetime to UTC
+        endDateObj = new Date(endDate);
+      }
       
       if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
         return NextResponse.json({ 
@@ -71,6 +99,23 @@ export async function GET(request: NextRequest) {
           error: "start_date must be less than or equal to end_date" 
         }, { status: 400 });
       }
+
+      normalizedStartDate = startDateObj.toISOString();
+      if (isEndDateOnly) {
+        // For date-only end dates, use half-open interval [start, end)
+        normalizedEndDate = endDateObj.toISOString();
+      } else {
+        // For datetime end dates, use inclusive interval [start, end]
+        normalizedEndDate = endDateObj.toISOString();
+      }
+    }
+
+    // Fail-fast guard for Supabase environment variables
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('[Admin Tier Rewards Analytics API] Missing required Supabase environment variables');
+      return NextResponse.json({ 
+        error: "Server configuration error - missing Supabase credentials" 
+      }, { status: 500 });
     }
 
     // Create service client to bypass RLS
@@ -110,12 +155,18 @@ export async function GET(request: NextRequest) {
       claimsQuery = claimsQuery.eq('tier_rewards.club_id', clubId);
     }
 
-    if (startDate) {
-      claimsQuery = claimsQuery.gte('claimed_at', startDate);
+    if (normalizedStartDate) {
+      claimsQuery = claimsQuery.gte('claimed_at', normalizedStartDate);
     }
 
-    if (endDate) {
-      claimsQuery = claimsQuery.lte('claimed_at', endDate);
+    if (normalizedEndDate) {
+      // For date-only end dates, use lt (half-open interval); for datetime end dates, use lte (inclusive)
+      const isEndDateOnly = endDate && (/^\d{4}-\d{2}-\d{2}$/.test(endDate) || !endDate.includes('T'));
+      if (isEndDateOnly) {
+        claimsQuery = claimsQuery.lt('claimed_at', normalizedEndDate);
+      } else {
+        claimsQuery = claimsQuery.lte('claimed_at', normalizedEndDate);
+      }
     }
 
     const { data: claims, error: claimsError } = await claimsQuery;
@@ -156,12 +207,11 @@ export async function GET(request: NextRequest) {
     // Analytics by tier
     const byTier = ['cadet', 'resident', 'headliner', 'superfan'].map(tier => {
       const tierClaims = claims?.filter(claim => claim.tier_rewards?.tier === tier) || [];
-      const claimedRewardIds = claimedRewardIdsByTier.get(tier) || new Set();
-      const tierRewards = allRewards?.filter(reward => claimedRewardIds.has(reward.id)) || [];
+      const claimedRewardIds = claimedRewardIdsByTier.get(tier) || new Set<string>();
 
       return {
         tier,
-        reward_count: tierRewards.length,
+        reward_count: claimedRewardIds.size,
         total_claims: tierClaims.length,
         upgrade_revenue_cents: tierClaims.reduce((sum, claim) => sum + (claim.upgrade_amount_cents || 0), 0),
         conversion_rate: tierClaims.length > 0 ? 
@@ -172,8 +222,7 @@ export async function GET(request: NextRequest) {
     // Analytics by reward type
     const byRewardType = ['access', 'digital_product', 'physical_product', 'experience'].map(rewardType => {
       const typeClaims = claims?.filter(claim => claim.tier_rewards?.reward_type === rewardType) || [];
-      const claimedRewardIds = claimedRewardIdsByType.get(rewardType) || new Set();
-      const typeRewards = allRewards?.filter(reward => claimedRewardIds.has(reward.id)) || [];
+      const claimedRewardIds = claimedRewardIdsByType.get(rewardType) || new Set<string>();
 
       const totalRevenue = typeClaims.reduce((sum, claim) => sum + (claim.upgrade_amount_cents || 0), 0);
       const marginSamples = typeClaims
@@ -191,7 +240,7 @@ export async function GET(request: NextRequest) {
 
       return {
         reward_type: rewardType,
-        reward_count: typeRewards.length,
+        reward_count: claimedRewardIds.size,
         total_claims: typeClaims.length,
         upgrade_revenue_cents: totalRevenue,
         average_fulfillment_cost_cents: 0,
@@ -250,6 +299,7 @@ export async function GET(request: NextRequest) {
 
     if (!newRewardsError && newRewards) {
       newRewards.forEach(reward => {
+        if (!reward.created_at) return;
         const date = reward.created_at.split('T')[0];
         if (activityByDate.has(date)) {
           activityByDate.get(date).new_rewards_created += 1;

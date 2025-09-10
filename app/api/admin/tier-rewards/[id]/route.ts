@@ -60,9 +60,9 @@ export async function GET(
       return NextResponse.json({ error: "Failed to fetch tier reward" }, { status: 500 });
     }
 
-    // Format response with club name
+    // Format response with club name (handle null club from RLS filtering)
     const { clubs, ...rest } = tierReward;
-    const formattedReward = { ...rest, club_name: clubs?.name };
+    const formattedReward = { ...rest, club_name: clubs?.name || null };
 
     return NextResponse.json(formattedReward);
 
