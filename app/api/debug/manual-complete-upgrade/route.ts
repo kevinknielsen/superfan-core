@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
-    console.log('[Manual Complete] Processing session:', session_id);
+    console.log('[Manual Complete] Processing session:', session_id, 'userId:', userId);
 
     // Find the transaction by session ID
     const { data: transaction, error: transactionError } = await supabase
@@ -84,9 +84,21 @@ export async function POST(request: NextRequest) {
     }
 
     if (transaction.status === 'completed') {
-      return NextResponse.json({ 
+      const safe = {
+        id: transaction.id,
+        user_id: transaction.user_id,
+        club_id: transaction.club_id,
+        reward_id: transaction.reward_id,
+        status: transaction.status,
+        stripe_session_id: transaction.stripe_session_id,
+        amount_cents: transaction.amount_cents,
+        purchase_type: transaction.purchase_type,
+        updated_at: transaction.updated_at,
+        created_at: transaction.created_at,
+      };
+      return NextResponse.json({
         message: "Transaction already completed",
-        transaction: transaction 
+        transaction: safe
       });
     }
 
@@ -96,7 +108,7 @@ export async function POST(request: NextRequest) {
     console.log('[Manual Complete] Simulating successful payment with intent:', fakePaymentIntentId);
 
     // Use the session-based processing function
-    const { error: processError } = await (supabase as any).rpc('process_successful_upgrade_by_session', {
+    const { error: processError } = await supabase.rpc('process_successful_upgrade_by_session', {
       p_session_id: session_id,
       p_payment_intent_id: fakePaymentIntentId
     });
@@ -121,7 +133,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log('[Manual Complete] Successfully completed upgrade for session:', session_id);
+    console.log('[Manual Complete] Successfully completed upgrade for session:', session_id, 'userId:', userId);
 
     return NextResponse.json({
       success: true,

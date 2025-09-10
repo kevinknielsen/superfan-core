@@ -598,7 +598,11 @@ export function getWeekStart(date: Date = new Date()): string {
   const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // If Sunday, go back 6 days
   monday.setDate(monday.getDate() + daysToMonday);
   monday.setHours(0, 0, 0, 0);
-  return monday.toISOString().split('T')[0]; // Return YYYY-MM-DD
+  return new Date(
+    Date.UTC(monday.getFullYear(), monday.getMonth(), monday.getDate())
+  )
+    .toISOString()
+    .split('T')[0]; // Return YYYY-MM-DD
 }
 
 /**

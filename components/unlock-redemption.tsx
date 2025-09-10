@@ -107,6 +107,7 @@ export default function UnlockRedemption({
 
   const loadData = async () => {
     try {
+      setIsLoading(true);
       // Get auth token
       const accessToken = await getAccessToken();
       if (!accessToken) {

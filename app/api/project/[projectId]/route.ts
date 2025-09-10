@@ -9,7 +9,7 @@ const updateProjectSchema = type({
   title: "string?",
   artist_name: "string?",
   description: "string?",
-  status: "string?",
+  status: "'draft'|'pending'|'published'|'archived'?",
   creatorwalletaddress: "string?",
   cover_art_url: "(string | null)?",
   track_demo_url: "(string | null)?",
@@ -125,9 +125,10 @@ export async function PATCH(
     presale_id = data?.presale_id;
   }
 
+  const updatePayload = presale_id === undefined ? projectUpdate : { ...projectUpdate, presale_id };
   const { data, error } = await supabase
     .from("projects")
-    .update({ ...projectUpdate, presale_id })
+    .update(updatePayload)
     .eq("id", projectId)
     .eq("creator_id", jwt.userId)
     .select()

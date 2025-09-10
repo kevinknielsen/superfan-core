@@ -137,6 +137,8 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/tap-in', {
         method: 'POST',
         headers: {
@@ -144,7 +146,9 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
           ...authHeaders,
         },
         body: JSON.stringify(tapInPayload),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorMessage = 'Failed to process tap-in';

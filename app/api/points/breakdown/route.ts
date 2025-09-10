@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { STATUS_THRESHOLDS, computeStatus, getNextStatus as computeNext } from '@/lib/points';
+import { STATUS_THRESHOLDS, computeStatus, getNextStatus as computeNext, calculateStatusProgress, calculateSpendingPower } from '@/lib/points';
 
 export async function GET(request: NextRequest) {
   try {
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
           next_status: next,
           next_threshold: nextThreshold,
           progress_to_next: nextThreshold ? 0 : 100,
-          points_to_next: nextThreshold ? nextThreshold : 0
+          points_to_next: nextThreshold ? nextThreshold - 0 : 0
         },
         spending_power: {
           total_spendable: 0,
@@ -133,32 +133,23 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching recent transactions:', recentError);
     }
 
-    // Compute status and thresholds from status_pts
+    // Compute status and thresholds from status_pts using shared helpers
     const statusPoints = walletView.status_pts || 0; // Points that count toward status
-    const current = computeStatus(statusPoints);
-    const next = computeNext(current);
-    const currentThreshold = STATUS_THRESHOLDS[current];
-    const nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+    const { current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage } = 
+      calculateStatusProgress(statusPoints);
 
-    // Calculate spending power breakdown
+    // Calculate spending power breakdown using shared helper
     const earned = walletView.earned_pts || 0;
     const escrowed = walletView.escrowed_pts || 0;
     const purchased = walletView.purchased_pts || 0;
     
-    // Clamp lockedForStatus to not exceed earned
-    const lockedForStatus = Math.min(currentThreshold, earned);
-    const earnedAvailable = Math.max(0, earned - lockedForStatus - escrowed);
-    
-    // Total spendable should only include actually spendable components
-    const totalSpendable = purchased + earnedAvailable;
-    
-    const spendingPower = {
-      total_spendable: totalSpendable,
-      purchased_available: purchased,
-      earned_available: earnedAvailable,
-      earned_locked_for_status: lockedForStatus,
-      escrowed: escrowed
-    };
+    const spendingPowerData = calculateSpendingPower(
+      earned,
+      purchased,
+      escrowed,
+      current,
+      true // preserveStatus = true for status protection
+    );
 
     // Simplified transaction breakdown (empty for performance)
     const processedBreakdown: Record<string, number> = {};
@@ -180,12 +171,16 @@ export async function GET(request: NextRequest) {
         current_threshold: currentThreshold,
         next_status: next,
         next_threshold: nextThreshold,
-        progress_to_next: nextThreshold
-          ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
-          : 100,
-        points_to_next: nextThreshold ? Math.max(0, nextThreshold - statusPoints) : 0
+        progress_to_next: progressPercentage,
+        points_to_next: pointsToNext
       },
-      spending_power: spendingPower,
+      spending_power: {
+        total_spendable: spendingPowerData.totalSpendable,
+        purchased_available: spendingPowerData.purchasedAvailable,
+        earned_available: spendingPowerData.earnedAvailable,
+        earned_locked_for_status: spendingPowerData.earnedLockedForStatus,
+        escrowed: spendingPowerData.escrowed,
+      },
       transaction_breakdown: processedBreakdown,
       recent_activity: recentTransactions || [],
       club_membership: {
