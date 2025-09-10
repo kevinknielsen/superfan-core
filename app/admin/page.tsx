@@ -39,7 +39,7 @@ import ClubManagement from "@/components/admin/club-management";
 import MemberManagement from "@/components/admin/member-management";
 import QRManagement from "@/components/admin/qr-management";
 import AnalyticsDashboard from "@/components/admin/analytics-dashboard";
-import UnlockManagement from "@/components/admin/unlock-management";
+import TierRewardManagement from "@/components/admin/tier-reward-management";
 
 interface AdminStats {
   totalClubs: number;
@@ -130,15 +130,15 @@ export default function AdminDashboard() {
       component: QRManagement
     },
     {
-      id: 'unlocks',
-      title: 'Benefits Management',
-      description: 'Create and manage member benefits',
+      id: 'tier-rewards',
+      title: 'Tier Rewards',
+      description: 'Create and manage tier-based rewards with upgrade options',
       icon: Gift,
       count: adminStats.totalUnlocks,
-      trend: 'down',
-      trendValue: '-3%',
+      trend: 'up',
+      trendValue: '+15%',
       color: 'bg-orange-500',
-      component: UnlockManagement
+      component: TierRewardManagement
     },
   ];
 
@@ -251,7 +251,7 @@ export default function AdminDashboard() {
       title: 'Add A Benefit',
       icon: Gift,
       color: 'bg-green-500',
-      action: () => setSelectedView('unlocks')
+      action: () => setSelectedView('tier-rewards')
     },
     {
       id: 'generate-qr',

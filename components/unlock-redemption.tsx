@@ -16,7 +16,8 @@ import {
   ShoppingBag,
   Award,
   Globe,
-  ExternalLink
+  ExternalLink,
+  Zap
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,24 +29,35 @@ import {
   DialogTitle 
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/points";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { getAccessToken } from "@privy-io/react-auth";
+import type { Unlock as BaseUnlock } from "@/types/club.types";
 
-interface Unlock {
-  id: string;
-  club_id: string;
-  title: string;
-  description: string;
-  type: string;
-  min_status: string;
-  is_active: boolean;
-  metadata?: {
-    redemption_instructions?: string;
-    expiry_date?: string;
-    location?: string;
-    capacity?: number;
+// Extended unlock type with tier reward specific fields
+interface ClaimOption {
+  upgrade?: {
+    purchase_type: 'tier_boost' | 'direct_unlock';
+    price_cents?: number;
   };
 }
+
+interface TierRewardFields {
+  user_can_claim_free?: boolean;
+  claim_options?: ClaimOption[];
+  tier_boost_price_cents?: number;
+  direct_unlock_price_cents?: number;
+  inventory_status?: string;
+  metadata?: Record<string, any>;
+  club_info?: {
+    id: string;
+    name: string;
+    description?: string | null;
+    city?: string | null;
+  } | null;
+}
+
+type Unlock = BaseUnlock & TierRewardFields;
 
 interface UnlockRedemptionProps {
   clubId: string;
@@ -90,42 +102,87 @@ export default function UnlockRedemption({
   const [isRedeeming, setIsRedeeming] = useState(false);
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    const controller = new AbortController();
+    
+    const loadDataWithAbort = async () => {
+      await loadData();
+      // Note: loadData should ideally accept signal parameter for full abort support
+    };
+    
+    loadDataWithAbort();
+    
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [clubId]);
 
   const loadData = async () => {
     try {
+      setIsLoading(true);
       // Get auth token
       const accessToken = await getAccessToken();
       if (!accessToken) {
         throw new Error('User not authenticated');
       }
 
-      // Load unlocks and redemptions in parallel
-      const [unlocksResponse, redemptionsResponse] = await Promise.all([
-        fetch(`/api/unlocks?club_id=${clubId}`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        }),
-        fetch(`/api/unlocks/redemptions?clubId=${clubId}`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        })
-      ]);
+      // Load tier rewards data using new API
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
 
-      if (unlocksResponse.ok) {
-        const unlocksData = await unlocksResponse.json() as Unlock[];
-        setUnlocks(unlocksData);
-      }
+      if (response.ok) {
+        const tierRewardsData = await response.json();
+        
+        // Convert tier rewards to unlock format for existing UI
+        const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: any) => ({
+          id: reward.id,
+          club_id: clubId,
+          title: reward.title,
+          description: reward.description,
+          type: reward.reward_type,
+          min_status: reward.tier,
+          is_active: reward.current_status === 'available',
+          metadata: {
+            ...(reward.metadata ?? {}),
+            redemption_instructions: reward.metadata?.instructions
+          },
+          // Add club information for details modal
+          club_info: reward.clubs ? {
+            id: reward.clubs.id,
+            name: reward.clubs.name,
+            description: reward.clubs.description,
+            city: reward.clubs.city
+          } : null,
+          // Add tier rewards specific fields
+          user_can_claim_free: reward.user_can_claim_free,
+          claim_options: reward.claim_options,
+          tier_boost_price_cents: reward.tier_boost_price_cents,
+          direct_unlock_price_cents: reward.direct_unlock_price_cents,
+          inventory_status: reward.inventory_status
+        }));
+        
+        // Convert claimed rewards to redemption format
+        const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: any) => ({
+          id: claim.id,
+          unlock_id: claim.reward_id,
+          user_id: 'current_user',
+          status: 
+            claim.access_status === 'granted' ? 'confirmed' :
+            claim.access_status === 'pending' ? 'pending' :
+            'cancelled',
+          metadata: {
+            access_code: claim.access_code
+          },
+          redeemed_at: claim.claimed_at
+        }));
 
-      if (redemptionsResponse.ok) {
-        const redemptionsData = await redemptionsResponse.json() as { redemptions: any[] };
-        setRedemptions(redemptionsData.redemptions || []);
+        setUnlocks(convertedUnlocks);
+        setRedemptions(convertedRedemptions);
       } else {
-        // Handle different error scenarios
-        if (redemptionsResponse.status === 404) {
-          console.warn('Redemptions API not available yet');
-        } else {
-          console.error(`Failed to fetch redemptions: ${redemptionsResponse.status}`);
-        }
+        console.error('Failed to fetch tier rewards:', response.status);
+        setUnlocks([]);
         setRedemptions([]);
       }
     } catch (error) {
@@ -138,6 +195,14 @@ export default function UnlockRedemption({
   };
 
   const isUnlockAvailable = (unlock: Unlock) => {
+    // For tier rewards, check if user can claim free or has upgrade options
+    if (unlock.user_can_claim_free !== undefined) {
+      const notSoldOut = unlock.inventory_status !== 'sold_out' && unlock.inventory_status !== 'unavailable';
+      const isActive = unlock.is_active !== false;
+      return isActive && notSoldOut && (unlock.user_can_claim_free || hasClaimOptions(unlock));
+    }
+    
+    // Fallback to original logic for backward compatibility
     const requiredPoints = STATUS_POINTS[unlock.min_status as ClubStatus] ?? 0;
     return userPoints >= requiredPoints;
   };
@@ -152,11 +217,62 @@ export default function UnlockRedemption({
 
   const getStatusProgress = (requiredStatus: string) => {
     const requiredPoints = STATUS_POINTS[requiredStatus as ClubStatus] ?? 0;
-    const progress = Math.min((userPoints / requiredPoints) * 100, 100);
+    const progress = requiredPoints > 0
+      ? Math.min((userPoints / requiredPoints) * 100, 100)
+      : 100;
     return progress;
   };
 
+  const formatCurrencyOrFree = (cents?: number) =>
+    cents ? formatCurrency(cents) : 'Free';
+
+  // Helper to normalize claim_options (handle array and object shapes)
+  const getClaimOptionsPurchaseType = (unlock: Unlock): 'tier_boost' | 'direct_unlock' | null => {
+    if (!unlock.claim_options) return null;
+    
+    // Handle array shape
+    if (Array.isArray(unlock.claim_options)) {
+      const option = unlock.claim_options[0];
+      return option?.upgrade?.purchase_type || null;
+    }
+    
+    // Handle object shape
+    if (typeof unlock.claim_options === 'object') {
+      const claimObj = unlock.claim_options as any;
+      // Try multiple possible paths for purchase_type
+      return claimObj.upgrade?.purchase_type || 
+             claimObj.purchase_type || 
+             claimObj.type || 
+             null;
+    }
+    
+    return null;
+  };
+
+  // Helper to check if claim_options is available (array or object)
+  const hasClaimOptions = (unlock: Unlock): boolean => {
+    if (!unlock.claim_options) return false;
+    
+    if (Array.isArray(unlock.claim_options)) {
+      return unlock.claim_options.length > 0;
+    }
+    
+    if (typeof unlock.claim_options === 'object') {
+      return Object.keys(unlock.claim_options).length > 0;
+    }
+    
+    return false;
+  };
+
+
   const handleRedeem = async (unlock: Unlock) => {
+    // Check if this is a tier reward with upgrade options
+    if (!unlock.user_can_claim_free && hasClaimOptions(unlock)) {
+      // Handle upgrade purchase flow
+      handleUpgradePurchase(unlock);
+      return;
+    }
+
     if (!isUnlockAvailable(unlock)) {
       toast({
         title: "Unlock Not Available",
@@ -175,20 +291,17 @@ export default function UnlockRedemption({
         throw new Error('User not authenticated');
       }
 
-      const response = await fetch('/api/unlocks/redeem', {
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${unlock.id}/claim`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({
-          unlock_id: unlock.id,
-          club_id: clubId
-        }),
+        body: JSON.stringify({})
       });
 
       if (response.ok) {
-        const redemptionData = await response.json() as { redemption: any };
+        const result = await response.json();
         
         // Close current modal
         setSelectedUnlock(null);
@@ -197,7 +310,10 @@ export default function UnlockRedemption({
         await loadData();
         
         // Show full-screen confirmation
-        onShowRedemptionConfirmation?.(redemptionData.redemption, unlock);
+        const payload = (result && typeof result === 'object' && 'redemption' in result)
+          ? (result as any).redemption
+          : result;
+        onShowRedemptionConfirmation?.(payload, unlock);
         
         // Callback for parent component
         onRedemption?.();
@@ -234,9 +350,7 @@ export default function UnlockRedemption({
     return IconComponent;
   };
 
-  const getStatusColor = (status: string) => {
-    return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
-  };
+  // getStatusColor removed - unused helper
 
   if (isLoading) {
     return (
@@ -267,6 +381,60 @@ export default function UnlockRedemption({
       </Card>
     );
   }
+
+  const handleUpgradePurchase = async (reward: Unlock) => {
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      // Determine the correct purchase type from reward's claim options
+      let purchaseType = getClaimOptionsPurchaseType(reward);
+      
+      // Fallback to tier_boost if no purchase type found (backward compatibility)
+      if (!purchaseType) {
+        console.warn('No purchase type found in claim_options, defaulting to tier_boost for reward:', {
+          rewardId: reward.id,
+          claimOptions: reward.claim_options,
+          claimOptionsType: typeof reward.claim_options,
+          isArray: Array.isArray(reward.claim_options)
+        });
+        purchaseType = 'tier_boost';
+      }
+
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          purchase_type: purchaseType,
+          success_url: `${window.location.origin}/dashboard?upgrade_success=true`,
+          cancel_url: `${window.location.origin}/dashboard?upgrade_cancelled=true`
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const url = result?.stripe_session_url;
+        if (!url || typeof url !== 'string') {
+          throw new Error('Missing checkout URL');
+        }
+        window.location.href = url;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start upgrade purchase');
+      }
+    } catch (error) {
+      toast({
+        title: "Purchase Failed",
+        description: error instanceof Error ? error.message : "Failed to start purchase",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <>
@@ -370,7 +538,16 @@ export default function UnlockRedemption({
                     {isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
                       : isAvailable 
-                        ? 'Redeem Now' 
+                        ? unlock.user_can_claim_free 
+                          ? 'Claim Free'
+                          : (() => {
+                              const purchaseType = getClaimOptionsPurchaseType(unlock);
+                              const price = purchaseType === 'direct_unlock' 
+                                ? unlock.direct_unlock_price_cents 
+                                : unlock.tier_boost_price_cents;
+                              const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
+                              return `${verb} for ${formatCurrencyOrFree(price)}`;
+                            })()
                         : 'Locked'
                     }
                   </button>
@@ -385,7 +562,7 @@ export default function UnlockRedemption({
       </div>
 
       {/* Redemption Modal */}
-      <Dialog open={!!selectedUnlock} onOpenChange={() => setSelectedUnlock(null)}>
+      <Dialog open={!!selectedUnlock} onOpenChange={(open) => { if (!open) setSelectedUnlock(null); }}>
         {selectedUnlock && (
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -402,7 +579,17 @@ export default function UnlockRedemption({
                 {selectedUnlock.description}
               </p>
               
-              {selectedUnlock.metadata?.redemption_instructions && (
+              {/* Boost explanation for non-qualified users */}
+              {!selectedUnlock.user_can_claim_free && isUnlockAvailable(selectedUnlock) && (
+                <div className="p-3 bg-muted/50 rounded-lg border border-muted">
+                  <p className="text-sm text-muted-foreground">
+                    Boost your status to <strong>{selectedUnlock.min_status}</strong> temporarily to claim and redeem this item for free.
+                  </p>
+                </div>
+              )}
+              
+              {/* Only show redemption instructions if user has already redeemed */}
+              {selectedUnlock.metadata?.redemption_instructions && isUnlockRedeemed(selectedUnlock) && (
                 <div className="bg-muted p-3 rounded-lg">
                   <h4 className="font-medium mb-2">How to Redeem:</h4>
                   <p className="text-sm">
@@ -457,7 +644,17 @@ export default function UnlockRedemption({
                   onClick={() => handleRedeem(selectedUnlock)}
                   disabled={!isUnlockAvailable(selectedUnlock) || isRedeeming}
                 >
-                  {isRedeeming ? 'Redeeming...' : 'Redeem Now'}
+                  {isRedeeming ? 'Processing...' : 
+                   selectedUnlock.user_can_claim_free ? 'Claim Free' :
+                   (() => {
+                     const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
+                     const price = purchaseType === 'direct_unlock' 
+                       ? selectedUnlock.direct_unlock_price_cents 
+                       : selectedUnlock.tier_boost_price_cents;
+                     const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
+                     return `${verb} for ${formatCurrencyOrFree(price)}`;
+                   })()
+                  }
                 </Button>
               </div>
             </div>

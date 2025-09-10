@@ -73,43 +73,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
 
-    // Determine points to award - check QR database first for custom points
-    let pointsToAward = POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] || POINT_VALUES.default;
-    
-    // If this is from a QR code, look up the custom points from database
-    const qrId = tapInData.metadata?.qr_id;
-    if (qrId && typeof qrId === 'string') {
-      try {
-        const { data: qrCode, error: qrError } = await supabase
-          .from('qr_codes')
-          .select('points, is_active, expires_at')
-          .eq('qr_id', qrId)
-          .eq('club_id', tapInData.club_id)
-          .single();
-        
-        if (!qrError && qrCode) {
-          // Check if QR code is still active and not expired
-          if (!qrCode.is_active) {
-            return NextResponse.json({ error: "QR code is inactive" }, { status: 400 });
-          }
-          
-          if (qrCode.expires_at && new Date(qrCode.expires_at) < new Date()) {
-            return NextResponse.json({ error: "QR code has expired" }, { status: 400 });
-          }
-          
-          // Use custom points from QR code if available
-          if (qrCode.points && qrCode.points > 0) {
-            pointsToAward = qrCode.points;
-            console.log(`[Tap-in API] Using custom QR points: ${qrCode.points} for QR ${qrId}`);
-          }
-        } else {
-          console.warn(`[Tap-in API] QR code not found or error: ${qrId}`, qrError);
-        }
-      } catch (error) {
-        console.warn(`[Tap-in API] Error looking up QR code ${qrId}:`, error);
-        // Continue with default points if QR lookup fails
-      }
-    }
+    // Determine points to award
+    const pointsToAward = tapInData.points_earned || 
+      (tapInData.source in POINT_VALUES ? POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] : POINT_VALUES.default);
     
     // Idempotency key: prefer client-provided header/body; else derive a deterministic fallback
     const headerKey = request.headers.get("Idempotency-Key") || undefined;
@@ -161,28 +127,6 @@ export async function POST(request: NextRequest) {
       status_changed: tapInResult.status_changed,
       club_name: club.name
     };
-
-    // Update QR code usage tracking if this was from a QR scan
-    const qrIdForTracking = tapInData.metadata?.qr_id;
-    if (qrIdForTracking && typeof qrIdForTracking === 'string') {
-      try {
-        const { error: qrUpdateError } = await supabase
-          .from('qr_codes')
-          .update({
-            usage_count: supabase.raw('usage_count + 1'),
-            last_used_at: new Date().toISOString()
-          })
-          .eq('qr_id', qrIdForTracking);
-        
-        if (qrUpdateError) {
-          console.warn(`[Tap-in API] Failed to update QR usage count for ${qrIdForTracking}:`, qrUpdateError);
-        } else {
-          console.log(`[Tap-in API] Updated QR usage count for ${qrIdForTracking}`);
-        }
-      } catch (qrError) {
-        console.warn(`[Tap-in API] Error updating QR usage:`, qrError);
-      }
-    }
 
     console.log(`[Tap-in API] Success: ${tapInResult.points_earned} points awarded to user ${auth.userId} in club ${club.name}`);
     if (tapInResult.status_changed) {

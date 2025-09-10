@@ -1,22 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useRef, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import React, { useEffect, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Star, Trophy, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
-import confetti from "canvas-confetti";
-import { useUnifiedAuth } from "@/lib/unified-auth-context";
-import { useToast } from "@/hooks/use-toast";
+import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
 import Header from "@/components/header";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
-import { usePrivy } from "@privy-io/react-auth";
-import { useFarcaster } from "@/lib/farcaster-context";
-import { POINT_VALUES } from "@/hooks/use-tap-ins";
+import { TAP_IN_POINT_VALUES } from "@/lib/points";
 
-interface AdditionalData {
-  location?: string;
-  metadata?: Record<string, any>;
-}
+// New custom hooks for cleaner separation of concerns
+import { useTapQRParams } from "@/hooks/use-tap-qr-params";
+import { useTapAuthentication } from "@/hooks/use-tap-authentication";
+import { useTapProcessing } from "@/hooks/use-tap-processing";
 
 interface TapInResponse {
   success: boolean;
@@ -30,273 +25,94 @@ interface TapInResponse {
   membership: any;
 }
 
+// Helper function to get point value with qr/qr_code mapping
+function getPointValue(source?: string): number {
+  if (!source) return TAP_IN_POINT_VALUES.default;
+  
+  switch (source) {
+    case 'qr':
+    case 'qr_code':
+      return TAP_IN_POINT_VALUES.qr_code;
+    case 'nfc':
+      return TAP_IN_POINT_VALUES.nfc;
+    case 'link':
+      return TAP_IN_POINT_VALUES.link;
+    case 'show_entry':
+      return TAP_IN_POINT_VALUES.show_entry;
+    case 'merch_purchase':
+      return TAP_IN_POINT_VALUES.merch_purchase;
+    case 'presave':
+      return TAP_IN_POINT_VALUES.presave;
+    default:
+      return TAP_IN_POINT_VALUES.default;
+  }
+}
+
+// Helper function to get source label with qr/qr_code mapping
+function getSourceLabel(source?: string): string {
+  if (!source) return 'Tap Detected';
+  
+  switch (source) {
+    case 'qr':
+    case 'qr_code':
+      return 'QR Code Scanned';
+    case 'nfc':
+      return 'NFC Tap Detected';
+    case 'link':
+      return 'Link Opened';
+    default:
+      return 'Tap Detected';
+  }
+}
 
 function TapPageContent() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading, isInWalletApp } = useUnifiedAuth();
-  const { toast } = useToast();
-  const { getAccessToken, login } = usePrivy();
-  const { user: farcasterUser } = useFarcaster();
   
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [tapResult, setTapResult] = useState<TapInResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [animationComplete, setAnimationComplete] = useState(false);
-  
-  const confettiRef = useRef<HTMLCanvasElement>(null);
-  const processingStarted = useRef(false);
-  const autoLoginTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Extract QR parameters and load club info
+  const { 
+    params: { qrId, clubId, source, data, location }, 
+    clubInfo, 
+    isLoadingClub,
+    hasValidQRParams, 
+    paramError 
+  } = useTapQRParams();
 
-  // Extract QR parameters
-  const qrId = searchParams.get('qr');
-  const clubId = searchParams.get('club');
-  const source = searchParams.get('source');
-  const data = searchParams.get('data');
-  const location = searchParams.get('location');
+  // Handle authentication flow
+  const {
+    isReady: authReady,
+    needsAuth,
+    authError,
+    triggerAuth,
+    getAuthHeaders
+  } = useTapAuthentication({
+    clubInfo,
+    hasValidQRParams,
+    autoLoginDelay: 5000
+  });
 
-  // Load club information first (even for unauthenticated users)
-  const [clubInfo, setClubInfo] = useState<any>(null);
-  
-  // Decode QR data early for use in UI
-  const [qrData, setQrData] = useState<AdditionalData & { points?: number }>({});
-  
-  // Decode QR data when component loads
+  // Handle tap-in processing
+  const { isProcessing, tapResult, error: processingError, processTapIn } = useTapProcessing();
+
+  // Consolidate all errors into one
+  const error = paramError || authError || processingError;
+
+  // Process tap-in when ready
   useEffect(() => {
-    if (data) {
-      try {
-        const decoded = JSON.parse(atob(data)) as AdditionalData & { points?: number };
-        setQrData(decoded);
-      } catch (e) {
-        console.warn("Could not decode QR data:", e);
-        setQrData({});
-      }
-    } else {
-      setQrData({});
-    }
-  }, [data]);
-
-  // Reset processing when URL parameters change
-  useEffect(() => {
-    processingStarted.current = false;
-    setTapResult(null);
-    setError(null);
-    
-    // Clear any pending auto-login timer
-    if (autoLoginTimerRef.current) {
-      clearTimeout(autoLoginTimerRef.current);
-      autoLoginTimerRef.current = null;
-    }
-    
-    // Always load club info first
-    if (clubId) {
-      loadClubInfo();
-    } else {
-      setError("Invalid QR code - missing club information");
-    }
-  }, [qrId, clubId, source]);
-
-  // Process tap-in only after authentication
-  useEffect(() => {
-    if (!authLoading && isAuthenticated && user && clubInfo && !processingStarted.current) {
-      if (!source) {
-        setError("Invalid QR code - missing source information");
-        return;
-      }
-      
-      processingStarted.current = true;
-      processTapIn();
-    }
-  }, [authLoading, isAuthenticated, user, clubInfo, source]);
-
-  const handleAuthAndTapIn = async () => {
-    try {
-      // Clear auto-login timer if user clicks manually
-      if (autoLoginTimerRef.current) {
-        clearTimeout(autoLoginTimerRef.current);
-        autoLoginTimerRef.current = null;
-      }
-
-      // If already authenticated, process tap-in directly
-      if (isAuthenticated && user && clubInfo) {
-        if (!processingStarted.current) {
-          processingStarted.current = true;
-          processTapIn();
-        }
-        return;
-      }
-
-      // Skip Privy login in wallet app context
-      if (isInWalletApp) {
-        console.warn("Cannot trigger Privy login in wallet app context");
-        return;
-      }
-
-      await login();
-      // After login, the useEffect will automatically process the tap-in
-    } catch (error) {
-      console.error("Authentication failed:", error);
-      setError("Authentication failed. Please try again.");
-    }
-  };
-
-  // Auto-trigger Privy login modal when club info loads for unauthenticated users
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated && !isInWalletApp && clubInfo && !processingStarted.current) {
-      // Small delay to let the user see the club preview first
-      autoLoginTimerRef.current = setTimeout(() => {
-        handleAuthAndTapIn();
-      }, 5000); // 5 second delay to show the club preview
-      
-      return () => {
-        if (autoLoginTimerRef.current) {
-          clearTimeout(autoLoginTimerRef.current);
-          autoLoginTimerRef.current = null;
-        }
-      };
-    }
-  }, [authLoading, isAuthenticated, isInWalletApp, clubInfo]);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (autoLoginTimerRef.current) {
-        clearTimeout(autoLoginTimerRef.current);
-      }
-    };
-  }, []);
-
-  const loadClubInfo = async () => {
-    try {
-      const response = await fetch(`/api/clubs/${clubId}`);
-      if (response.ok) {
-        const club = await response.json();
-        setClubInfo(club);
-      } else {
-        setError("Club not found");
-      }
-    } catch (error) {
-      console.error("Error loading club:", error);
-      setError("Failed to load club information");
-    }
-  };
-
-  // Get authentication headers based on context
-  const getAuthHeaders = async (): Promise<{ Authorization: string }> => {
-    if (isInWalletApp) {
-      // Wallet app: use Farcaster authentication
-      const farcasterUserId = farcasterUser?.fid?.toString();
-      if (!farcasterUserId) {
-        throw new Error("Farcaster user not found in wallet app");
-      }
-      return {
-        Authorization: `Farcaster farcaster:${farcasterUserId}`,
-      };
-    } else {
-      // Web app: use Privy authentication
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error("User not logged in");
-      }
-      return {
-        Authorization: `Bearer ${accessToken}`,
-      };
-    }
-  };
-
-  const processTapIn = async () => {
-    setIsProcessing(true);
-    setError(null);
-
-    try {
-      const tapInPayload = {
-        club_id: clubId,
-        source: source,
-        location: location || qrData.location,
-        // points_earned must be computed server-side. Do not include client-provided points.
-        metadata: {
-          ...(qrData.metadata ?? {}),
-          qr_id: qrId,
-          scanned_at: new Date().toISOString(),
-        }
-      };
-
-      // Get authentication headers
-      const authHeaders = await getAuthHeaders();
-      
-      const response = await fetch('/api/tap-in', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify(tapInPayload),
+    if (authReady && clubId && source) {
+      processTapIn({
+        clubId,
+        source,
+        qrId: qrId || undefined,
+        location: location || undefined,
+        data: data || undefined,
+        getAuthHeaders
       });
-
-      if (!response.ok) {
-        let errorData: { error?: string };
-        try {
-          errorData = await response.json() as { error?: string };
-        } catch {
-          errorData = { error: 'Invalid response from server' };
-        }
-        throw new Error(errorData.error || 'Failed to process tap-in');
-      }
-
-      let result: TapInResponse;
-      try {
-        result = await response.json() as TapInResponse;
-      } catch {
-        throw new Error('Invalid response format from server');
-      }
-      setTapResult(result);
-
-      // Trigger celebration animation
-      setTimeout(() => {
-        triggerCelebration(result);
-      }, 500);
-
-      // Show success toast
-      toast({
-        title: "Points earned! 🎉",
-        description: `+${result.points_earned} points in ${result.club_name}`,
-      });
-
-    } catch (err) {
-      console.error("Tap-in error:", err);
-      setError(err instanceof Error ? err.message : "Failed to process tap-in");
-      toast({
-        title: "Tap-in failed",
-        description: err instanceof Error ? err.message : "Please try again",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
     }
-  };
+  }, [authReady, clubId, source, qrId, location, data, processTapIn, getAuthHeaders]);
 
-  const triggerCelebration = (result: TapInResponse) => {
-    // Confetti burst
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
-    });
-
-    // Status upgrade confetti
-    if (result.status_changed) {
-      setTimeout(() => {
-        confetti({
-          particleCount: 150,
-          spread: 120,
-          origin: { y: 0.5 },
-          colors: ['#FFD700', '#FFA500', '#FF69B4', '#9370DB'],
-        });
-      }, 1000);
-    }
-
-    setAnimationComplete(true);
+  // Manual authentication handler
+  const handleAuthAndTapIn = () => {
+    triggerAuth();
   };
 
   const getStatusIcon = (status: string) => {
@@ -308,17 +124,20 @@ function TapPageContent() {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
   };
 
-  // Get the estimated points value for UI display (server has final authority)
-  const getPointsValue = () => {
-    const fallback =
-      POINT_VALUES[(source as keyof typeof POINT_VALUES)] ?? POINT_VALUES.default;
-    const candidate = (qrData.points ?? fallback);
-    const n = Number(candidate);
-    return Number.isFinite(n) && n >= 0 ? n : fallback;
-  };
+  // Show loading state while club info is loading
+  if (isLoadingClub) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading club information...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show split-screen club preview for unauthenticated users
-  if (!authLoading && !isAuthenticated && clubInfo) {
+  if (needsAuth && clubInfo) {
     return (
       <div className="min-h-screen bg-background flex">
         {/* Left Side - Club Membership Card (Desktop only) */}
@@ -428,15 +247,15 @@ function TapPageContent() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 text-sm">Points</span>
-                    <span className="text-green-400 text-sm">+{getPointsValue().toLocaleString()} on join</span>
+                        <span className="text-green-400 text-sm">+{getPointValue(source || undefined)} on join</span>
                   </div>
                 </div>
 
-                {/* QR Code indicator */}
+                {/* Source indicator */}
                 <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-slate-400">
                     <QrCode className="w-4 h-4" />
-                    <span className="text-xs">QR Code Scanned</span>
+                    <span className="text-xs">{getSourceLabel(source || undefined)}</span>
                   </div>
                 </div>
               </div>
@@ -527,7 +346,7 @@ function TapPageContent() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{getPointsValue().toLocaleString()} on join</span>
+                        <span className="text-green-400 text-xs">+{getPointValue(source || undefined)} on join</span>
                       </div>
                     </div>
                   </div>
@@ -554,7 +373,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{getPointsValue().toLocaleString()} points
+                  +{getPointValue(source || undefined)} points
                 </span>
               </div>
             </motion.div>
@@ -585,16 +404,8 @@ function TapPageContent() {
     );
   }
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  // Authentication loading is now handled within the useTapAuthentication hook
+  // No separate loading state needed here
 
   if (error) {
     return (
@@ -792,7 +603,7 @@ function TapPageContent() {
                   </button>
                   
                   <button
-                    onClick={() => router.push(clubId ? `/dashboard?club=${clubId}` : '/dashboard')}
+                    onClick={() => router.push(`/dashboard${tapResult.membership?.club_id ? `?club=${tapResult.membership.club_id}` : ''}`)}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { STATUS_THRESHOLDS, computeStatus, nextStatus as computeNext } from '@/lib/status';
+import { STATUS_THRESHOLDS, computeStatus, getNextStatus as computeNext, calculateStatusProgress, calculateSpendingPower } from '@/lib/points';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,34 +17,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'clubId required' }, { status: 400 });
     }
 
-    // Get user's internal ID
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('privy_id', auth.userId)
-      .single();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    // Get comprehensive wallet data using the computed view
-    const { data: walletView, error: walletError } = await supabase
+    // Single query to get user ID and wallet data using a JOIN
+    const { data: walletData, error: walletError } = await supabase
       .from('v_point_wallets')
-      .select('*')
-      .eq('user_id', user.id)
+      .select(`
+        *,
+        users!inner (
+          id
+        )
+      `)
+      .eq('users.privy_id', auth.userId)
       .eq('club_id', clubId)
       .single();
 
-    // If wallet doesn't exist, create a default one or return empty state
-    if (walletError || !walletView) {
-      console.log('Wallet not found, checking if user needs wallet creation:', { userId: user.id, clubId, error: walletError?.message });
+    const user = walletData?.users;
+    const walletView = walletData;
+
+    // If wallet doesn't exist, we need to get user ID separately and check membership
+    if (walletError || !walletView || !user) {
+      console.log('Wallet not found, checking if user needs wallet creation:', { error: walletError?.message });
+      
+      // Get user ID separately if not available from JOIN
+      let userId = user?.id;
+      if (!userId) {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('privy_id', auth.userId)
+          .single();
+
+        if (userError || !userData) {
+          return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+        userId = userData.id;
+      }
       
       // Check if the user has a club membership first
       const { data: membership } = await supabase
         .from('club_memberships')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('club_id', clubId)
         .single();
 
@@ -67,8 +79,8 @@ export async function GET(request: NextRequest) {
           spent_points: 0,
           escrowed_points: 0,
           status_points: 0,
-          last_activity: new Date().toISOString(),
-          created_at: new Date().toISOString()
+          last_activity: null,
+          created_at: null
         },
         status: {
           current,
@@ -76,7 +88,7 @@ export async function GET(request: NextRequest) {
           next_status: next,
           next_threshold: nextThreshold,
           progress_to_next: nextThreshold ? 0 : 100,
-          points_to_next: nextThreshold ? nextThreshold : 0
+          points_to_next: nextThreshold ? nextThreshold - 0 : 0
         },
         spending_power: {
           total_spendable: 0,
@@ -94,56 +106,50 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get membership status for context (optional)
-    const { data: membership, error: membershipError } = await supabase
-      .from('club_memberships')
-      .select('current_status, points, join_date')
-      .eq('user_id', user.id)
-      .eq('club_id', clubId)
-      .single();
+    // Get membership and recent transactions in parallel for better performance
+    const [membershipResult, transactionsResult] = await Promise.all([
+      supabase
+        .from('club_memberships')
+        .select('current_status, points, join_date')
+        .eq('user_id', user.id)
+        .eq('club_id', clubId)
+        .single(),
+      supabase
+        .from('point_transactions')
+        .select('id, type, pts, source, created_at')
+        .eq('wallet_id', walletView.id)
+        .order('created_at', { ascending: false })
+        .limit(3)
+    ]);
+
+    const { data: membership, error: membershipError } = membershipResult;
+    const { data: recentTransactions, error: recentError } = transactionsResult;
 
     if (membershipError && membershipError.code !== 'PGRST116') {
       console.error('Membership fetch error:', membershipError);
     }
 
-    // Get only essential recent transactions (limit to 3 for speed)
-    const { data: recentTransactions, error: recentError } = await supabase
-      .from('point_transactions')
-      .select('id, type, pts, source, created_at')
-      .eq('wallet_id', walletView.id)
-      .order('created_at', { ascending: false })
-      .limit(3);
-
     if (recentError) {
       console.error('Error fetching recent transactions:', recentError);
     }
 
-    // Compute status and thresholds from status_pts
+    // Compute status and thresholds from status_pts using shared helpers
     const statusPoints = walletView.status_pts || 0; // Points that count toward status
-    const current = computeStatus(statusPoints);
-    const next = computeNext(current);
-    const currentThreshold = STATUS_THRESHOLDS[current];
-    const nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+    const { current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage } = 
+      calculateStatusProgress(statusPoints);
 
-    // Calculate spending power breakdown
+    // Calculate spending power breakdown using shared helper
     const earned = walletView.earned_pts || 0;
     const escrowed = walletView.escrowed_pts || 0;
     const purchased = walletView.purchased_pts || 0;
     
-    // Clamp lockedForStatus to not exceed earned
-    const lockedForStatus = Math.min(currentThreshold, earned);
-    const earnedAvailable = Math.max(0, earned - lockedForStatus - escrowed);
-    
-    // Total spendable should only include actually spendable components
-    const totalSpendable = purchased + earnedAvailable;
-    
-    const spendingPower = {
-      total_spendable: totalSpendable,
-      purchased_available: purchased,
-      earned_available: earnedAvailable,
-      earned_locked_for_status: lockedForStatus,
-      escrowed: escrowed
-    };
+    const spendingPowerData = calculateSpendingPower(
+      earned,
+      purchased,
+      escrowed,
+      current,
+      true // preserveStatus = true for status protection
+    );
 
     // Simplified transaction breakdown (empty for performance)
     const processedBreakdown: Record<string, number> = {};
@@ -165,12 +171,16 @@ export async function GET(request: NextRequest) {
         current_threshold: currentThreshold,
         next_status: next,
         next_threshold: nextThreshold,
-        progress_to_next: nextThreshold
-          ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
-          : 100,
-        points_to_next: nextThreshold ? Math.max(0, nextThreshold - statusPoints) : 0
+        progress_to_next: progressPercentage,
+        points_to_next: pointsToNext
       },
-      spending_power: spendingPower,
+      spending_power: {
+        total_spendable: spendingPowerData.totalSpendable,
+        purchased_available: spendingPowerData.purchasedAvailable,
+        earned_available: spendingPowerData.earnedAvailable,
+        earned_locked_for_status: spendingPowerData.earnedLockedForStatus,
+        escrowed: spendingPowerData.escrowed,
+      },
       transaction_breakdown: processedBreakdown,
       recent_activity: recentTransactions || [],
       club_membership: {

@@ -175,18 +175,8 @@ export function useTapInAnalytics(clubId: string | null) {
   });
 }
 
-// Point values for different tap-in sources (matches API)
-export const POINT_VALUES = {
-  qr_code: 20,
-  nfc: 20,
-  link: 10,
-  show_entry: 100,
-  merch_purchase: 50,
-  presave: 40,
-  default: 10
-} as const;
-
-// Helper to get point value for a source
-export function getPointValue(source: string): number {
-  return POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default;
-}
+// Re-export consolidated point values for backwards compatibility
+export { 
+  TAP_IN_POINT_VALUES as POINT_VALUES,
+  getTapInPointValue as getPointValue 
+} from '@/lib/points';

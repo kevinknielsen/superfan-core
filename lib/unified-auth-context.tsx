@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useFarcaster } from '@/lib/farcaster-context';
 import { usePrivy } from '@/lib/auth-context';
 import { useAccount } from 'wagmi';
-import { useMetalHolder } from '@/hooks/use-metal-holder';
+// useMetalHolder removed - Metal integration disabled
 import { useUserStatus } from '@/hooks/use-status';
 import { useUserSync } from '@/hooks/use-user-sync';
 
@@ -30,6 +30,12 @@ interface UnifiedAuthContextType {
 
 const UnifiedAuthContext = createContext<UnifiedAuthContextType | null>(null);
 
+// Helper to extract wallet address from Privy user object
+const getPrivyWalletAddress = (u?: { wallet?: string | { address?: string } }): string | undefined =>
+  typeof u?.wallet === 'string' ? u.wallet
+  : (typeof u?.wallet === 'object' && u.wallet?.address) ? u.wallet.address
+  : undefined;
+
 export function UnifiedAuthProvider({ children }: { children: React.ReactNode }) {
   const { isInWalletApp, isInFarcaster, isInCoinbaseWallet, platform, user: farcasterUser, isSDKLoaded, frameContext } = useFarcaster();
   const { authenticated: privyAuthenticated, user: privyUser, ready: privyReady, logout: privyLogout } = usePrivy();
@@ -37,10 +43,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   // Use Wagmi useAccount hook for web context
   const wagmiAccount = useAccount();
 
-  // Get metal holder data for fallback wallet address
-  const { data: metalHolder } = useMetalHolder({ 
-    user: isInWalletApp ? null : privyUser 
-  });
+  // Metal holder removed - no longer used for fallback addresses
 
   // Admin status state
   const [isAdmin, setIsAdmin] = useState(false);
@@ -77,11 +80,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
     setHasTriedSync(true);
 
     // Extract user data from Privy
-    const walletAddr = (() => {
-      if (typeof privyUser.wallet === 'string') return privyUser.wallet;
-      if (typeof privyUser.wallet === 'object' && privyUser.wallet?.address) return privyUser.wallet.address;
-      return null;
-    })();
+    const walletAddr = getPrivyWalletAddress(privyUser);
 
     userSyncMutation.mutate({
       email: privyUser.email?.address || null,
@@ -173,33 +172,23 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
       isCurrent = false;
       abortController.abort();
     };
-  }, [isAuthenticated, isLoading, user?.id]);
+  }, [isAuthenticated, isLoading, isInWalletApp, farcasterUser?.fid, privyUser?.id]);
 
-  // Extract wallet address - prioritize connected wallet for better UX
+  // Extract wallet address - use connected wallet only (Metal holder fallback removed)
   const walletAddress = (() => {
     if (isInWalletApp) {
-      // In Wallet App: ONLY return the connected wallet address
-      // Never show Metal holder address in wallet apps
-      console.log("[UnifiedAuth] Wallet app debug:", {
+      // In Wallet App: return the connected wallet address
+      if (process.env.NODE_ENV !== 'production') console.log("[UnifiedAuth] Wallet app debug:", {
         wagmiAddress: wagmiAccount?.address,
         wagmiConnected: wagmiAccount?.isConnected,
         isConnecting: wagmiAccount?.isConnecting,
-        metalHolderAddress: metalHolder?.address,
         isSDKLoaded
       });
       
-      // Return the connected wallet address or undefined (no fallback to Metal holder)
       return wagmiAccount?.address;
     } else {
-      // Web context - use Privy wallet, with Metal holder as fallback
-      if (typeof privyUser?.wallet === 'string') {
-        return privyUser.wallet;
-      }
-      if (typeof privyUser?.wallet === 'object' && privyUser.wallet?.address) {
-        return privyUser.wallet.address;
-      }
-      // Fallback to Metal holder address for web context
-      return metalHolder?.address;
+      // Web context - use Privy wallet only
+      return getPrivyWalletAddress(privyUser);
     }
   })();
 

@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { Users, Play, Pause, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ProjectDetailsModal from "./project-details-modal";
-// import FundModal from "./fund-modal"; // Moved to legacy
+// Fund modal removed (legacy funding feature disabled)
 import { useAudioPlayerContext } from "@/lib/audio-player-context";
 import {
   getSharedFundingProgressUSD,
@@ -21,10 +21,10 @@ import { usePrivy } from "@/lib/auth-context";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Project } from "@/app/api/projects/route";
+import type { Project } from "@/app/api/projects/route";
 import FarcasterShare from "./farcaster-share";
-import { useMetalHolder } from "@/hooks/use-metal-holder";
-// import { usePresale } from "@/hooks/use-presale"; // Moved to legacy
+// useMetalHolder removed (Metal integration disabled)
+// Presale functionality removed (legacy feature disabled)
 
 interface ProjectCardProps {
   project: Project;
@@ -39,11 +39,9 @@ export default function ProjectCard({
 }: ProjectCardProps) {
   const { user } = usePrivy();
   const { isAdmin: isUserAdmin, isAdminLoading } = useUnifiedAuth();
-  const { data: holder } = useMetalHolder({ user });
   const [progress, setProgress] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   // const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [isFundModalOpen, setIsFundModalOpen] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { currentPlayingId, setCurrentPlayingId } = useAudioPlayerContext();
   const isThisCardPlaying = currentPlayingId === project.id;
@@ -72,7 +70,10 @@ export default function ProjectCard({
   const fundingError = presaleError ? "Failed to load presale data" : null;
 
   const isPending = project.status === "pending";
-  const isCreator = holder && holder.address === project.creator_id;
+  const isCreator = !!(user && (
+    String(user.wallet?.address ?? user.id ?? '').toLowerCase() === 
+    String(project.creatorwalletaddress ?? project.creator_id ?? '').toLowerCase()
+  ));
 
 
 
@@ -174,14 +175,6 @@ export default function ProjectCard({
           >
             Keep Editing
           </Link>
-        )}
-        {/* Token ticker badge - show for published projects with presale data */}
-        {!isPending && 
-         project.status !== "draft" && 
-         presaleData?.tokenInfo?.symbol && (
-          <span className="absolute top-3 right-3 bg-primary/20 border border-primary/30 text-xs text-primary px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium">
-            ${presaleData.tokenInfo.symbol}
-          </span>
         )}
         <div className="p-4">
           <div className="flex items-center justify-between mb-4">
@@ -330,14 +323,14 @@ export default function ProjectCard({
                 if (
                   !project.team_members ||
                   project.team_members.length === 0 ||
-                  !holder
+                  !user?.wallet?.address
                 )
                   return null;
 
                 const isTeamMember = project.team_members?.some(
                   (member) =>
                     member.wallet_address?.toLowerCase() ===
-                    holder.address?.toLowerCase()
+                    user.wallet.address?.toLowerCase()
                 );
 
                 if (!isCreator && (!isAdminLoading && !isUserAdmin) && !isTeamMember) return null;
@@ -354,34 +347,12 @@ export default function ProjectCard({
                 );
               })()
             ) : (
-              // Main app: Show Fund button
-              <button
-                disabled={
-                  project.status === "draft" ||
-                  !project.presale_id ||
-                  (isPending && (isCreator || (!isAdminLoading && isUserAdmin)))
-                }
-                onClick={() => setIsFundModalOpen(true)}
-                className="w-full flex items-center justify-center rounded-lg bg-primary px-4 py-2 font-medium text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50"
-                aria-label={
-                  project.status === "draft"
-                    ? "Draft projects cannot be funded until published"
-                    : !project.presale_id
-                    ? "Funding unavailable: no presale assigned"
-                    : isPending && (isCreator || (!isAdminLoading && isUserAdmin))
-                    ? "Project is pending approval"
-                    : undefined
-                }
-              >
-                Fund
-              </button>
+              // Main app: Funding disabled in membership platform
+              <div className="w-full flex items-center justify-center rounded-lg bg-gray-600 px-4 py-2 font-medium text-gray-300 cursor-not-allowed">
+                Funding Disabled
+              </div>
             )}
 
-            <FundModal
-              project={project}
-              isOpen={isFundModalOpen}
-              onClose={() => setIsFundModalOpen(false)}
-            />
           </div>
 
           {/* Share Button */}

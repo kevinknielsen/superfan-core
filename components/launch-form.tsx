@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Music, ImageIcon, Save } from "lucide-react";
 import TeamSplitsForm from "./team-splits-form";
-// import FinancingForm from "./financing-form"; // Moved to legacy
+// Financing form removed (legacy funding feature disabled)
 import ReviewProject from "./review-project";
 import { usePrivy } from "@/lib/auth-context";
 import { useWallets } from "@privy-io/react-auth";
@@ -869,12 +869,17 @@ export default function LaunchForm({
               exit={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.4 }}
             >
-              <FinancingForm
-                initialTeamMembers={formData.team_members ?? []}
-                onSave={handleFinancingSave}
-                onBack={() => setCurrentStep(1)}
-                enabled={formData.financingEnabled}
-              />
+              {/* Financing form removed - legacy funding feature disabled */}
+              <div className="text-center py-8" role="status" aria-live="polite" data-testid="financing-disabled">
+                <p className="text-muted-foreground">Financing is currently disabled for new projects.</p>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(4)}
+                  className="mt-4 rounded-md bg-primary px-4 py-2 text-sm text-white hover:bg-primary/90"
+                >
+                  Skip financing and continue to review
+                </button>
+              </div>
             </motion.div>
           ) : (
             <motion.div
@@ -888,7 +893,7 @@ export default function LaunchForm({
                 project={formData}
                 onBack={() => setCurrentStep(3)}
                 onPublish={handlePublish}
-                isSubmitting={false}
+                isSubmitting={isPublishing}
               />
             </motion.div>
           )}

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { getAccessToken } from '@privy-io/react-auth';
+import { useErrorHandler, createMutationErrorHandler } from '@/lib/frontend-error-handling';
 
 export interface PointsBreakdown {
   wallet: {
@@ -58,6 +59,7 @@ export interface TransferPointsRequest {
 export function useUnifiedPoints(clubId: string) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { handlePointsError } = useErrorHandler();
 
   // Fetch points breakdown
   const {
@@ -69,13 +71,16 @@ export function useUnifiedPoints(clubId: string) {
     queryKey: ['points-breakdown', clubId],
     queryFn: async (): Promise<PointsBreakdown> => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
       try {
-        console.log(`[useUnifiedPoints] Fetching breakdown for club ${clubId}...`);
+        if (process.env.NODE_ENV === 'development') console.log(`[useUnifiedPoints] Fetching breakdown for club ${clubId}...`);
         const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
           method: 'GET',
           headers: {
@@ -85,7 +90,7 @@ export function useUnifiedPoints(clubId: string) {
           signal: controller.signal,
         });
         
-        console.log(`[useUnifiedPoints] Response status: ${response.status}`);
+        if (process.env.NODE_ENV === 'development') console.log(`[useUnifiedPoints] Response status: ${response.status}`);
         
         clearTimeout(timeoutId);
         
@@ -114,6 +119,9 @@ export function useUnifiedPoints(clubId: string) {
   const spendPointsMutation = useMutation({
     mutationFn: async (request: SpendPointsRequest) => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
       const response = await fetch('/api/points/spend', {
         method: 'POST',
         headers: { 
@@ -124,8 +132,14 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const error = await response.json() as any;
-        throw new Error(error.error || 'Failed to spend points');
+        let errorPayload: any;
+        try {
+          errorPayload = await response.json();
+        } catch {
+          const text = await response.text().catch(() => '');
+          errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+        }
+        throw errorPayload;
       }
 
       return response.json() as any;
@@ -137,12 +151,8 @@ export function useUnifiedPoints(clubId: string) {
         description: `Successfully spent ${data.transaction?.points_spent || 'some'} points`,
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Spending Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: (error: any) => {
+      handlePointsError(error);
     },
   });
 
@@ -150,6 +160,9 @@ export function useUnifiedPoints(clubId: string) {
   const transferPointsMutation = useMutation({
     mutationFn: async (request: TransferPointsRequest) => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
       const response = await fetch('/api/points/transfer', {
         method: 'POST',
         headers: { 
@@ -160,8 +173,14 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const error = await response.json() as any;
-        throw new Error(error.error || 'Failed to transfer points');
+        let errorPayload: any;
+        try {
+          errorPayload = await response.json();
+        } catch {
+          const text = await response.text().catch(() => '');
+          errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+        }
+        throw errorPayload;
       }
 
       return response.json() as any;
@@ -173,12 +192,8 @@ export function useUnifiedPoints(clubId: string) {
         description: `Sent ${data.transfer?.points_transferred || 'some'} points to ${data.transfer?.recipient_email || 'recipient'}`,
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Transfer Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+    onError: (error: any) => {
+      handlePointsError(error);
     },
   });
 
@@ -252,9 +267,7 @@ export function useUnifiedPoints(clubId: string) {
     };
   }, [breakdown]);
 
-  const formatPoints = useCallback((points: number) => {
-    return points.toLocaleString();
-  }, []);
+  // Use shared formatter from lib/points
 
   return {
     // Data
@@ -291,55 +304,28 @@ export function useUnifiedPoints(clubId: string) {
   };
 }
 
-// Static status configuration (unified peg thresholds)
-const statusConfig = {
-  cadet: { 
-    color: 'bg-gray-500', 
-    label: 'Cadet', 
-    icon: '🌟',
-    threshold: 0,
-    description: 'New member getting started'
-  },
-  resident: { 
-    color: 'bg-blue-500', 
-    label: 'Resident', 
-    icon: '🏠',
-    threshold: 5000,  // 50 points at $1 per 100 pts
-    description: 'Regular community member'
-  },
-  headliner: { 
-    color: 'bg-purple-500', 
-    label: 'Headliner', 
-    icon: '🎤',
-    threshold: 15000, // 150 points at $1 per 100 pts
-    description: 'Active community contributor'
-  },
-  superfan: { 
-    color: 'bg-yellow-500', 
-    label: 'Superfan', 
-    icon: '👑',
-    threshold: 40000, // 400 points at $1 per 100 pts
-    description: 'Ultimate community champion'
-  }
+// Re-export consolidated status utilities and formatter
+import { getStatusInfo, getAllStatusInfo, STATUS_CONFIG, formatPoints } from '@/lib/points';
+
+export { 
+  getStatusInfo,
+  getAllStatusInfo as getAllStatuses,
+  STATUS_CONFIG as statusConfig 
 };
 
-// Utility hook for status information
+// Utility hook for status information - now uses consolidated logic
 export function useStatusInfo() {
-
-  const getStatusInfo = useCallback((status: string) => {
-    return statusConfig[status as keyof typeof statusConfig] || statusConfig.cadet;
+  const getStatusInfoCallback = useCallback((status: string) => {
+    return getStatusInfo(status as any);
   }, []);
 
-  const getAllStatuses = useCallback(() => {
-    return Object.entries(statusConfig).map(([key, value]) => ({
-      key,
-      ...value
-    }));
+  const getAllStatusesCallback = useCallback(() => {
+    return getAllStatusInfo();
   }, []);
 
   return {
-    getStatusInfo,
-    getAllStatuses,
-    statusConfig,
+    getStatusInfo: getStatusInfoCallback,
+    getAllStatuses: getAllStatusesCallback,
+    statusConfig: STATUS_CONFIG,
   };
 }

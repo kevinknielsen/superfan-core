@@ -15,11 +15,11 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-// import { usePresale } from "@/hooks/use-presale"; // Moved to legacy
+// Legacy presale functionality disabled
 import { formatDate } from "@/lib/utils";
 import { isManagerApp } from "@/lib/feature-flags";
 import { useToast } from "@/hooks/use-toast";
-// import FundModal from "./fund-modal"; // Moved to legacy
+// Legacy funding disabled
 import { useAudioPlayerContext } from "@/lib/audio-player-context";
 import Spinner from "./ui/spinner";
 import { ChartContainer } from "./ui/chart";
@@ -34,7 +34,6 @@ import {
 import Link from "next/link";
 import { usePrivy } from "@/lib/auth-context";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
-import { useMetalHolder } from "@/hooks/use-metal-holder";
 import { Project as BaseProject } from "@/app/api/projects/route";
 import { useFarcaster } from "@/lib/farcaster-context";
 
@@ -107,19 +106,19 @@ export default function ProjectDetailsModal({
   const { toast } = useToast();
   const { openUrl } = useFarcaster();
   const modalRef = useRef<HTMLDivElement>(null);
-  const [isFundModalOpen, setIsFundModalOpen] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { currentPlayingId, setCurrentPlayingId } = useAudioPlayerContext();
   const isThisModalPlaying = project && currentPlayingId === project?.id;
   const { user } = usePrivy();
   const { isAdmin: isUserAdmin, isAdminLoading } = useUnifiedAuth();
-  const { data: holder } = useMetalHolder({ user });
 
   // Button validation logic (same as project-card.tsx)
   const isPending = project?.status === "pending";
-  const isCreator = holder && holder.address === project?.creator_id;
+  const isCreator = !!(user && (
+    String(user.wallet?.address ?? user.id ?? '').toLowerCase() === 
+    String(project?.creatorwalletaddress ?? project?.creator_id ?? '').toLowerCase()
+  ));
 
   // Platform-aware external link handler
   const handleExternalLink = async (url: string, event: React.MouseEvent) => {
@@ -217,9 +216,7 @@ export default function ProjectDetailsModal({
   // Early return after all hooks
   if (!project) return null;
 
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-  };
+  // removed legacy local play state
 
   // Funding progress is now calculated from presale data above
 
@@ -420,14 +417,7 @@ export default function ProjectDetailsModal({
                 </button>
               </div>
 
-              {/* Trade Modal (reuse existing) */}
-              {isTradeModalOpen && (
-                <FundModal
-                  project={project}
-                  isOpen={isTradeModalOpen}
-                  onClose={() => setIsTradeModalOpen(false)}
-                />
-              )}
+              {/* Trade Modal removed - funding disabled */}
             </motion.div>
           </motion.div>
         )}
@@ -673,7 +663,7 @@ export default function ProjectDetailsModal({
                         {presaleData.status === "active" ? "Active" : "Ended"}
                       </span>
                     ) : (
-                      <span className="text-gray-400">Loading...</span>
+                      <span className="text-gray-400">Disabled</span>
                     )}
                   </div>
                 </div>
@@ -869,26 +859,17 @@ export default function ProjectDetailsModal({
                       !project.presale_id ||
                       (isPending && (isCreator || (!isAdminLoading && isUserAdmin)))
                     }
-                    onClick={() => setIsFundModalOpen(true)}
-                    className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    aria-label={
-                      project.status === "draft"
-                        ? "Draft projects cannot be funded until published"
-                        : !project.presale_id
-                        ? "Funding unavailable: no presale assigned"
-                        : isPending && (isCreator || (!isAdminLoading && isUserAdmin))
-                        ? "Project is pending approval"
-                        : undefined
-                    }
+                    onClick={onBuy ? () => onBuy(project) : undefined}
+                    disabled={!onBuy}
+                    className={`w-full rounded-xl py-4 text-center font-semibold transition-all ${
+                      onBuy 
+                        ? "bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90" 
+                        : "bg-gray-600 text-gray-300 cursor-not-allowed"
+                    }`}
                   >
-                    Fund Project
+                    {onBuy ? "Buy" : "Purchase Disabled"}
                   </button>}
 
-              <FundModal
-                project={project}
-                isOpen={isFundModalOpen}
-                onClose={() => setIsFundModalOpen(false)}
-              />
             </div>
           </motion.div>
         </motion.div>

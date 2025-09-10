@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Copy, ExternalLink, Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFundWallet, usePrivy } from "@privy-io/react-auth";
-import { useMetalHolder } from "@/hooks/use-metal-holder";
+// useMetalHolder removed - legacy Metal integration disabled
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { isManagerApp } from "@/lib/feature-flags";
 import { useProjects } from "@/hooks/use-projects";
@@ -43,14 +43,13 @@ export default function WalletSettings() {
   const { user: unifiedUser, walletAddress: unifiedWalletAddress, isInWalletApp } = useUnifiedAuth();
   const { user: privyUser } = usePrivy();
   
-  // Use unified user for Metal holder, fallback to Privy user for web context
+  // Use unified user, fallback to Privy user for web context
   const user = unifiedUser || privyUser;
-  const { data: holder } = useMetalHolder({ user });
+  // Metal holder removed - legacy integration disabled
 
   // For Wallet App: use unified wallet address (from Farcaster/Coinbase)
-  // For Web: use Metal holder address (from Privy embedded wallet)
-  // IMPORTANT: In wallet apps, never show Metal holder address
-  const walletAddress = isInWalletApp ? unifiedWalletAddress : holder?.address;
+  // For Web: use unified wallet address (Metal integration disabled)
+  const walletAddress = unifiedWalletAddress;
   
   // USDC contract address on Base
   const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
@@ -91,31 +90,25 @@ export default function WalletSettings() {
 
   // Get USDC balance of the connected wallet (in wallet apps)
   const { data: connectedWalletUsdcBalance } = useBalance({
-    address: walletAddress as Address,
+    address: isInWalletApp && walletAddress ? (walletAddress as Address) : undefined,
     token: USDC_BASE_ADDRESS,
     query: { enabled: !!walletAddress && isInWalletApp }
   });
 
-  // Determine which balance to show:
-  // - In wallet apps: show connected wallet's USDC balance
-  // - In web: show Metal holder balance (managed wallet)
-  const balance = isInWalletApp 
-    ? connectedWalletUsdcBalance?.formatted 
-    : holder?.usdcBalance;
+  // Show connected wallet's USDC balance (Metal integration disabled)
+  const balance = connectedWalletUsdcBalance?.formatted;
 
   // Debug logging to verify correct balance display
-  console.log("[WalletSettings] Balance debug:", {
+  if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Balance debug:", {
     isInWalletApp,
     walletAddress,
-    holderAddress: holder?.address,
     connectedWalletBalance: connectedWalletUsdcBalance?.formatted,
-    holderBalance: holder?.usdcBalance,
     finalBalance: balance,
-    balanceSource: isInWalletApp ? "connected wallet" : "metal holder"
+    balanceSource: "connected wallet (Metal integration disabled)"
   });
 
   // Debug global points data
-  console.log("[WalletSettings] Global points debug:", {
+  if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Global points debug:", {
     isLoadingPoints,
     pointsError: pointsError?.message,
     globalPointsData: globalPointsData ? {
@@ -156,8 +149,17 @@ export default function WalletSettings() {
   const { fundWallet } = useFundWallet();
 
   const handleFund = () => {
-    if (!holder?.address) return;
-    fundWallet(holder?.address);
+    if (isInWalletApp) {
+      toast({
+        title: "Funding unavailable",
+        description: "Funding is not available in wallet app. Please use the web app.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!walletAddress) return;
+    fundWallet(walletAddress);
   };
 
   const handleWithdraw = () => {
@@ -356,10 +358,7 @@ export default function WalletSettings() {
           )}
         </div>
         <p className="mt-2 text-sm text-muted-foreground text-center">
-          {isInWalletApp 
-            ? "This is your connected wallet address on Base network. Funding will come from this wallet." 
-            : "This is your Base network wallet address. Use it to receive USDC and other tokens."
-          }
+          This is your connected wallet address on Base network. Use it to receive USDC and other tokens.
         </p>
       </div>
 

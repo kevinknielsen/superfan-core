@@ -14,7 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
+import { formatPoints } from '@/lib/points';
 import { getAccessToken } from '@privy-io/react-auth';
+import { useToast } from '@/hooks/use-toast';
 import SpendPointsModal from './spend-points-modal';
 
 interface UnifiedPointsWalletProps {
@@ -38,6 +40,8 @@ export default function UnifiedPointsWallet({
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const { toast } = useToast();
 
   // Use the hook instead of manual fetch
   const { 
@@ -50,7 +54,6 @@ export default function UnifiedPointsWallet({
     isSpending,
     isTransferring,
     canSpend,
-    formatPoints,
     totalBalance,
     currentStatus
   } = useUnifiedPoints(clubId);
@@ -72,14 +75,22 @@ export default function UnifiedPointsWallet({
   // Handle buy points flow
   const handleBuyPoints = async () => {
     try {
+      if (isPurchasing) return;
+      setIsPurchasing(true);
+      
       console.log('Starting buy points flow for club:', clubId);
+      const token = await getAccessToken();
+      if (!token) {
+        toast({ title: 'Sign in required', description: 'Please sign in to purchase points.', variant: 'destructive' });
+        return;
+      }
       
       // For now, redirect to 1000 point bundle (smallest option)
       const response = await fetch('/api/points/purchase', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await getAccessToken() || ''}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           communityId: clubId,
@@ -101,7 +112,9 @@ export default function UnifiedPointsWallet({
       }
     } catch (error) {
       console.error('Buy points error:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Failed to start purchase'}`);
+      toast({ title: 'Purchase failed', description: error instanceof Error ? error.message : 'Failed to start purchase', variant: 'destructive' });
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
@@ -157,7 +170,7 @@ export default function UnifiedPointsWallet({
         {/* Main Balance Display */}
         <div className="text-center space-y-2">
           <div className="text-3xl font-bold text-foreground">
-            {wallet.total_balance.toLocaleString()}
+            {formatPoints(wallet.total_balance ?? 0)}
           </div>
           <div className="text-sm text-muted-foreground">Total Points</div>
           
@@ -165,11 +178,11 @@ export default function UnifiedPointsWallet({
           <div className="flex justify-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <TrendingUp className="h-3 w-3" />
-              {wallet.earned_points.toLocaleString()} earned
+              {formatPoints(wallet.earned_points ?? 0)} earned
             </span>
             <span className="flex items-center gap-1">
               <Wallet className="h-3 w-3" />
-              {wallet.purchased_points.toLocaleString()} purchased
+              {formatPoints(wallet.purchased_points ?? 0)} purchased
             </span>
           </div>
         </div>
@@ -179,7 +192,7 @@ export default function UnifiedPointsWallet({
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span>Progress to {status.next_status ? getStatusInfo(status.next_status).label : 'Max Status'}</span>
-              <span>{status.points_to_next} points needed</span>
+              <span>{formatPoints(status.points_to_next ?? 0)} points needed</span>
             </div>
             <Progress value={status.progress_to_next} className="h-2" />
           </div>
@@ -192,6 +205,7 @@ export default function UnifiedPointsWallet({
                 type="button"
                 variant="default"
                 className="w-full"
+                disabled={isPurchasing}
               onClick={(e) => {
                 e.stopPropagation();
                 handleBuyPoints();
@@ -209,7 +223,7 @@ export default function UnifiedPointsWallet({
               e.stopPropagation();
               setShowSpendModal(true);
             }}
-            disabled={wallet.total_balance === 0}
+            disabled={(wallet.total_balance ?? 0) <= 0}
           >
             <ArrowUpRight className="h-4 w-4 mr-2" />
             Spend Points
@@ -223,7 +237,7 @@ export default function UnifiedPointsWallet({
                 e.stopPropagation();
                 setShowTransferModal(true);
               }}
-              disabled={spending_power.purchased_available === 0}
+              disabled={(spending_power.purchased_available ?? 0) <= 0}
             >
               <Users className="h-4 w-4 mr-2" />
               Transfer
@@ -261,7 +275,15 @@ export default function UnifiedPointsWallet({
 }
 
 // Placeholder for Transfer Modal (to be implemented in Phase 2)
-function TransferPointsModal({ isOpen, onClose, onSuccess, clubId, clubName, ...props }: any) {
+function TransferPointsModal({
+  isOpen, onClose, onSuccess, clubId, clubName
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+  clubId: string;
+  clubName: string;
+}) {
   if (!isOpen) return null;
   
   return (

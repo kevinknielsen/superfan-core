@@ -185,20 +185,12 @@ export function useUserClubData(privyUserId: string | null, clubId: string | nul
 
       if (tapInsError) throw tapInsError;
 
-      // Get house account if exists
-      const { data: houseAccount, error: houseError } = await supabase
-        .from('house_accounts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('club_id', clubId)
-        .single();
-
       return {
         membership,
         club: membership.club,
         unlocks: unlocks || [],
         recent_tap_ins: tapIns || [],
-        house_account: houseError?.code === 'PGRST116' ? undefined : houseAccount,
+        house_account: undefined, // House accounts removed in tier rewards system
       };
     },
     enabled: !!privyUserId && !!clubId,
