@@ -71,13 +71,16 @@ export function useUnifiedPoints(clubId: string) {
     queryKey: ['points-breakdown', clubId],
     queryFn: async (): Promise<PointsBreakdown> => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
       
       try {
-        console.log(`[useUnifiedPoints] Fetching breakdown for club ${clubId}...`);
+        if (process.env.NODE_ENV === 'development') console.log(`[useUnifiedPoints] Fetching breakdown for club ${clubId}...`);
         const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
           method: 'GET',
           headers: {
@@ -87,7 +90,7 @@ export function useUnifiedPoints(clubId: string) {
           signal: controller.signal,
         });
         
-        console.log(`[useUnifiedPoints] Response status: ${response.status}`);
+        if (process.env.NODE_ENV === 'development') console.log(`[useUnifiedPoints] Response status: ${response.status}`);
         
         clearTimeout(timeoutId);
         
@@ -126,8 +129,14 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json() as any;
-        throw errorData; // Throw the full error response for proper handling
+        let errorPayload: any;
+        try {
+          errorPayload = await response.json();
+        } catch {
+          const text = await response.text().catch(() => '');
+          errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+        }
+        throw errorPayload;
       }
 
       return response.json() as any;
@@ -158,8 +167,14 @@ export function useUnifiedPoints(clubId: string) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json() as any;
-        throw errorData; // Throw the full error response for proper handling
+        let errorPayload: any;
+        try {
+          errorPayload = await response.json();
+        } catch {
+          const text = await response.text().catch(() => '');
+          errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+        }
+        throw errorPayload;
       }
 
       return response.json() as any;

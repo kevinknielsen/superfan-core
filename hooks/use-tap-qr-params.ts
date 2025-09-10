@@ -44,6 +44,9 @@ export function useTapQRParams(): QRState {
 
   // Load club information
   useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     const loadClubInfo = async () => {
       if (!params.clubId) {
         setParamError("Invalid QR code - missing club information");
@@ -61,46 +64,31 @@ export function useTapQRParams(): QRState {
       setParamError(null);
 
       try {
-        // Create AbortController for timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-          controller.abort();
-        }, 10000); // 10 second timeout
-
-        try {
-          const response = await fetch(`/api/clubs/${params.clubId}`, {
-            signal: controller.signal
-          });
-          
-          // Clear timeout on successful response
-          clearTimeout(timeoutId);
-          
-          if (response.ok) {
-            const club = await response.json();
-            setClubInfo(club);
-            setParamError(null);
-          } else {
-            setClubInfo(null);
-            setParamError("Club not found");
-          }
-        } catch (fetchError: any) {
-          // Clear timeout in case of error
-          clearTimeout(timeoutId);
-          
-          if (fetchError.name === 'AbortError') {
-            // Handle timeout specifically
-            console.error("Request timeout loading club:", fetchError);
-            setClubInfo(null);
-            setParamError("Request timed out. Please check your connection and try again.");
-          } else {
-            // Handle other fetch errors
-            throw fetchError;
-          }
+        const response = await fetch(`/api/clubs/${params.clubId}`, { signal: controller.signal });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const club = await response.json();
+          setClubInfo(club);
+          setParamError(null);
+        } else {
+          setClubInfo(null);
+          setParamError("Club not found");
         }
-      } catch (error) {
-        console.error("Error loading club:", error);
-        setClubInfo(null);
-        setParamError("Failed to load club information");
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === 'AbortError') {
+          // Handle timeout/abort specifically - don't update state if aborted
+          console.error("Request aborted loading club:", fetchError);
+          return;
+        } else {
+          // Handle other fetch errors
+          console.error("Error loading club:", fetchError);
+          setClubInfo(null);
+          setParamError("Failed to load club information");
+        }
       } finally {
         setIsLoadingClub(false);
       }
@@ -111,6 +99,11 @@ export function useTapQRParams(): QRState {
     setParamError(null);
     
     loadClubInfo();
+    
+    return () => {
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
   }, [params.clubId, params.source]);
 
   return {

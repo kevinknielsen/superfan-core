@@ -30,6 +30,12 @@ interface UnifiedAuthContextType {
 
 const UnifiedAuthContext = createContext<UnifiedAuthContextType | null>(null);
 
+// Helper to extract wallet address from Privy user object
+const getPrivyWalletAddress = (u: typeof privyUser) =>
+  typeof u?.wallet === 'string' ? u?.wallet
+  : (typeof u?.wallet === 'object' && u?.wallet?.address) ? u?.wallet.address
+  : null;
+
 export function UnifiedAuthProvider({ children }: { children: React.ReactNode }) {
   const { isInWalletApp, isInFarcaster, isInCoinbaseWallet, platform, user: farcasterUser, isSDKLoaded, frameContext } = useFarcaster();
   const { authenticated: privyAuthenticated, user: privyUser, ready: privyReady, logout: privyLogout } = usePrivy();
@@ -74,11 +80,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
     setHasTriedSync(true);
 
     // Extract user data from Privy
-    const walletAddr = (() => {
-      if (typeof privyUser.wallet === 'string') return privyUser.wallet;
-      if (typeof privyUser.wallet === 'object' && privyUser.wallet?.address) return privyUser.wallet.address;
-      return null;
-    })();
+    const walletAddr = getPrivyWalletAddress(privyUser);
 
     userSyncMutation.mutate({
       email: privyUser.email?.address || null,
@@ -170,13 +172,13 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
       isCurrent = false;
       abortController.abort();
     };
-  }, [isAuthenticated, isLoading, user?.id]);
+  }, [isAuthenticated, isLoading, isInWalletApp, isInFarcaster, farcasterUser?.fid, privyUser?.id]);
 
   // Extract wallet address - use connected wallet only (Metal holder fallback removed)
   const walletAddress = (() => {
     if (isInWalletApp) {
       // In Wallet App: return the connected wallet address
-      console.log("[UnifiedAuth] Wallet app debug:", {
+      if (process.env.NODE_ENV !== 'production') console.log("[UnifiedAuth] Wallet app debug:", {
         wagmiAddress: wagmiAccount?.address,
         wagmiConnected: wagmiAccount?.isConnected,
         isConnecting: wagmiAccount?.isConnecting,
@@ -186,14 +188,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
       return wagmiAccount?.address;
     } else {
       // Web context - use Privy wallet only
-      if (typeof privyUser?.wallet === 'string') {
-        return privyUser.wallet;
-      }
-      if (typeof privyUser?.wallet === 'object' && privyUser.wallet?.address) {
-        return privyUser.wallet.address;
-      }
-      // No fallback - user must connect a wallet
-      return undefined;
+      return getPrivyWalletAddress(privyUser);
     }
   })();
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getAccessToken } from '@privy-io/react-auth';
+import { usePrivy } from '@privy-io/react-auth';
+import { useUnifiedAuth } from '@/lib/unified-auth-context';
 
 export interface ClubWithOptionalMembership {
   id: string;
@@ -41,9 +42,13 @@ export interface DashboardData {
  * Replaces separate useClubs() + useUserClubMemberships() + individual points calls
  */
 export function useDashboardData() {
+  const { user } = useUnifiedAuth();
+  const { getAccessToken } = usePrivy();
+  const userKey = user?.id ?? 'anon';
+  
   return useQuery({
-    queryKey: ['dashboard-data'],
-    queryFn: async (): Promise<DashboardData> => {
+    queryKey: ['dashboard-data', userKey],
+    queryFn: async ({ signal }): Promise<DashboardData> => {
       const accessToken = await getAccessToken();
       
       if (!accessToken) {
@@ -51,6 +56,7 @@ export function useDashboardData() {
       }
 
       const response = await fetch('/api/dashboard', {
+        signal,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
         },
@@ -89,10 +95,11 @@ export function useFilteredDashboardClubs(searchQuery: string = '') {
     const userClubs = dashboardData.clubs
       .filter(club => club.membership)
       .sort((a, b) => {
-        // Sort by last activity (most recent first)
         const activityA = a.membership?.last_activity_at || a.created_at;
         const activityB = b.membership?.last_activity_at || b.created_at;
-        return new Date(activityB).getTime() - new Date(activityA).getTime();
+        const tA = Date.parse(activityA) || 0;
+        const tB = Date.parse(activityB) || 0;
+        return tB - tA;
       });
 
     const discoverClubs = dashboardData.clubs

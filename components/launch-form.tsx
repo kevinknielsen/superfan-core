@@ -870,14 +870,14 @@ export default function LaunchForm({
               transition={{ duration: 0.4 }}
             >
               {/* Financing form removed - legacy funding feature disabled */}
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">Financing options are currently disabled.</p>
+              <div className="text-center py-8" role="status" aria-live="polite" data-testid="financing-disabled">
+                <p className="text-muted-foreground">Financing is currently disabled for new projects.</p>
                 <button
                   type="button"
                   onClick={() => setCurrentStep(4)}
                   className="mt-4 rounded-md bg-primary px-4 py-2 text-sm text-white hover:bg-primary/90"
                 >
-                  Continue to Review
+                  Skip financing and continue to review
                 </button>
               </div>
             </motion.div>
@@ -893,7 +893,7 @@ export default function LaunchForm({
                 project={formData}
                 onBack={() => setCurrentStep(3)}
                 onPublish={handlePublish}
-                isSubmitting={false}
+                isSubmitting={isPublishing}
               />
             </motion.div>
           )}

@@ -282,13 +282,13 @@ export function calculateSpendingBreakdown(
   error?: string;
 } {
   // Validate negative amounts early
-  if (amountToSpend < 0) {
+  if (!Number.isFinite(amountToSpend) || amountToSpend < 0) {
     return {
       canSpend: false,
       spendPurchased: 0,
       spendEarned: 0,
       remainingBalance: earnedPoints + purchasedPoints,
-      error: "Invalid amount to spend"
+      error: "Amount to spend must be a non-negative number"
     };
   }
 
@@ -751,6 +751,13 @@ export function parsePointsAmount(input: string | number): number {
     return Math.max(0, Math.floor(input));
   }
   
-  const parsed = parseInt(input.replace(/[^\d]/g, ''), 10);
-  return Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
+  // Remove thousands separators but preserve negative sign
+  const cleanedInput = input.replace(/,/g, '').trim();
+  const parsed = Number(cleanedInput);
+  
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  
+  return Math.max(0, Math.floor(parsed));
 }

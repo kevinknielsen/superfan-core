@@ -106,7 +106,6 @@ export default function ProjectDetailsModal({
   const { toast } = useToast();
   const { openUrl } = useFarcaster();
   const modalRef = useRef<HTMLDivElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { currentPlayingId, setCurrentPlayingId } = useAudioPlayerContext();
@@ -214,9 +213,7 @@ export default function ProjectDetailsModal({
   // Early return after all hooks
   if (!project) return null;
 
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-  };
+  // removed legacy local play state
 
   // Funding progress is now calculated from presale data above
 

@@ -90,11 +90,15 @@ export async function GET(request: NextRequest) {
     let pointsData: Record<string, any> = {};
     if (membershipClubIds.length > 0) {
       // Use the computed view for efficient points lookup
-      const { data: walletsData } = await supabase
+      const { data: walletsData, error: walletsError } = await supabase
         .from('v_point_wallets')
         .select('club_id, balance_pts, earned_pts, purchased_pts, status_pts')
         .eq('user_id', user.id)
         .in('club_id', membershipClubIds);
+        
+      if (walletsError) {
+        console.error('Wallets fetch error:', walletsError);
+      }
 
       // Index by club_id for quick lookup
       pointsData = (walletsData || []).reduce((acc, wallet) => {

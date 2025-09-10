@@ -166,7 +166,14 @@ export async function getCachedUser(supabase: any, privyId: string) {
   const cacheKey = cacheKeys.userById(privyId);
   
   // Try cache first
-  const cached = queryCache.get(cacheKey);
+  let cached = null;
+  try {
+    cached = queryCache.get(cacheKey);
+  } catch (cacheError) {
+    console.warn('Cache get operation failed:', cacheError);
+    // Continue to fetch from database as if cache miss
+  }
+  
   if (cached) {
     return { data: cached, error: null };
   }
@@ -180,7 +187,12 @@ export async function getCachedUser(supabase: any, privyId: string) {
 
   // Cache successful results for 5 minutes (user data is relatively stable)
   if (data && !error) {
-    queryCache.set(cacheKey, data, 5 * 60 * 1000);
+    try {
+      queryCache.set(cacheKey, data, 5 * 60 * 1000);
+    } catch (cacheError) {
+      console.warn('Cache set operation failed:', cacheError);
+      // Continue without caching - don't affect the returned result
+    }
   }
 
   return { data, error };

@@ -79,8 +79,8 @@ export async function GET(request: NextRequest) {
           spent_points: 0,
           escrowed_points: 0,
           status_points: 0,
-          last_activity: new Date().toISOString(),
-          created_at: new Date().toISOString()
+          last_activity: null,
+          created_at: null
         },
         status: {
           current,

@@ -23,7 +23,7 @@ interface TapAuthActions {
 }
 
 interface UseTapAuthenticationProps {
-  clubInfo: any | null;
+  clubInfo: unknown | null;
   hasValidQRParams: boolean;
   autoLoginDelay?: number;
 }
@@ -39,7 +39,7 @@ export function useTapAuthentication({
   const { toast } = useToast();
   
   const [authError, setAuthError] = useState<string | null>(null);
-  const autoLoginTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoLoginTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const authAttemptedRef = useRef(false);
 
   // Clear timer helper

@@ -11,7 +11,7 @@ export interface ApiErrorResponse {
   success: false;
   error: {
     code: string;
-    message: string;
+    userMessage: string;
     suggestions?: string[];
     debug?: {
       originalMessage: string;
@@ -80,7 +80,7 @@ export function parseApiError(error: any): {
 
     return {
       type,
-      message: apiError.error.message,
+      message: apiError.error.userMessage,
       suggestions: apiError.error.suggestions || [],
       isUserFriendly: true,
     };

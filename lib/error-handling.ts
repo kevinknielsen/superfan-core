@@ -86,7 +86,7 @@ export const ERROR_DEFINITIONS = {
   INSUFFICIENT_POINTS: {
     code: 'INSUFFICIENT_POINTS',
     message: 'Not enough points available',
-    userMessage: 'You don\'t have enough points for this action',
+    userMessage: "You don't have enough points for this action",
     category: ErrorCategory.BUSINESS_LOGIC,
     severity: ErrorSeverity.LOW,
     httpStatus: 400,
@@ -106,7 +106,7 @@ export const ERROR_DEFINITIONS = {
   WALLET_NOT_FOUND: {
     code: 'WALLET_NOT_FOUND',
     message: 'Point wallet not found',
-    userMessage: 'You don\'t have a wallet for this club yet',
+    userMessage: "You don't have a wallet for this club yet",
     category: ErrorCategory.NOT_FOUND,
     severity: ErrorSeverity.MEDIUM,
     httpStatus: 404,
@@ -121,6 +121,37 @@ export const ERROR_DEFINITIONS = {
     severity: ErrorSeverity.LOW,
     httpStatus: 403,
     suggestions: ['Join the club to access this feature']
+  },
+
+  // Tier rewards system errors
+  REWARD_NOT_FOUND: {
+    code: 'REWARD_NOT_FOUND',
+    message: 'Reward not found',
+    userMessage: 'This reward is no longer available',
+    category: ErrorCategory.NOT_FOUND,
+    severity: ErrorSeverity.LOW,
+    httpStatus: 404,
+    suggestions: ['Check available rewards', 'Refresh the page']
+  },
+
+  REWARD_ALREADY_CLAIMED: {
+    code: 'REWARD_ALREADY_CLAIMED',
+    message: 'Reward has already been claimed',
+    userMessage: 'You have already claimed this reward',
+    category: ErrorCategory.BUSINESS_LOGIC,
+    severity: ErrorSeverity.LOW,
+    httpStatus: 400,
+    suggestions: ['View your rewards history', 'Browse other available rewards']
+  },
+
+  TIER_REQUIREMENT_NOT_MET: {
+    code: 'TIER_REQUIREMENT_NOT_MET',
+    message: 'Tier requirement not met',
+    userMessage: 'You need to reach a higher tier to access this',
+    category: ErrorCategory.BUSINESS_LOGIC,
+    severity: ErrorSeverity.LOW,
+    httpStatus: 403,
+    suggestions: ['Check tier requirements', 'Earn more points to advance']
   },
 
   // Transfer errors
@@ -310,16 +341,43 @@ export function handleApiError(error: unknown, context?: string): NextResponse {
   if (error && typeof error === 'object' && 'code' in error) {
     const dbError = error as any;
     
-    // Common Supabase/PostgreSQL errors
-    switch (dbError.code) {
-      case 'PGRST116': // Row not found
-        return createErrorResponse(createStandardError('USER_NOT_FOUND', dbError));
-      case '23505': // Unique constraint violation
-        return createErrorResponse(createStandardError('BUSINESS_LOGIC', dbError, 'This action conflicts with existing data'));
-      case '23503': // Foreign key constraint violation
-        return createErrorResponse(createStandardError('BUSINESS_LOGIC', dbError, 'This action references data that no longer exists'));
-      default:
-        return createErrorResponse(createStandardError('DATABASE_ERROR', dbError));
+    // PostgreSQL error code mapping
+    const postgresErrorMap: Record<string, { type: string, message: string }> = {
+      // Supabase-specific
+      'PGRST116': { type: 'USER_NOT_FOUND', message: 'Record not found' },
+      
+      // Constraint violations
+      '23505': { type: 'BUSINESS_LOGIC', message: 'This action conflicts with existing data' },
+      '23503': { type: 'BUSINESS_LOGIC', message: 'This action references data that no longer exists' },
+      '23502': { type: 'VALIDATION_ERROR', message: 'Required field is missing' },
+      '23514': { type: 'VALIDATION_ERROR', message: 'Data violates business rules' },
+      
+      // Data type errors
+      '22001': { type: 'VALIDATION_ERROR', message: 'Text value is too long' },
+      '22003': { type: 'VALIDATION_ERROR', message: 'Numeric value is out of range' },
+      
+      // Schema errors
+      '42703': { type: 'DATABASE_ERROR', message: 'Database column not found' },
+      '42883': { type: 'DATABASE_ERROR', message: 'Database function not found' },
+      '42P01': { type: 'DATABASE_ERROR', message: 'Database table not found' },
+      
+      // Connection errors
+      '08003': { type: 'DATABASE_ERROR', message: 'Database connection lost' },
+      '08006': { type: 'DATABASE_ERROR', message: 'Database connection failed' },
+      
+      // Permission errors
+      '42501': { type: 'UNAUTHORIZED', message: 'Insufficient database permissions' },
+      
+      // Transaction errors
+      '25001': { type: 'DATABASE_ERROR', message: 'Transaction is already active' },
+      '25P02': { type: 'DATABASE_ERROR', message: 'Transaction has failed and was rolled back' }
+    };
+
+    const errorMapping = postgresErrorMap[dbError.code];
+    if (errorMapping) {
+      return createErrorResponse(createStandardError(errorMapping.type as any, dbError, errorMapping.message));
+    } else {
+      return createErrorResponse(createStandardError('DATABASE_ERROR', dbError));
     }
   }
 

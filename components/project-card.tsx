@@ -173,14 +173,6 @@ export default function ProjectCard({
             Keep Editing
           </Link>
         )}
-        {/* Token ticker badge - show for published projects with presale data */}
-        {!isPending && 
-         project.status !== "draft" && 
-         presaleData?.tokenInfo?.symbol && (
-          <span className="absolute top-3 right-3 bg-primary/20 border border-primary/30 text-xs text-primary px-3 py-1 rounded-full shadow z-30 pointer-events-none select-none font-medium">
-            ${presaleData.tokenInfo.symbol}
-          </span>
-        )}
         <div className="p-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">

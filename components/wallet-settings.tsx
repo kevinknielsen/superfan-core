@@ -100,7 +100,7 @@ export default function WalletSettings() {
   const balance = connectedWalletUsdcBalance?.formatted;
 
   // Debug logging to verify correct balance display
-  console.log("[WalletSettings] Balance debug:", {
+  if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Balance debug:", {
     isInWalletApp,
     walletAddress,
     connectedWalletBalance: connectedWalletUsdcBalance?.formatted,
@@ -109,7 +109,7 @@ export default function WalletSettings() {
   });
 
   // Debug global points data
-  console.log("[WalletSettings] Global points debug:", {
+  if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Global points debug:", {
     isLoadingPoints,
     pointsError: pointsError?.message,
     globalPointsData: globalPointsData ? {

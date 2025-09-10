@@ -218,11 +218,15 @@ function TapPageContent() {
                   </div>
                 </div>
 
-                {/* QR Code indicator */}
+                {/* Source indicator */}
                 <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-slate-400">
                     <QrCode className="w-4 h-4" />
-                    <span className="text-xs">QR Code Scanned</span>
+                    <span className="text-xs">
+                      {source === 'nfc' ? 'NFC Tap Detected' :
+                       source === 'link' ? 'Link Opened' :
+                       'QR Code Scanned'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -340,7 +344,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} points
+                  +{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} points
                 </span>
               </div>
             </motion.div>

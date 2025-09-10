@@ -5,24 +5,13 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import confetti from 'canvas-confetti';
+import type { TapInResponse } from '@/hooks/use-tap-ins';
 
 interface AdditionalData {
   location?: string;
   metadata?: Record<string, any>;
 }
 
-interface TapInResponse {
-  success: boolean;
-  tap_in: any;
-  points_earned: number;
-  total_points: number;
-  current_status: string;
-  previous_status: string;
-  status_changed: boolean;
-  club_name: string;
-  membership: any;
-}
 
 interface TapProcessingState {
   isProcessing: boolean;
@@ -55,29 +44,40 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
   
   const processingStarted = useRef(false);
 
-  const triggerCelebration = useCallback((result: TapInResponse) => {
-    // Confetti burst
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
-    });
+  const triggerCelebration = useCallback(async (result: TapInResponse) => {
+    // Guard against SSR
+    if (typeof window === 'undefined') return;
 
-    // Status upgrade confetti
-    if (result.status_changed) {
-      setTimeout(() => {
+    try {
+      // Dynamically import confetti only in browser
+      const { default: confetti } = await import('canvas-confetti');
+
+      // Confetti burst
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+      });
+
+      // Status upgrade confetti with async delay
+      if (result.status_changed) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
         confetti({
           particleCount: 150,
           spread: 120,
           origin: { y: 0.5 },
           colors: ['#FFD700', '#FFA500', '#FF69B4', '#9370DB'],
         });
-      }, 1000);
-    }
+      }
 
-    setAnimationComplete(true);
-  }, []);
+      setAnimationComplete(true);
+    } catch (error) {
+      console.warn('Failed to load confetti library:', error);
+      // Still complete the animation even if confetti fails
+      setAnimationComplete(true);
+    }
+  }, [setAnimationComplete]);
 
   const processTapIn = useCallback(async ({
     clubId,
@@ -101,7 +101,22 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
       let additionalData: AdditionalData = {};
       if (data) {
         try {
-          const decoded = JSON.parse(atob(data)) as AdditionalData;
+          // Normalize URL-safe base64 and add padding if needed
+          let normalizedData = data.replace(/-/g, '+').replace(/_/g, '/');
+          while (normalizedData.length % 4) {
+            normalizedData += '=';
+          }
+
+          let decodedString: string;
+          if (typeof window !== 'undefined' && typeof atob === 'function') {
+            // Browser environment
+            decodedString = atob(normalizedData);
+          } else {
+            // SSR/Node environment
+            decodedString = Buffer.from(normalizedData, 'base64').toString('utf-8');
+          }
+
+          const decoded = JSON.parse(decodedString) as AdditionalData;
           additionalData = decoded;
         } catch (e) {
           console.warn("Could not decode QR data:", e);
@@ -170,7 +185,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
 
       // Trigger celebration animation
       setTimeout(() => {
-        triggerCelebration(result);
+        void triggerCelebration(result);
       }, 500);
 
       // Show success toast
