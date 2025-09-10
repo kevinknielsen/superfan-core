@@ -15,11 +15,11 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-// import { usePresale } from "@/hooks/use-presale"; // Moved to legacy
+// Presale functionality removed (legacy feature disabled)
 import { formatDate } from "@/lib/utils";
 import { isManagerApp } from "@/lib/feature-flags";
 import { useToast } from "@/hooks/use-toast";
-// import FundModal from "./fund-modal"; // Moved to legacy
+// Fund modal removed (legacy funding feature disabled)
 import { useAudioPlayerContext } from "@/lib/audio-player-context";
 import Spinner from "./ui/spinner";
 import { ChartContainer } from "./ui/chart";

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
+import { formatPoints } from '@/lib/points';
 import { getAccessToken } from '@privy-io/react-auth';
 import SpendPointsModal from './spend-points-modal';
 
@@ -50,7 +51,7 @@ export default function UnifiedPointsWallet({
     isSpending,
     isTransferring,
     canSpend,
-    formatPoints,
+    // formatPoints, // Now imported directly from lib/points
     totalBalance,
     currentStatus
   } = useUnifiedPoints(clubId);
@@ -157,7 +158,7 @@ export default function UnifiedPointsWallet({
         {/* Main Balance Display */}
         <div className="text-center space-y-2">
           <div className="text-3xl font-bold text-foreground">
-            {wallet.total_balance.toLocaleString()}
+            {formatPoints(wallet.total_balance)}
           </div>
           <div className="text-sm text-muted-foreground">Total Points</div>
           
@@ -165,11 +166,11 @@ export default function UnifiedPointsWallet({
           <div className="flex justify-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <TrendingUp className="h-3 w-3" />
-              {wallet.earned_points.toLocaleString()} earned
+              {formatPoints(wallet.earned_points)} earned
             </span>
             <span className="flex items-center gap-1">
               <Wallet className="h-3 w-3" />
-              {wallet.purchased_points.toLocaleString()} purchased
+              {formatPoints(wallet.purchased_points)} purchased
             </span>
           </div>
         </div>

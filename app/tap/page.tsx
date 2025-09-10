@@ -1,22 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useRef, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import React, { useEffect, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Star, Trophy, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
-import confetti from "canvas-confetti";
-import { useUnifiedAuth } from "@/lib/unified-auth-context";
-import { useToast } from "@/hooks/use-toast";
+import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
 import Header from "@/components/header";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
-import { usePrivy } from "@privy-io/react-auth";
-import { useFarcaster } from "@/lib/farcaster-context";
-import { POINT_VALUES } from "@/hooks/use-tap-ins";
+import { TAP_IN_POINT_VALUES } from "@/lib/points";
 
-interface AdditionalData {
-  location?: string;
-  metadata?: Record<string, any>;
-}
+// New custom hooks for cleaner separation of concerns
+import { useTapQRParams } from "@/hooks/use-tap-qr-params";
+import { useTapAuthentication } from "@/hooks/use-tap-authentication";
+import { useTapProcessing } from "@/hooks/use-tap-processing";
 
 interface TapInResponse {
   success: boolean;
@@ -30,265 +25,61 @@ interface TapInResponse {
   membership: any;
 }
 
-
 function TapPageContent() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const { user, isAuthenticated, isLoading: authLoading, isInWalletApp } = useUnifiedAuth();
-  const { toast } = useToast();
-  const { getAccessToken, login } = usePrivy();
-  const { user: farcasterUser } = useFarcaster();
   
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [tapResult, setTapResult] = useState<TapInResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [animationComplete, setAnimationComplete] = useState(false);
-  
-  const confettiRef = useRef<HTMLCanvasElement>(null);
-  const processingStarted = useRef(false);
-  const autoLoginTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Extract QR parameters and load club info
+  const { 
+    params: { qrId, clubId, source, data, location }, 
+    clubInfo, 
+    isLoadingClub,
+    hasValidQRParams, 
+    paramError 
+  } = useTapQRParams();
 
-  // Extract QR parameters
-  const qrId = searchParams.get('qr');
-  const clubId = searchParams.get('club');
-  const source = searchParams.get('source');
-  const data = searchParams.get('data');
-  const location = searchParams.get('location');
+  // Handle authentication flow
+  const {
+    isReady: authReady,
+    needsAuth,
+    authError,
+    triggerAuth,
+    getAuthHeaders
+  } = useTapAuthentication({
+    clubInfo,
+    hasValidQRParams,
+    autoLoginDelay: 5000
+  });
 
-  // Load club information first (even for unauthenticated users)
-  const [clubInfo, setClubInfo] = useState<any>(null);
-  
-  // Reset processing when URL parameters change
+  // Handle tap-in processing
+  const {
+    isProcessing,
+    tapResult,
+    error: processingError,
+    animationComplete,
+    processTapIn,
+    setAnimationComplete
+  } = useTapProcessing();
+
+  // Consolidate all errors into one
+  const error = paramError || authError || processingError;
+
+  // Process tap-in when ready
   useEffect(() => {
-    processingStarted.current = false;
-    setTapResult(null);
-    setError(null);
-    
-    // Clear any pending auto-login timer
-    if (autoLoginTimerRef.current) {
-      clearTimeout(autoLoginTimerRef.current);
-      autoLoginTimerRef.current = null;
-    }
-    
-    // Always load club info first
-    if (clubId) {
-      loadClubInfo();
-    } else {
-      setError("Invalid QR code - missing club information");
-    }
-  }, [qrId, clubId, source]);
-
-  // Process tap-in only after authentication
-  useEffect(() => {
-    if (!authLoading && isAuthenticated && user && clubInfo && !processingStarted.current) {
-      if (!source) {
-        setError("Invalid QR code - missing source information");
-        return;
-      }
-      
-      processingStarted.current = true;
-      processTapIn();
-    }
-  }, [authLoading, isAuthenticated, user, clubInfo, source]);
-
-  const handleAuthAndTapIn = async () => {
-    try {
-      // Clear auto-login timer if user clicks manually
-      if (autoLoginTimerRef.current) {
-        clearTimeout(autoLoginTimerRef.current);
-        autoLoginTimerRef.current = null;
-      }
-
-      // If already authenticated, process tap-in directly
-      if (isAuthenticated && user && clubInfo) {
-        if (!processingStarted.current) {
-          processingStarted.current = true;
-          processTapIn();
-        }
-        return;
-      }
-
-      // Skip Privy login in wallet app context
-      if (isInWalletApp) {
-        console.warn("Cannot trigger Privy login in wallet app context");
-        return;
-      }
-
-      await login();
-      // After login, the useEffect will automatically process the tap-in
-    } catch (error) {
-      console.error("Authentication failed:", error);
-      setError("Authentication failed. Please try again.");
-    }
-  };
-
-  // Auto-trigger Privy login modal when club info loads for unauthenticated users
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated && !isInWalletApp && clubInfo && !processingStarted.current) {
-      // Small delay to let the user see the club preview first
-      autoLoginTimerRef.current = setTimeout(() => {
-        handleAuthAndTapIn();
-      }, 5000); // 5 second delay to show the club preview
-      
-      return () => {
-        if (autoLoginTimerRef.current) {
-          clearTimeout(autoLoginTimerRef.current);
-          autoLoginTimerRef.current = null;
-        }
-      };
-    }
-  }, [authLoading, isAuthenticated, isInWalletApp, clubInfo]);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (autoLoginTimerRef.current) {
-        clearTimeout(autoLoginTimerRef.current);
-      }
-    };
-  }, []);
-
-  const loadClubInfo = async () => {
-    try {
-      const response = await fetch(`/api/clubs/${clubId}`);
-      if (response.ok) {
-        const club = await response.json();
-        setClubInfo(club);
-      } else {
-        setError("Club not found");
-      }
-    } catch (error) {
-      console.error("Error loading club:", error);
-      setError("Failed to load club information");
-    }
-  };
-
-  // Get authentication headers based on context
-  const getAuthHeaders = async (): Promise<{ Authorization: string }> => {
-    if (isInWalletApp) {
-      // Wallet app: use Farcaster authentication
-      const farcasterUserId = farcasterUser?.fid?.toString();
-      if (!farcasterUserId) {
-        throw new Error("Farcaster user not found in wallet app");
-      }
-      return {
-        Authorization: `Farcaster farcaster:${farcasterUserId}`,
-      };
-    } else {
-      // Web app: use Privy authentication
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error("User not logged in");
-      }
-      return {
-        Authorization: `Bearer ${accessToken}`,
-      };
-    }
-  };
-
-  const processTapIn = async () => {
-    setIsProcessing(true);
-    setError(null);
-
-    try {
-      // Decode additional data if present
-      let additionalData: AdditionalData = {};
-      if (data) {
-        try {
-          const decoded = JSON.parse(atob(data)) as AdditionalData;
-          additionalData = decoded;
-        } catch (e) {
-          console.warn("Could not decode QR data:", e);
-        }
-      }
-
-      const tapInPayload = {
-        club_id: clubId,
-        source: source,
-        location: location || additionalData.location,
-        metadata: {
-          qr_id: qrId,
-          scanned_at: new Date().toISOString(),
-          ...additionalData.metadata
-        }
-      };
-
-      // Get authentication headers
-      const authHeaders = await getAuthHeaders();
-      
-      const response = await fetch('/api/tap-in', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify(tapInPayload),
+    if (authReady && clubId && source) {
+      processTapIn({
+        clubId,
+        source,
+        qrId: qrId || undefined,
+        location: location || undefined,
+        data: data || undefined,
+        getAuthHeaders
       });
-
-      if (!response.ok) {
-        let errorData: { error?: string };
-        try {
-          errorData = await response.json() as { error?: string };
-        } catch {
-          errorData = { error: 'Invalid response from server' };
-        }
-        throw new Error(errorData.error || 'Failed to process tap-in');
-      }
-
-      let result: TapInResponse;
-      try {
-        result = await response.json() as TapInResponse;
-      } catch {
-        throw new Error('Invalid response format from server');
-      }
-      setTapResult(result);
-
-      // Trigger celebration animation
-      setTimeout(() => {
-        triggerCelebration(result);
-      }, 500);
-
-      // Show success toast
-      toast({
-        title: "Points earned! 🎉",
-        description: `+${result.points_earned} points in ${result.club_name}`,
-      });
-
-    } catch (err) {
-      console.error("Tap-in error:", err);
-      setError(err instanceof Error ? err.message : "Failed to process tap-in");
-      toast({
-        title: "Tap-in failed",
-        description: err instanceof Error ? err.message : "Please try again",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
     }
-  };
+  }, [authReady, clubId, source, qrId, location, data, processTapIn, getAuthHeaders]);
 
-  const triggerCelebration = (result: TapInResponse) => {
-    // Confetti burst
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
-    });
-
-    // Status upgrade confetti
-    if (result.status_changed) {
-      setTimeout(() => {
-        confetti({
-          particleCount: 150,
-          spread: 120,
-          origin: { y: 0.5 },
-          colors: ['#FFD700', '#FFA500', '#FF69B4', '#9370DB'],
-        });
-      }, 1000);
-    }
-
-    setAnimationComplete(true);
+  // Manual authentication handler
+  const handleAuthAndTapIn = () => {
+    triggerAuth();
   };
 
   const getStatusIcon = (status: string) => {
@@ -300,8 +91,20 @@ function TapPageContent() {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
   };
 
+  // Show loading state while club info is loading
+  if (isLoadingClub) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading club information...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Show split-screen club preview for unauthenticated users
-  if (!authLoading && !isAuthenticated && clubInfo) {
+  if (needsAuth && clubInfo) {
     return (
       <div className="min-h-screen bg-background flex">
         {/* Left Side - Club Membership Card (Desktop only) */}
@@ -411,7 +214,7 @@ function TapPageContent() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 text-sm">Points</span>
-                    <span className="text-green-400 text-sm">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-sm">+{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} on join</span>
                   </div>
                 </div>
 
@@ -510,7 +313,7 @@ function TapPageContent() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-xs">+{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} on join</span>
                       </div>
                     </div>
                   </div>
@@ -568,16 +371,8 @@ function TapPageContent() {
     );
   }
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  // Authentication loading is now handled within the useTapAuthentication hook
+  // No separate loading state needed here
 
   if (error) {
     return (

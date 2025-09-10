@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../supabase";
 import { type } from "arktype";
 import { verifyPrivyToken } from "../../auth";
-import { metal } from "@/lib/metal/server";
+// Metal integration removed - legacy funding system disabled
 import { projectsQuery } from "../../projects/route";
 
 const updateProjectSchema = type({
@@ -82,53 +82,11 @@ function generateTokenTicker(projectTitle: string): string {
 }
 
 async function createPresale(projectId: string) {
-  const { data: project, error } = await projectsQuery
-    .eq("id", projectId)
-    .single();
-
-  if (error) return { data: null, error };
-
-  if (
-    project.presale_id ||
-    !project.financing?.end_date ||
-    !project.financing.target_raise
-  ) {
-    console.warn("[Server]: presale creation skipped - already exists or financing disabled");
-    return {
-      data: { presale_id: project.presale_id || null },
-      error: null,
-    };
-  }
-
-  const presale = await metal.createPresale({
-    name: project.title,
-    description: project.description || "",
-    startTimestamp: Math.round(Date.now() / 1000),
-    endTimestamp: Math.round(
-      new Date(project.financing.end_date).getTime() / 1000
-    ),
-    targetUsdcAmount: project.financing.target_raise,
-    tokenInfo: {
-      name: project.title,
-      symbol: generateTokenTicker(project.title),
-      imageUrl: project.cover_art_url || "sadsad",
-      metadata: {
-        description: project.description || "",
-      },
-    },
-    deploymentConfig: {
-      lockupPercentage: 25,
-    },
-  });
-
-  if (presale.error) {
-    console.error("[Server]: Error creating presale:", presale.error);
-    return { data: null, error: presale.error };
-  }
-
+  // Metal integration disabled - legacy funding system
+  console.warn("[Server]: Presale creation disabled - legacy funding system removed");
   return {
-    data: { presale_id: presale.data.id },
-    error: null,
+    data: { presale_id: null },
+    error: null, // Return success instead of error to allow publish flow to continue
   };
 }
 

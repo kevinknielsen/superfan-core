@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { Users, Play, Pause, BarChart3 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ProjectDetailsModal from "./project-details-modal";
-// import FundModal from "./fund-modal"; // Moved to legacy
+// Fund modal removed (legacy funding feature disabled)
 import { useAudioPlayerContext } from "@/lib/audio-player-context";
 import {
   getSharedFundingProgressUSD,
@@ -23,7 +23,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Project } from "@/app/api/projects/route";
 import FarcasterShare from "./farcaster-share";
-// import { usePresale } from "@/hooks/use-presale"; // Moved to legacy
+// useMetalHolder removed (Metal integration disabled)
+// Presale functionality removed (legacy feature disabled)
 
 interface ProjectCardProps {
   project: Project;

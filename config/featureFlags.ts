@@ -2,17 +2,7 @@
 // This file controls the availability of legacy funding features vs new membership features
 
 export interface FeatureFlags {
-  // Legacy funding features (ALL DISABLED during transition)
-  enableFunding: boolean;
-  enableTokens: boolean;
-  enablePresales: boolean;
-  enableRevenueSplits: boolean;
-  enableCapTable: boolean;
-  enableProjectReview: boolean;
-  enableMetal: boolean;
-  enableContributions: boolean;
-  
-  // New membership features
+  // Current membership features
   enableMembership: boolean;
   enableHouseAccounts: boolean;
   enableRedemptionCodes: boolean;
@@ -22,17 +12,7 @@ export interface FeatureFlags {
 }
 
 const flags: FeatureFlags = {
-  // Legacy features - ALL DISABLED
-  enableFunding: false,
-  enableTokens: false,
-  enablePresales: false,
-  enableRevenueSplits: false,
-  enableCapTable: false,
-  enableProjectReview: false,
-  enableMetal: false,
-  enableContributions: false,
-  
-  // New features - membership enabled, others gated by env vars
+  // Current features - membership enabled, others gated by env vars
   enableMembership: true,
   enableHouseAccounts: process.env.ENABLE_HOUSE_ACCOUNTS === 'true',
   enableRedemptionCodes: process.env.ENABLE_REDEMPTION_CODES === 'true',
@@ -100,23 +80,39 @@ export function isRouteEnabled(path: string): boolean {
   return true;
 }
 
-// API route guard utility
+// API route guard utility - performs real authorization checks
 export function isApiRouteEnabled(path: string): boolean {
-  const legacyApiRoutes = [
-    '/api/contributions',
-    '/api/funded-projects',
-    '/api/presales',
-    '/api/metal',
-    '/api/project/[projectId]/financing'
-  ];
-  
-  return !legacyApiRoutes.some(route => {
-    if (route.includes('[projectId]')) {
-      const pattern = route.replace('[projectId]', '\\w+');
-      return new RegExp(`^${pattern}$`).test(path);
-    }
-    return path === route;
-  });
+  // Check if route bypass is explicitly enabled (for development/testing)
+  if (process.env.FEATURE_FLAGS_DISABLE_ROUTE_GUARD === 'true') {
+    console.warn(`[FEATURE_FLAGS] Route guard bypassed for ${path} - development mode`);
+    return true;
+  }
+
+  // Define enabled API routes - add new routes here as they're implemented
+  const enabledApiRoutes = new Set([
+    '/api/auth',
+    '/api/dashboard',
+    '/api/points',
+    '/api/clubs',
+    '/api/tap-in',
+    '/api/memberships',
+    '/api/projects',
+    '/api/admin',
+    '/api/rewards',
+    '/api/notifications'
+  ]);
+
+  // Check if the route or its parent path is enabled
+  const isEnabled = enabledApiRoutes.has(path) || 
+    Array.from(enabledApiRoutes).some(enabledRoute => 
+      path.startsWith(enabledRoute + '/') || path.startsWith(enabledRoute + '?')
+    );
+
+  if (!isEnabled) {
+    console.warn(`[FEATURE_FLAGS] API route not found in configuration: ${path}`);
+  }
+
+  return isEnabled;
 }
 
 // Component feature guard decorator
@@ -137,14 +133,7 @@ export function useFeatureFlag(flag: keyof FeatureFlags): boolean {
   return flags[flag];
 }
 
-// Legacy route redirects
+// Legacy route redirects (no longer needed - routes removed)
 export function getLegacyRouteRedirect(path: string): string | null {
-  const redirectMap: Record<string, string> = {
-    '/launch': '/membership',
-    '/your-projects': '/',
-    '/review': '/',
-    '/moonpay-test': '/',
-  };
-  
-  return redirectMap[path] || null;
+  return null;
 }
