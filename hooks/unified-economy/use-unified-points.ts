@@ -267,9 +267,7 @@ export function useUnifiedPoints(clubId: string) {
     };
   }, [breakdown]);
 
-  const formatPoints = useCallback((points: number) => {
-    return Math.floor(points).toLocaleString(); // Use consistent formatting from consolidated lib
-  }, []);
+  // Use shared formatter from lib/points
 
   return {
     // Data
@@ -306,8 +304,8 @@ export function useUnifiedPoints(clubId: string) {
   };
 }
 
-// Re-export consolidated status utilities
-import { getStatusInfo, getAllStatusInfo, STATUS_CONFIG } from '@/lib/points';
+// Re-export consolidated status utilities and formatter
+import { getStatusInfo, getAllStatusInfo, STATUS_CONFIG, formatPoints } from '@/lib/points';
 
 export { 
   getStatusInfo,

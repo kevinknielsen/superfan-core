@@ -102,7 +102,20 @@ export default function UnlockRedemption({
   const [isRedeeming, setIsRedeeming] = useState(false);
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    const controller = new AbortController();
+    
+    const loadDataWithAbort = async () => {
+      await loadData();
+      // Note: loadData should ideally accept signal parameter for full abort support
+    };
+    
+    loadDataWithAbort();
+    
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [clubId]);
 
   const loadData = async () => {

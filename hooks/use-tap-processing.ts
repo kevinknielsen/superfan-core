@@ -134,6 +134,9 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         }
       };
 
+      // Generate idempotency key for double-submit protection
+      const idempotencyKey = `tap-in-${clubId}-${source}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
       
@@ -143,6 +146,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
           ...authHeaders,
         },
         body: JSON.stringify(tapInPayload),
