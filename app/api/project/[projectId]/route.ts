@@ -21,7 +21,7 @@ export async function GET(
   request: Request,
   { params }: { params: { projectId: string } }
 ) {
-  const { projectId } = await params;
+  const { projectId } = params;
 
   const { data, error } = await projectsQuery.eq("id", projectId).maybeSingle();
 
@@ -94,7 +94,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { projectId: string } }
 ) {
-  const { projectId } = await params;
+  const { projectId } = params;
 
   const jwt = await verifyPrivyToken(request);
   if (!jwt) {

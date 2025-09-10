@@ -292,10 +292,10 @@ export default function UnlockRedemption({
         await loadData();
         
         // Show full-screen confirmation
-        onShowRedemptionConfirmation?.(
-          'redemption' in result ? result.redemption : result,
-          unlock
-        );
+        const payload = (result && typeof result === 'object' && 'redemption' in result)
+          ? (result as any).redemption
+          : result;
+        onShowRedemptionConfirmation?.(payload, unlock);
         
         // Callback for parent component
         onRedemption?.();
@@ -332,9 +332,7 @@ export default function UnlockRedemption({
     return IconComponent;
   };
 
-  const getStatusColor = (status: string) => {
-    return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || "text-gray-400";
-  };
+  // getStatusColor removed - unused helper
 
   if (isLoading) {
     return (
@@ -395,8 +393,11 @@ export default function UnlockRedemption({
 
       if (response.ok) {
         const result = await response.json();
-        // Redirect to Stripe checkout
-        window.location.href = result.stripe_session_url;
+        const url = result?.stripe_session_url;
+        if (!url || typeof url !== 'string') {
+          throw new Error('Missing checkout URL');
+        }
+        window.location.href = url;
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to start upgrade purchase');
@@ -536,7 +537,7 @@ export default function UnlockRedemption({
       </div>
 
       {/* Redemption Modal */}
-      <Dialog open={!!selectedUnlock} onOpenChange={() => setSelectedUnlock(null)}>
+      <Dialog open={!!selectedUnlock} onOpenChange={(open) => { if (!open) setSelectedUnlock(null); }}>
         {selectedUnlock && (
           <DialogContent className="max-w-md">
             <DialogHeader>

@@ -172,7 +172,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
       isCurrent = false;
       abortController.abort();
     };
-  }, [isAuthenticated, isLoading, isInWalletApp, isInFarcaster, farcasterUser?.fid, privyUser?.id]);
+  }, [isAuthenticated, isLoading, isInWalletApp, farcasterUser?.fid, privyUser?.id]);
 
   // Extract wallet address - use connected wallet only (Metal holder fallback removed)
   const walletAddress = (() => {

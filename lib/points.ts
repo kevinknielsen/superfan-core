@@ -128,10 +128,7 @@ export function getStatusInfo(status: StatusKey) {
  * Get all status configurations for UI lists
  */
 export function getAllStatusInfo() {
-  return Object.entries(STATUS_CONFIG).map(([key, value]) => ({
-    key: key as StatusKey,
-    ...value
-  }));
+  return STATUS_ORDER.map((key) => ({ key, ...STATUS_CONFIG[key] }));
 }
 
 // ================================
@@ -751,7 +748,7 @@ export function parsePointsAmount(input: string | number): number {
     return Math.max(0, Math.floor(input));
   }
   
-  // Remove thousands separators but preserve negative sign
+  // Remove thousands separators and normalize input
   const cleanedInput = input.replace(/,/g, '').trim();
   const parsed = Number(cleanedInput);
   

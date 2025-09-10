@@ -46,7 +46,6 @@ export default function WalletSettings() {
   // Use unified user, fallback to Privy user for web context
   const user = unifiedUser || privyUser;
   // Metal holder removed - legacy integration disabled
-  const holder = null;
 
   // For Wallet App: use unified wallet address (from Farcaster/Coinbase)
   // For Web: use unified wallet address (Metal integration disabled)
@@ -91,7 +90,7 @@ export default function WalletSettings() {
 
   // Get USDC balance of the connected wallet (in wallet apps)
   const { data: connectedWalletUsdcBalance } = useBalance({
-    address: walletAddress as Address,
+    address: isInWalletApp && walletAddress ? (walletAddress as Address) : undefined,
     token: USDC_BASE_ADDRESS,
     query: { enabled: !!walletAddress && isInWalletApp }
   });

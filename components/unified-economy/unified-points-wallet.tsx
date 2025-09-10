@@ -16,6 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { formatPoints } from '@/lib/points';
 import { getAccessToken } from '@privy-io/react-auth';
+import { useToast } from '@/hooks/use-toast';
 import SpendPointsModal from './spend-points-modal';
 
 interface UnifiedPointsWalletProps {
@@ -39,6 +40,8 @@ export default function UnifiedPointsWallet({
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const { toast } = useToast();
 
   // Use the hook instead of manual fetch
   const { 
@@ -72,10 +75,13 @@ export default function UnifiedPointsWallet({
   // Handle buy points flow
   const handleBuyPoints = async () => {
     try {
+      if (isPurchasing) return;
+      setIsPurchasing(true);
+      
       console.log('Starting buy points flow for club:', clubId);
       const token = await getAccessToken();
       if (!token) {
-        alert('Please sign in to purchase points.');
+        toast({ title: 'Sign in required', description: 'Please sign in to purchase points.', variant: 'destructive' });
         return;
       }
       
@@ -106,7 +112,9 @@ export default function UnifiedPointsWallet({
       }
     } catch (error) {
       console.error('Buy points error:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Failed to start purchase'}`);
+      toast({ title: 'Purchase failed', description: error instanceof Error ? error.message : 'Failed to start purchase', variant: 'destructive' });
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
@@ -162,7 +170,7 @@ export default function UnifiedPointsWallet({
         {/* Main Balance Display */}
         <div className="text-center space-y-2">
           <div className="text-3xl font-bold text-foreground">
-            {formatPoints(wallet.total_balance)}
+            {formatPoints(wallet.total_balance ?? 0)}
           </div>
           <div className="text-sm text-muted-foreground">Total Points</div>
           
@@ -170,11 +178,11 @@ export default function UnifiedPointsWallet({
           <div className="flex justify-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <TrendingUp className="h-3 w-3" />
-              {formatPoints(wallet.earned_points)} earned
+              {formatPoints(wallet.earned_points ?? 0)} earned
             </span>
             <span className="flex items-center gap-1">
               <Wallet className="h-3 w-3" />
-              {formatPoints(wallet.purchased_points)} purchased
+              {formatPoints(wallet.purchased_points ?? 0)} purchased
             </span>
           </div>
         </div>
@@ -184,7 +192,7 @@ export default function UnifiedPointsWallet({
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span>Progress to {status.next_status ? getStatusInfo(status.next_status).label : 'Max Status'}</span>
-              <span>{formatPoints(status.points_to_next)} points needed</span>
+              <span>{formatPoints(status.points_to_next ?? 0)} points needed</span>
             </div>
             <Progress value={status.progress_to_next} className="h-2" />
           </div>
@@ -197,6 +205,7 @@ export default function UnifiedPointsWallet({
                 type="button"
                 variant="default"
                 className="w-full"
+                disabled={isPurchasing}
               onClick={(e) => {
                 e.stopPropagation();
                 handleBuyPoints();

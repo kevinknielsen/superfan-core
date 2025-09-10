@@ -119,6 +119,9 @@ export function useUnifiedPoints(clubId: string) {
   const spendPointsMutation = useMutation({
     mutationFn: async (request: SpendPointsRequest) => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
       const response = await fetch('/api/points/spend', {
         method: 'POST',
         headers: { 
@@ -157,6 +160,9 @@ export function useUnifiedPoints(clubId: string) {
   const transferPointsMutation = useMutation({
     mutationFn: async (request: TransferPointsRequest) => {
       const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Not authenticated');
+      }
       const response = await fetch('/api/points/transfer', {
         method: 'POST',
         headers: { 

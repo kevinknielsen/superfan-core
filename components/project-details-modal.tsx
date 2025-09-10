@@ -663,7 +663,7 @@ export default function ProjectDetailsModal({
                         {presaleData.status === "active" ? "Active" : "Ended"}
                       </span>
                     ) : (
-                      <span className="text-gray-400">Loading...</span>
+                      <span className="text-gray-400">Disabled</span>
                     )}
                   </div>
                 </div>

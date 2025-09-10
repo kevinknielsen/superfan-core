@@ -91,14 +91,7 @@ function TapPageContent() {
   });
 
   // Handle tap-in processing
-  const {
-    isProcessing,
-    tapResult,
-    error: processingError,
-    animationComplete,
-    processTapIn,
-    setAnimationComplete
-  } = useTapProcessing();
+  const { isProcessing, tapResult, error: processingError, processTapIn } = useTapProcessing();
 
   // Consolidate all errors into one
   const error = paramError || authError || processingError;
@@ -610,7 +603,7 @@ function TapPageContent() {
                   </button>
                   
                   <button
-                    onClick={() => router.push(`/dashboard?club=${tapResult.membership.club_id}`)}
+                    onClick={() => router.push(`/dashboard${tapResult.membership?.club_id ? `?club=${tapResult.membership.club_id}` : ''}`)}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details

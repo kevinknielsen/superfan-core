@@ -10,19 +10,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Admin check - bypass only allowed in non-production
-  if (process.env.NODE_ENV === 'production' && process.env.SKIP_ADMIN_CHECKS === 'true') {
-    console.error('[Manual Complete Upgrade API] SKIP_ADMIN_CHECKS must not be enabled in production');
-    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  // Restrict to non-production. Never allow bypass in production.
+  if (process.env.NODE_ENV === 'production') {
+    if (process.env.SKIP_ADMIN_CHECKS === 'true') {
+      console.error('[Manual Complete Upgrade API] SKIP_ADMIN_CHECKS must not be enabled in production');
+      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+    }
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const skipAdmin = process.env.NODE_ENV !== 'production' && process.env.SKIP_ADMIN_CHECKS === 'true';
+  
+  // Admin check (non-prod)
+  const skipAdmin = process.env.SKIP_ADMIN_CHECKS === 'true';
   if (!skipAdmin && !isAdmin(auth.userId)) {
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
-  }
-
-  // Restrict to non-production environments
-  if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   // Create service client to bypass RLS
