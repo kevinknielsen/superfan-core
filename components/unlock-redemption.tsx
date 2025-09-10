@@ -239,7 +239,11 @@ export default function UnlockRedemption({
     // Handle object shape
     if (typeof unlock.claim_options === 'object') {
       const claimObj = unlock.claim_options as any;
-      return claimObj.upgrade?.purchase_type || null;
+      // Try multiple possible paths for purchase_type
+      return claimObj.upgrade?.purchase_type || 
+             claimObj.purchase_type || 
+             claimObj.type || 
+             null;
     }
     
     return null;
@@ -386,10 +390,17 @@ export default function UnlockRedemption({
       }
 
       // Determine the correct purchase type from reward's claim options
-      const purchaseType = getClaimOptionsPurchaseType(reward);
+      let purchaseType = getClaimOptionsPurchaseType(reward);
       
+      // Fallback to tier_boost if no purchase type found (backward compatibility)
       if (!purchaseType) {
-        throw new Error('No valid purchase type found in reward claim options');
+        console.warn('No purchase type found in claim_options, defaulting to tier_boost for reward:', {
+          rewardId: reward.id,
+          claimOptions: reward.claim_options,
+          claimOptionsType: typeof reward.claim_options,
+          isArray: Array.isArray(reward.claim_options)
+        });
+        purchaseType = 'tier_boost';
       }
 
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
