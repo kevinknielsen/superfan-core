@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../auth";
 import { isAdmin } from "@/lib/security.server";
-import { supabase } from "../../../supabase";
+import { createServiceClient } from "../../../supabase";
 
 // Minimal row typings used in this route
 type TierRewardRow = {
@@ -45,6 +45,36 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
     const clubId = searchParams.get('club_id');
+
+    // Validate date parameters if provided
+    if (startDate !== null || endDate !== null) {
+      // Check that both dates are provided and non-empty
+      if (!startDate || !endDate || startDate.trim() === '' || endDate.trim() === '') {
+        return NextResponse.json({ 
+          error: "Both start_date and end_date must be provided and non-empty" 
+        }, { status: 400 });
+      }
+
+      // Parse dates and validate format
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+      
+      if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+        return NextResponse.json({ 
+          error: "Invalid date format. Please use ISO 8601 format (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)" 
+        }, { status: 400 });
+      }
+
+      // Ensure start <= end
+      if (startDateObj > endDateObj) {
+        return NextResponse.json({ 
+          error: "start_date must be less than or equal to end_date" 
+        }, { status: 400 });
+      }
+    }
+
+    // Create service client to bypass RLS
+    const supabase = createServiceClient();
 
     // Summary statistics
     const summaryQuery = supabase

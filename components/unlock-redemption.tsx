@@ -29,24 +29,27 @@ import {
   DialogTitle 
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/points";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { getAccessToken } from "@privy-io/react-auth";
+import type { Unlock as BaseUnlock } from "@/types/club.types";
 
-interface Unlock {
-  id: string;
-  club_id: string;
-  title: string;
-  description: string;
-  type: string;
-  min_status: string;
-  is_active: boolean;
-  metadata?: {
-    redemption_instructions?: string;
-    expiry_date?: string;
-    location?: string;
-    capacity?: number;
-  };
+// Extended unlock type with tier reward specific fields
+interface TierRewardFields {
+  user_can_claim_free?: boolean;
+  claim_options?: any[];
+  tier_boost_price_cents?: number;
+  direct_unlock_price_cents?: number;
+  inventory_status?: string;
+  club_info?: {
+    id: string;
+    name: string;
+    description?: string | null;
+    city?: string | null;
+  } | null;
 }
+
+type Unlock = BaseUnlock & TierRewardFields;
 
 interface UnlockRedemptionProps {
   clubId: string;
@@ -143,7 +146,10 @@ export default function UnlockRedemption({
           id: claim.id,
           unlock_id: claim.reward_id,
           user_id: 'current_user',
-          status: claim.access_status === 'granted' ? 'confirmed' : 'cancelled',
+          status: 
+            claim.access_status === 'granted' ? 'confirmed' :
+            claim.access_status === 'pending' ? 'pending' :
+            'cancelled',
           metadata: {
             access_code: claim.access_code
           },
@@ -168,9 +174,10 @@ export default function UnlockRedemption({
 
   const isUnlockAvailable = (unlock: Unlock) => {
     // For tier rewards, check if user can claim free or has upgrade options
-    const tierReward = unlock as any;
-    if (tierReward.user_can_claim_free !== undefined) {
-      return tierReward.user_can_claim_free || (tierReward.claim_options?.length > 0);
+    if (unlock.user_can_claim_free !== undefined) {
+      const notSoldOut = unlock.inventory_status !== 'sold_out' && unlock.inventory_status !== 'unavailable';
+      const isActive = unlock.is_active !== false;
+      return isActive && notSoldOut && (unlock.user_can_claim_free || (unlock.claim_options?.length > 0));
     }
     
     // Fallback to original logic for backward compatibility
@@ -188,14 +195,14 @@ export default function UnlockRedemption({
 
   const getStatusProgress = (requiredStatus: string) => {
     const requiredPoints = STATUS_POINTS[requiredStatus as ClubStatus] ?? 0;
-    const progress = Math.min((userPoints / requiredPoints) * 100, 100);
+    const progress = requiredPoints > 0
+      ? Math.min((userPoints / requiredPoints) * 100, 100)
+      : 100;
     return progress;
   };
 
-  const formatCurrency = (cents: number | undefined) => {
-    if (!cents) return 'Free';
-    return `$${(cents / 100).toFixed(2)}`;
-  };
+  const formatCurrencyOrFree = (cents?: number) =>
+    cents ? formatCurrency(cents) : 'Free';
 
   const getCurrentQuarter = () => {
     const now = new Date();
@@ -207,11 +214,9 @@ export default function UnlockRedemption({
 
   const handleRedeem = async (unlock: Unlock) => {
     // Check if this is a tier reward with upgrade options
-    const tierReward = unlock as any;
-    
-    if (!tierReward.user_can_claim_free && tierReward.claim_options?.length > 0) {
+    if (!unlock.user_can_claim_free && unlock.claim_options?.length > 0) {
       // Handle upgrade purchase flow
-      handleUpgradePurchase(tierReward);
+      handleUpgradePurchase(unlock);
       return;
     }
 
@@ -238,7 +243,8 @@ export default function UnlockRedemption({
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`,
-        }
+        },
+        body: JSON.stringify({})
       });
 
       if (response.ok) {
@@ -251,7 +257,10 @@ export default function UnlockRedemption({
         await loadData();
         
         // Show full-screen confirmation
-        onShowRedemptionConfirmation?.(redemptionData.redemption, unlock);
+        onShowRedemptionConfirmation?.(
+          'redemption' in result ? result.redemption : result,
+          unlock
+        );
         
         // Callback for parent component
         onRedemption?.();
@@ -322,14 +331,29 @@ export default function UnlockRedemption({
     );
   }
 
-  const handleUpgradePurchase = async (reward: any) => {
+  const handleUpgradePurchase = async (reward: Unlock) => {
     try {
       const accessToken = await getAccessToken();
       if (!accessToken) {
         throw new Error('User not authenticated');
       }
 
-      // Use tier boost as default upgrade type
+      // Determine the correct purchase type from reward's claim options
+      let purchaseType = 'tier_boost'; // default fallback
+      
+      if (reward.claim_options?.upgrade?.purchase_type) {
+        const allowedTypes = ['tier_boost', 'direct_unlock'];
+        const rewardPurchaseType = reward.claim_options.upgrade.purchase_type;
+        
+        if (allowedTypes.includes(rewardPurchaseType)) {
+          purchaseType = rewardPurchaseType;
+        } else {
+          console.warn(`Invalid purchase_type '${rewardPurchaseType}' in reward claim_options, using fallback '${purchaseType}'`);
+        }
+      } else {
+        console.warn('No purchase_type found in reward.claim_options.upgrade, using fallback tier_boost');
+      }
+
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
         method: 'POST',
         headers: {
@@ -337,7 +361,7 @@ export default function UnlockRedemption({
           'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          purchase_type: 'tier_boost',
+          purchase_type: purchaseType,
           success_url: `${window.location.origin}/dashboard?upgrade_success=true`,
           cancel_url: `${window.location.origin}/dashboard?upgrade_cancelled=true`
         })
@@ -462,9 +486,9 @@ export default function UnlockRedemption({
                     {isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
                       : isAvailable 
-                        ? (unlock as any).user_can_claim_free 
+                        ? unlock.user_can_claim_free 
                           ? 'Claim Free'
-                          : `Boost for ${formatCurrency((unlock as any).tier_boost_price_cents)}`
+                          : `Boost for ${formatCurrencyOrFree(unlock.tier_boost_price_cents)}`
                         : 'Locked'
                     }
                   </button>
@@ -497,10 +521,10 @@ export default function UnlockRedemption({
               </p>
               
               {/* Boost explanation for non-qualified users */}
-              {!(selectedUnlock as any).user_can_claim_free && isUnlockAvailable(selectedUnlock) && (
+              {!selectedUnlock.user_can_claim_free && isUnlockAvailable(selectedUnlock) && (
                 <div className="p-3 bg-muted/50 rounded-lg border border-muted">
                   <p className="text-sm text-muted-foreground">
-                    Boost your status to <strong>{(selectedUnlock as any).tier || selectedUnlock.min_status}</strong> temporarily to claim and redeem this item for free.
+                    Boost your status to <strong>{selectedUnlock.min_status}</strong> temporarily to claim and redeem this item for free.
                   </p>
                 </div>
               )}
@@ -562,8 +586,8 @@ export default function UnlockRedemption({
                   disabled={!isUnlockAvailable(selectedUnlock) || isRedeeming}
                 >
                   {isRedeeming ? 'Processing...' : 
-                   (selectedUnlock as any).user_can_claim_free ? 'Claim Free' :
-                   `Boost for ${formatCurrency((selectedUnlock as any).tier_boost_price_cents)}`
+                   selectedUnlock.user_can_claim_free ? 'Claim Free' :
+                   `Boost for ${formatCurrencyOrFree(selectedUnlock.tier_boost_price_cents)}`
                   }
                 </Button>
               </div>

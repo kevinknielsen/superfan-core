@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "../../../supabase";
+import { createServiceClient } from "../../../supabase";
+import { stripe, verifyWebhookSignature } from "@/lib/stripe";
 import Stripe from "stripe";
 
 export const runtime = 'nodejs';
 
+// Create service client to bypass RLS for webhook operations
+const supabase = createServiceClient();
 // Type assertion for new tier rewards tables
 const supabaseAny = supabase as any;
 
-// Guarded Stripe initializer (avoid top-level init for Edge compatibility)
+// Use the shared stripe instance from lib/stripe.ts
 function getStripe(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
-    throw new Error('Missing STRIPE_SECRET_KEY');
-  }
-  return new Stripe(key, { apiVersion: '2024-06-20' });
+  return stripe;
 }
 
-// Helper function to verify webhook signature
-async function verifyWebhookSignature(
+// Use the shared webhook verification from lib/stripe.ts
+async function verifyWebhookEvent(
   rawBody: string | Buffer, 
   signature: string
 ): Promise<Stripe.Event | null> {
@@ -27,9 +26,8 @@ async function verifyWebhookSignature(
       return null;
     }
     
-    const stripe = getStripe();
-    const event = stripe.webhooks.constructEvent(
-      rawBody,
+    const event = verifyWebhookSignature(
+      rawBody.toString(),
       signature,
       process.env.STRIPE_WEBHOOK_SECRET
     );
@@ -79,10 +77,26 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
       return { success: false, error };
     }
     
-    // Check if transaction is already processed
-    if (transaction.status === 'completed') {
-      console.log(`[Tier Rewards Webhook] Transaction ${transaction.id} already processed, skipping`);
+    // Only process pending transactions, skip all others
+    if (transaction.status !== 'pending') {
+      console.log(`[Tier Rewards Webhook] Transaction ${transaction.id} has status '${transaction.status}', skipping (only processing pending transactions)`);
       return { success: true };
+    }
+
+    // Verify payment amount and currency match the stored transaction
+    const expectedAmountCents = transaction.amount_cents;
+    const expectedCurrency = transaction.currency || 'usd';
+    
+    if (paymentIntent.amount_received !== expectedAmountCents) {
+      const error = `Payment amount mismatch for transaction ${transaction.id}: received ${paymentIntent.amount_received} cents, expected ${expectedAmountCents} cents`;
+      console.error('[Tier Rewards Webhook]', error);
+      return { success: false, error };
+    }
+    
+    if (paymentIntent.currency !== expectedCurrency) {
+      const error = `Payment currency mismatch for transaction ${transaction.id}: received ${paymentIntent.currency}, expected ${expectedCurrency}`;
+      console.error('[Tier Rewards Webhook]', error);
+      return { success: false, error };
     }
     
     // Get the session ID from the payment intent metadata to find the transaction
@@ -119,9 +133,10 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
     
     return { success: true };
     
-  } catch (error) {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[Tier Rewards Webhook] Error processing payment_intent.succeeded:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: errMsg };
   }
 }
 
@@ -153,9 +168,108 @@ async function processPaymentIntentFailed(event: Stripe.Event): Promise<{ succes
     console.log(`[Tier Rewards Webhook] Marked transaction as failed for payment intent ${paymentIntent.id}`);
     return { success: true };
     
-  } catch (error) {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[Tier Rewards Webhook] Error processing payment_intent.payment_failed:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: errMsg };
+  }
+}
+
+// Process checkout.session.completed events
+async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = event.data.object as Stripe.CheckoutSession;
+    
+    console.log(`[Tier Rewards Webhook] Processing checkout.session.completed: ${session.id}`);
+    
+    // Get the payment intent from the session
+    let paymentIntentId = session.payment_intent as string;
+    
+    // If payment intent is not directly available, fetch the session with expanded data
+    if (!paymentIntentId) {
+      try {
+        const stripe = getStripe();
+        const expandedSession = await stripe.checkout.sessions.retrieve(session.id, {
+          expand: ['payment_intent']
+        });
+        
+        if (expandedSession.payment_intent && typeof expandedSession.payment_intent === 'object') {
+          paymentIntentId = expandedSession.payment_intent.id;
+        }
+      } catch (fetchError: unknown) {
+        const errMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+        console.error(`[Tier Rewards Webhook] Failed to fetch expanded session: ${errMsg}`);
+        return { success: false, error: `Failed to retrieve payment intent: ${errMsg}` };
+      }
+    }
+    
+    if (!paymentIntentId) {
+      const error = `No payment intent found for checkout session: ${session.id}`;
+      console.error('[Tier Rewards Webhook]', error);
+      return { success: false, error };
+    }
+    
+    // Find the upgrade transaction by session ID
+    const { data: transaction, error: transactionError } = await supabaseAny
+      .from('upgrade_transactions')
+      .select('*')
+      .eq('stripe_session_id', session.id)
+      .single();
+    
+    if (transactionError || !transaction) {
+      const error = `Upgrade transaction not found for checkout session: ${session.id}`;
+      console.error('[Tier Rewards Webhook]', error);
+      return { success: false, error };
+    }
+    
+    // Update transaction with payment intent if missing
+    if (!transaction.stripe_payment_intent_id && paymentIntentId) {
+      const { error: updateError } = await supabaseAny
+        .from('upgrade_transactions')
+        .update({ stripe_payment_intent_id: paymentIntentId })
+        .eq('id', transaction.id);
+        
+      if (updateError) {
+        console.error('[Tier Rewards Webhook] Failed to update payment intent on transaction:', updateError);
+      } else {
+        console.log(`[Tier Rewards Webhook] Updated transaction ${transaction.id} with payment intent ${paymentIntentId}`);
+      }
+    }
+    
+    // Only process pending transactions
+    if (transaction.status !== 'pending') {
+      console.log(`[Tier Rewards Webhook] Transaction ${transaction.id} has status '${transaction.status}', skipping (only processing pending transactions)`);
+      return { success: true };
+    }
+
+    // Verify payment amount matches the stored transaction
+    const expectedAmountCents = transaction.amount_cents;
+    const sessionAmountTotal = session.amount_total || 0;
+    
+    if (sessionAmountTotal !== expectedAmountCents) {
+      const error = `Session amount mismatch for transaction ${transaction.id}: received ${sessionAmountTotal} cents, expected ${expectedAmountCents} cents`;
+      console.error('[Tier Rewards Webhook]', error);
+      return { success: false, error };
+    }
+    
+    // Process the upgrade using the same RPC as payment_intent.succeeded
+    const { error: processError } = await supabaseAny.rpc('process_successful_upgrade_by_session', {
+      p_session_id: session.id,
+      p_payment_intent_id: paymentIntentId
+    });
+    
+    if (processError) {
+      console.error('[Tier Rewards Webhook] Database error processing upgrade by session:', processError);
+      return { success: false, error: `Database error: ${processError.message}` };
+    }
+    
+    console.log(`[Tier Rewards Webhook] Successfully processed checkout session ${session.id} for transaction ${transaction.id}`);
+    return { success: true };
+    
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Tier Rewards Webhook] Error processing checkout.session.completed:', error);
+    return { success: false, error: errMsg };
   }
 }
 
@@ -172,7 +286,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Verify webhook signature
-    const event = await verifyWebhookSignature(rawBody, signature);
+    const event = await verifyWebhookEvent(rawBody, signature);
     if (!event) {
       return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
     }
@@ -182,7 +296,7 @@ export async function POST(request: NextRequest) {
     // Check for idempotency - has this event been processed before?
     const { data: existingEvent, error: existingError } = await supabase
       .from('webhook_events')
-      .select('id, processed_at, processing_attempts')
+      .select('id, processed_at, processing_attempts, claimed_at')
       .eq('stripe_event_id', event.id)
       .single();
     
@@ -197,29 +311,38 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ received: true });
       }
       
-      // Event exists but not processed - increment attempts
-      const { error: attemptsUpdateError } = await supabase
+      // Try to claim the event for processing (prevent concurrent processing)
+      const { data: claimedEvent, error: claimError } = await supabase
         .from('webhook_events')
         .update({ 
           processing_attempts: existingEvent.processing_attempts + 1,
+          claimed_at: new Date().toISOString(),
           event_data: event
         })
-        .eq('stripe_event_id', event.id);
-      if (attemptsUpdateError) {
-        console.error('[Tier Rewards Webhook] Failed to increment processing_attempts:', attemptsUpdateError);
-        return NextResponse.json({ error: 'Failed to update webhook attempt' }, { status: 500 });
+        .eq('stripe_event_id', event.id)
+        .eq('processed_at', null)
+        .eq('claimed_at', null)
+        .select()
+        .single();
+        
+      if (claimError || !claimedEvent) {
+        console.log(`[Tier Rewards Webhook] Event ${event.id} already being processed by another instance`);
+        return NextResponse.json({ received: true });
       }
     } else {
-      // Insert new event record to reserve it for processing
-      const { error: insertError } = await supabase
+      // Insert new event record and claim it for processing
+      const { data: newEvent, error: insertError } = await supabase
         .from('webhook_events')
         .insert({
           stripe_event_id: event.id,
           event_type: event.type,
           event_data: event,
           processing_attempts: 1,
+          claimed_at: new Date().toISOString(),
           processed_at: null
-        });
+        })
+        .select()
+        .single();
       
       if (insertError) {
         // Handle race condition - another instance may have inserted it
@@ -246,9 +369,7 @@ export async function POST(request: NextRequest) {
         break;
         
       case 'checkout.session.completed':
-        // Additional verification - we mainly rely on payment_intent.succeeded
-        console.log(`[Tier Rewards Webhook] Checkout session completed: ${event.id}`);
-        processingResult = { success: true };
+        processingResult = await processCheckoutSessionCompleted(event);
         break;
         
       default:

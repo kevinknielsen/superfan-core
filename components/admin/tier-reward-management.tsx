@@ -27,6 +27,7 @@ import {
   Clock
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/points";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -348,8 +349,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
       details: '',
       estimated_shipping: '',
       location: '',
-      requirements: '',
-      image_url: ''
+      requirements: ''
     });
     setEditingReward(null);
   };
@@ -458,9 +458,9 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
     return TIER_LEVELS.find(t => t.value === tier) || TIER_LEVELS[0];
   };
 
-  const formatCurrency = (cents: number | null) => {
+  const formatCurrencyOrFree = (cents: number | null) => {
     if (!cents) return 'Free';
-    return `$${(cents / 100).toFixed(2)}`;
+    return formatCurrency(cents);
   };
 
   const getStatusBadgeVariant = (status: string) => {
@@ -597,20 +597,20 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
             <div className="flex justify-between items-center">
               <span className="text-sm text-green-700">Upgrade Price:</span>
               <span className="text-lg font-bold text-green-600">
-                {formatCurrency(financial_analysis.upgrade_price_cents)}
+                {formatCurrencyOrFree(financial_analysis.upgrade_price_cents)}
               </span>
             </div>
             
             <div className="grid grid-cols-2 gap-4 text-xs">
               <div>
                 <div className="text-green-600 font-medium">
-                  {formatCurrency(financial_analysis.total_potential_revenue_cents)}
+                  {formatCurrencyOrFree(financial_analysis.total_potential_revenue_cents)}
                 </div>
                 <div className="text-green-700">Total Revenue</div>
               </div>
               <div>
                 <div className="text-green-600 font-medium">
-                  {formatCurrency(financial_analysis.total_cogs_cents)}
+                  {formatCurrencyOrFree(financial_analysis.total_cogs_cents)}
                 </div>
                 <div className="text-green-700">Total COGS</div>
               </div>
@@ -622,7 +622,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                 <span className={`text-lg font-bold ${
                   financial_analysis.is_profitable ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {formatCurrency(financial_analysis.profit_margin_cents)}
+                  {formatCurrencyOrFree(financial_analysis.profit_margin_cents)}
                   <span className="text-xs ml-1">
                     ({financial_analysis.profit_margin_percentage}%)
                   </span>
@@ -1158,7 +1158,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                       <span className="text-sm font-medium">Upgrade Revenue</span>
                     </div>
                     <div className="text-2xl font-bold text-green-600">
-                      {formatCurrency(analyticsData.summary.total_upgrade_revenue_cents)}
+                      {formatCurrencyOrFree(analyticsData.summary.total_upgrade_revenue_cents)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       From paid upgrades
@@ -1208,7 +1208,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                           <div className="text-right">
                             <div className="font-medium">{tierData.total_claims} claims</div>
                             <div className="text-sm text-green-600">
-                              {formatCurrency(tierData.upgrade_revenue_cents)} revenue
+                              {formatCurrencyOrFree(tierData.upgrade_revenue_cents)} revenue
                             </div>
                           </div>
                         </div>
@@ -1244,7 +1244,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                           <div className="text-right">
                             <div className="font-medium">{typeData.total_claims} claims</div>
                             <div className="text-sm text-green-600">
-                              {formatCurrency(typeData.upgrade_revenue_cents)} revenue
+                              {formatCurrencyOrFree(typeData.upgrade_revenue_cents)} revenue
                             </div>
                           </div>
                         </div>
@@ -1329,7 +1329,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                             <div className="flex items-center gap-1">
                               <DollarSign className="h-3 w-3" />
                               <span className="font-medium">
-                                {formatCurrency(reward.upgrade_price_cents)}
+                                {formatCurrencyOrFree(reward.upgrade_price_cents)}
                               </span>
                             </div>
                             
@@ -1353,7 +1353,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                               <div className="flex items-center gap-1">
                                 <TrendingUp className="h-3 w-3 text-green-600" />
                                 <span className="text-green-600 font-medium">
-                                  {formatCurrency(reward.total_upgrade_revenue_cents)} revenue
+                                  {formatCurrencyOrFree(reward.total_upgrade_revenue_cents)} revenue
                                 </span>
                               </div>
                             )}

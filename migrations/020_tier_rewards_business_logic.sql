@@ -95,7 +95,9 @@ BEGIN
     AND quarter_year = p_year
     AND quarter_number = p_quarter
     AND is_consumed = false
-    AND expires_at > NOW();
+    AND expires_at > NOW()
+  ORDER BY expires_at ASC
+  LIMIT 1;
   
   RETURN v_boost;
 END;
@@ -176,6 +178,10 @@ BEGIN
   FROM get_tier_thresholds()
   WHERE tier = p_target_tier;
   
+  IF v_required_points IS NULL THEN
+    RAISE EXCEPTION 'Invalid target tier: %', p_target_tier;
+  END IF;
+  
   -- Check if quarterly free already used
   v_quarterly_free_used := has_used_quarterly_free(p_user_id, p_club_id, v_current_quarter_year, v_current_quarter_number);
   
@@ -235,6 +241,12 @@ BEGIN
     RETURN;
   END IF;
   
+  -- Ensure provided club matches the reward's club
+  IF v_reward.club_id IS DISTINCT FROM p_club_id THEN
+    RETURN QUERY SELECT false, NULL::UUID, 'CLUB_MISMATCH', 'Reward does not belong to the provided club';
+    RETURN;
+  END IF;
+  
   -- Check inventory limits
   IF v_reward.inventory_limit IS NOT NULL AND v_reward.inventory_claimed >= v_reward.inventory_limit THEN
     RETURN QUERY SELECT false, NULL::UUID, 'SOLD_OUT', 'This reward is no longer available';
@@ -268,13 +280,20 @@ BEGIN
   IF v_active_boost.id IS NOT NULL AND get_tier_rank(v_active_boost.boosted_tier) >= get_tier_rank(v_reward.tier) THEN
     v_claim_method := 'temporary_boost';
     
-    -- Consume the boost
+    -- Consume the boost with concurrency protection
     UPDATE temporary_tier_boosts
     SET 
       is_consumed = true,
       consumed_at = NOW(),
       consumed_by_reward_id = p_reward_id
-    WHERE id = v_active_boost.id;
+    WHERE id = v_active_boost.id
+      AND is_consumed = false
+    RETURNING id INTO v_active_boost.id;
+    
+    -- If not actually updated (already consumed), treat as earned_status
+    IF v_active_boost.id IS NULL THEN
+      v_claim_method := 'earned_status';
+    END IF;
   ELSE
     v_claim_method := 'earned_status';
   END IF;
@@ -495,7 +514,7 @@ BEGIN
     UPDATE tier_rewards
     SET safety_factor = v_new_factor
     WHERE id = v_reward.id
-      AND safety_factor != v_new_factor; -- Only update if changed
+      AND safety_factor IS DISTINCT FROM v_new_factor; -- Only update if changed
     
     IF FOUND THEN
       v_updated_count := v_updated_count + 1;

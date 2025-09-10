@@ -271,6 +271,7 @@ export async function POST(
       }],
       success_url: upgradeData.success_url,
       cancel_url: upgradeData.cancel_url,
+      client_reference_id: auth.userId,
       customer_email: user.email || undefined,
       metadata: {
         type: 'tier_upgrade',

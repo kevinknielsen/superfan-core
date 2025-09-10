@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../../auth";
 import { isAdmin } from "@/lib/security.server";
-import { supabase } from "../../../../supabase";
+import { createServiceClient } from "../../../../supabase";
 
 // Minimal typing for tier_rewards rows used in this route
 type TierRewardRow = {
@@ -34,6 +34,9 @@ export async function POST(
   }
 
   try {
+    // Create service client to bypass RLS
+    const supabase = createServiceClient();
+
     // Get current status
     const { data: currentReward, error: fetchError } = await supabase
       .from<TierRewardRow>('tier_rewards')
@@ -50,12 +53,15 @@ export async function POST(
     }
 
     // Toggle the status
-    const newStatus = !currentReward.is_active;
+    const previousStatus = currentReward.is_active;
+    const newStatus = !previousStatus;
 
-    const { data: updatedReward, error: updateError } = await supabase
+    // Conditional update to prevent race conditions
+    const { data: updatedReward, error: updateError, count } = await supabase
       .from<TierRewardRow>('tier_rewards')
       .update({ is_active: newStatus })
       .eq('id', id)
+      .eq('is_active', previousStatus)  // Only update if status hasn't changed
       .select()
       .single();
 
@@ -64,12 +70,19 @@ export async function POST(
       return NextResponse.json({ error: "Failed to update tier reward status" }, { status: 500 });
     }
 
-    console.log(`[Admin Tier Rewards Toggle API] Toggled reward ${id} from ${currentReward.is_active} to ${newStatus}`);
+    // Check if no rows were affected (race condition detected)
+    if (!updatedReward) {
+      return NextResponse.json({ 
+        error: "Conflict: Tier reward status was modified by another request" 
+      }, { status: 409 });
+    }
+
+    console.log(`[Admin Tier Rewards Toggle API] Toggled reward ${id} from ${previousStatus} to ${newStatus}`);
     
     return NextResponse.json({
       message: `Tier reward ${newStatus ? 'activated' : 'deactivated'} successfully`,
       reward: updatedReward,
-      previous_status: currentReward.is_active,
+      previous_status: previousStatus,
       new_status: newStatus
     });
 

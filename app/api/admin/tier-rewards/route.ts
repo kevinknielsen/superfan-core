@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
         error: "Database table access failed", 
         details: testError.message,
         code: testError.code,
-        hint: "The tier_rewards table may not exist. Please run the database migrations first."
+        hint: "The tier_rewards table may not exist or RLS/policies deny access. Ensure migrations ran and policies permit this read."
       }, { status: 500 });
     }
 
@@ -131,7 +131,9 @@ export async function GET(request: NextRequest) {
     if (tier) query = query.eq('tier', tier);
     if (rewardType) query = query.eq('reward_type', rewardType);
     if (availabilityType) query = query.eq('availability_type', availabilityType);
-    if (isActive !== null) query = query.eq('is_active', isActive === 'true');
+    if (isActive === 'true' || isActive === 'false') {
+      query = query.eq('is_active', isActive === 'true');
+    }
 
     // Apply pagination and ordering
     const { data: tierRewards, error } = await query
@@ -208,18 +210,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (tierRewardData.inventory_limit && tierRewardData.inventory_limit <= 0) {
-      return NextResponse.json(
-        { error: "inventory_limit must be greater than 0" },
-        { status: 400 }
-      );
+    // Validate inventory_limit with explicit null/undefined checks
+    if (tierRewardData.inventory_limit != null) {
+      if (typeof tierRewardData.inventory_limit !== 'number' || tierRewardData.inventory_limit <= 0) {
+        return NextResponse.json(
+          { error: "inventory_limit must be a positive number greater than 0" },
+          { status: 400 }
+        );
+      }
     }
 
-    if (tierRewardData.rolling_window_days && tierRewardData.rolling_window_days <= 0) {
-      return NextResponse.json(
-        { error: "rolling_window_days must be greater than 0" },
-        { status: 400 }
-      );
+    // Validate rolling_window_days with explicit null/undefined checks
+    if (tierRewardData.rolling_window_days != null) {
+      if (typeof tierRewardData.rolling_window_days !== 'number' || tierRewardData.rolling_window_days <= 0) {
+        return NextResponse.json(
+          { error: "rolling_window_days must be a positive number greater than 0" },
+          { status: 400 }
+        );
+      }
     }
 
     // Apply default values
@@ -239,7 +247,26 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      if (new Date(finalData.available_start) > new Date(finalData.available_end)) {
+      // Validate that dates are parseable
+      const startDate = new Date(finalData.available_start);
+      const endDate = new Date(finalData.available_end);
+      
+      if (isNaN(startDate.getTime())) {
+        return NextResponse.json(
+          { error: "available_start must be a valid ISO date" },
+          { status: 400 }
+        );
+      }
+      
+      if (isNaN(endDate.getTime())) {
+        return NextResponse.json(
+          { error: "available_end must be a valid ISO date" },
+          { status: 400 }
+        );
+      }
+      
+      // Compare parsed Date objects
+      if (startDate >= endDate) {
         return NextResponse.json(
           { error: "available_start must be before available_end" },
           { status: 400 }
@@ -314,10 +341,14 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const tierRewardData = updateTierRewardSchema(body);
 
-    if (tierRewardData instanceof type.errors) {
+    const maybeError: any = tierRewardData as any;
+    if (
+      Array.isArray(maybeError) ||
+      (maybeError && typeof maybeError === 'object' && ('issues' in maybeError || 'summary' in maybeError))
+    ) {
       console.error("[Admin Tier Rewards API] Invalid request body:", tierRewardData);
       return NextResponse.json(
-        { error: "Invalid request body", details: tierRewardData.summary },
+        { error: "Invalid request body", details: maybeError.summary ?? maybeError },
         { status: 400 }
       );
     }
@@ -331,7 +362,18 @@ export async function PUT(request: NextRequest) {
         );
       }
       
-      if (new Date(tierRewardData.available_start) > new Date(tierRewardData.available_end)) {
+      // Validate that dates are parseable
+      const start = new Date(tierRewardData.available_start);
+      const end = new Date(tierRewardData.available_end);
+      
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return NextResponse.json(
+          { error: "available_start and available_end must be valid ISO dates" },
+          { status: 400 }
+        );
+      }
+      
+      if (start > end) {
         return NextResponse.json(
           { error: "available_start must be before available_end" },
           { status: 400 }
@@ -346,7 +388,10 @@ export async function PUT(request: NextRequest) {
       .from('tier_rewards')
       .update(updateData)
       .eq('id', id)
-      .select()
+      .select(`
+        *,
+        clubs!inner(name)
+      `)
       .single();
 
     if (error) {
@@ -373,7 +418,11 @@ export async function PUT(request: NextRequest) {
     }
 
     console.log(`[Admin Tier Rewards API] Updated tier reward: ${updatedReward.id}`);
-    return NextResponse.json(updatedReward);
+    return NextResponse.json({
+      ...updatedReward,
+      club_name: updatedReward.clubs?.name,
+      clubs: undefined
+    });
 
   } catch (error) {
     console.error("[Admin Tier Rewards API] Unexpected error:", error);

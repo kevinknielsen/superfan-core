@@ -185,14 +185,6 @@ export function useUserClubData(privyUserId: string | null, clubId: string | nul
 
       if (tapInsError) throw tapInsError;
 
-      // House accounts removed in tier rewards system
-      // const { data: houseAccount, error: houseError } = await supabase
-      //   .from('house_accounts')
-      //   .select('*')
-      //   .eq('user_id', user.id)
-      //   .eq('club_id', clubId)
-      //   .single();
-
       return {
         membership,
         club: membership.club,

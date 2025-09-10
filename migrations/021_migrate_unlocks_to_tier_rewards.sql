@@ -94,6 +94,22 @@ SELECT
   u.updated_at
 FROM unlocks u
 WHERE u.is_active = true; -- Only migrate active unlocks
+ON CONFLICT (id) DO UPDATE SET
+  club_id = EXCLUDED.club_id,
+  title = EXCLUDED.title,
+  description = EXCLUDED.description,
+  tier = EXCLUDED.tier,
+  reward_type = EXCLUDED.reward_type,
+  artist_cost_estimate_cents = EXCLUDED.artist_cost_estimate_cents,
+  availability_type = EXCLUDED.availability_type,
+  available_start = EXCLUDED.available_start,
+  available_end = EXCLUDED.available_end,
+  inventory_limit = EXCLUDED.inventory_limit,
+  inventory_claimed = EXCLUDED.inventory_claimed,
+  rolling_window_days = EXCLUDED.rolling_window_days,
+  metadata = EXCLUDED.metadata,
+  is_active = EXCLUDED.is_active,
+  updated_at = NOW();
 
 -- Log migration results
 DO $$

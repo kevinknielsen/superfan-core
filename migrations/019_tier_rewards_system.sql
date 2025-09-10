@@ -269,7 +269,7 @@ BEGIN
     DATE_TRUNC('quarter', NOW())::DATE as start_date,
     (DATE_TRUNC('quarter', NOW()) + INTERVAL '3 months - 1 day')::DATE as end_date;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql STABLE;
 
 -- Function to calculate quarter end date
 CREATE OR REPLACE FUNCTION calculate_quarter_end(year INTEGER, quarter INTEGER)
@@ -288,7 +288,7 @@ BEGIN
   -- Only calculate upgrade price if artist sets a cost estimate
   IF NEW.artist_cost_estimate_cents > 0 THEN
     -- U = ceil((K / m) * S) where m = 0.96 (Stripe fees), S = dynamic safety_factor
-    NEW.upgrade_price_cents := CEIL((NEW.artist_cost_estimate_cents / 0.96) * NEW.safety_factor);
+    NEW.upgrade_price_cents := CEIL((NEW.artist_cost_estimate_cents / 0.96) * NEW.safety_factor)::INTEGER;
   ELSE
     NEW.upgrade_price_cents := NULL;
   END IF;
@@ -342,13 +342,24 @@ DECLARE
   v_current_quarter_number INTEGER;
   v_quarter_end TIMESTAMPTZ;
 BEGIN
-  -- Get transaction details
+  -- Lock transaction row to ensure idempotency and prevent races
   SELECT * INTO v_transaction 
   FROM upgrade_transactions 
-  WHERE id = p_transaction_id;
+  WHERE id = p_transaction_id
+  FOR UPDATE;
   
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Transaction not found: %', p_transaction_id;
+  END IF;
+  
+  -- If already completed, short-circuit (idempotent)
+  IF v_transaction.status = 'completed' THEN
+    RETURN;
+  END IF;
+
+  -- Verify the provided payment_intent_id matches the transaction
+  IF v_transaction.stripe_payment_intent_id IS DISTINCT FROM p_payment_intent_id THEN
+    RAISE EXCEPTION 'Payment intent mismatch for transaction %', p_transaction_id;
   END IF;
   
   -- Complete the transaction
@@ -409,7 +420,7 @@ BEGIN
     );
   END IF;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
 -- ANALYTICS VIEWS
@@ -491,6 +502,10 @@ CREATE POLICY "tier_rewards_update_policy" ON tier_rewards
     OR
     -- Allow club owners
     auth.uid() IN (SELECT owner_id FROM clubs WHERE id = tier_rewards.club_id)
+  ) WITH CHECK (
+    auth.uid() IN (SELECT id FROM users WHERE role = 'admin')
+    OR
+    auth.uid() IN (SELECT owner_id FROM clubs WHERE id = tier_rewards.club_id)
   );
 
 -- Policies for reward_claims (users can see their own claims, club owners and admins can see all)
@@ -547,9 +562,16 @@ CREATE POLICY "upgrade_transactions_select_policy" ON upgrade_transactions
 CREATE POLICY "upgrade_transactions_insert_policy" ON upgrade_transactions
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+-- Allow updates by owning user
+CREATE POLICY "upgrade_transactions_update_policy" ON upgrade_transactions
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
 -- Policies for webhook_events (admin only)
 CREATE POLICY "webhook_events_admin_policy" ON webhook_events
   FOR ALL USING (
+    auth.uid() IN (SELECT id FROM users WHERE role = 'admin')
+  ) WITH CHECK (
     auth.uid() IN (SELECT id FROM users WHERE role = 'admin')
   );
 

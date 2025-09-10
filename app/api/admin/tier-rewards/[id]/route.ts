@@ -6,12 +6,25 @@ import { supabase } from "../../../supabase";
 // Type assertion for new tier rewards tables
 const supabaseAny = supabase as any;
 
+// UUID validation helper
+function isValidUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+}
+
 // Get specific tier reward with stats (admin only)
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id } = await params;
+  const { id } = params;
+
+  // Validate UUID format early
+  if (!isValidUUID(id)) {
+    return NextResponse.json({ 
+      error: "Invalid reward ID format" 
+    }, { status: 400 });
+  }
 
   const auth = await verifyUnifiedAuth(request);
   if (!auth) {
@@ -29,12 +42,12 @@ export async function GET(
   }
 
   try {
-    // Get tier reward with club info
+    // Get tier reward with club info (left join to avoid false 404s if clubs is RLS-filtered)
     const { data: tierReward, error } = await supabaseAny
       .from('tier_rewards')
       .select(`
         *,
-        clubs!inner(name)
+        clubs(name)
       `)
       .eq('id', id)
       .single();
@@ -48,11 +61,8 @@ export async function GET(
     }
 
     // Format response with club name
-    const formattedReward = {
-      ...tierReward,
-      club_name: tierReward.clubs?.name,
-      clubs: undefined
-    };
+    const { clubs, ...rest } = tierReward;
+    const formattedReward = { ...rest, club_name: clubs?.name };
 
     return NextResponse.json(formattedReward);
 
@@ -67,7 +77,14 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id } = await params;
+  const { id } = params;
+
+  // Validate UUID format early
+  if (!isValidUUID(id)) {
+    return NextResponse.json({ 
+      error: "Invalid reward ID format" 
+    }, { status: 400 });
+  }
 
   const auth = await verifyUnifiedAuth(request);
   if (!auth) {
@@ -85,71 +102,34 @@ export async function DELETE(
   }
 
   try {
-    // Check if there are any claims for this reward
-    const { data: existingClaims, error: claimsError } = await supabaseAny
-      .from('reward_claims')
-      .select('id')
-      .eq('reward_id', id)
-      .limit(1);
-
-    if (claimsError) {
-      console.error('Error checking existing claims:', claimsError);
-      return NextResponse.json({ error: "Failed to check existing claims" }, { status: 500 });
-    }
-
-    if (existingClaims && existingClaims.length > 0) {
-      return NextResponse.json(
-        { 
-          error: "Cannot delete tier reward with existing claims",
-          message: "This reward has been claimed by users and cannot be deleted. Consider deactivating it instead."
-        },
-        { status: 409 }
-      );
-    }
-
-    // Check if there are any active transactions for this reward
-    const { data: existingTransactions, error: transactionsError } = await supabaseAny
-      .from('upgrade_transactions')
-      .select('id')
-      .eq('reward_id', id)
-      .eq('status', 'pending')
-      .limit(1);
-
-    if (transactionsError) {
-      console.error('Error checking existing transactions:', transactionsError);
-      return NextResponse.json({ error: "Failed to check existing transactions" }, { status: 500 });
-    }
-
-    if (existingTransactions && existingTransactions.length > 0) {
-      return NextResponse.json(
-        { 
-          error: "Cannot delete tier reward with pending transactions",
-          message: "This reward has pending upgrade purchases and cannot be deleted."
-        },
-        { status: 409 }
-      );
-    }
-
-    // Safe to delete - no claims or pending transactions
+    // Use atomic delete function to eliminate race conditions
     const { data: deletedReward, error } = await supabaseAny
-      .from('tier_rewards')
-      .delete()
-      .eq('id', id)
-      .select()
-      .single();
+      .rpc('admin_delete_tier_reward', { p_reward_id: id });
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: "Tier reward not found" }, { status: 404 });
+      // Handle custom error codes from the RPC function
+      if (error.code === 'P0001') {
+        return NextResponse.json(
+          { 
+            error: "Cannot delete tier reward with existing claims",
+            message: "This reward has been claimed by users and cannot be deleted. Consider deactivating it instead."
+          },
+          { status: 409 }
+        );
       }
       
-      // Handle foreign key violation race condition
-      if (error.code === '23503') {
-        console.warn('Delete failed due to FK violation race condition:', error);
-        return NextResponse.json({ 
-          error: "Tier reward is in use",
-          message: "This reward cannot be deleted because it's currently being used."
-        }, { status: 409 });
+      if (error.code === 'P0002') {
+        return NextResponse.json(
+          { 
+            error: "Cannot delete tier reward with in-flight transactions",
+            message: "This reward has pending or processing upgrade purchases and cannot be deleted."
+          },
+          { status: 409 }
+        );
+      }
+      
+      if (error.code === 'NO_DATA_FOUND') {
+        return NextResponse.json({ error: "Tier reward not found" }, { status: 404 });
       }
       
       console.error('Error deleting tier reward:', error);

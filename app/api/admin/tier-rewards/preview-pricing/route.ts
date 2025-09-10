@@ -37,12 +37,27 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const previewData = pricingPreviewSchema(body);
-
-    if (previewData instanceof type.errors) {
-      console.error("[Admin Tier Rewards Preview API] Invalid request body:", previewData);
+    
+    // Validate request body using try/catch for safe parsing
+    let previewData;
+    try {
+      previewData = pricingPreviewSchema(body);
+      
+      // Check if validation failed
+      if (previewData instanceof type.errors) {
+        console.error("[Admin Tier Rewards Preview API] Invalid request body:", previewData.summary);
+        return NextResponse.json(
+          { error: "Invalid request body", details: previewData.summary },
+          { status: 400 }
+        );
+      }
+    } catch (validationError) {
+      console.error("[Admin Tier Rewards Preview API] Validation error:", validationError);
       return NextResponse.json(
-        { error: "Invalid request body", details: previewData.summary },
+        { 
+          error: "Invalid request body", 
+          details: validationError instanceof Error ? validationError.message : "Validation failed" 
+        },
         { status: 400 }
       );
     }
@@ -126,7 +141,7 @@ export async function POST(request: NextRequest) {
     if (result.profit_margin_cents > result.total_cogs_cents) {
       response.insights.push({
         type: 'success',
-        message: `High profit margin (${result.total_potential_revenue_cents > 0 ? Math.round((result.profit_margin_cents / result.total_potential_revenue_cents) * 100) : 0}%) - consider reducing price or increasing free allocation`
+        message: `High profit margin (${response.financial_analysis.profit_margin_percentage}%) - consider reducing price or increasing free allocation`
       });
     }
 
