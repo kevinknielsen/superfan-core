@@ -115,7 +115,10 @@ export default function ProjectDetailsModal({
 
   // Button validation logic (same as project-card.tsx)
   const isPending = project?.status === "pending";
-  const isCreator = user && (user.wallet?.address === project?.creator_id || user.id === project?.creator_id);
+  const isCreator = !!(user && (
+    String(user.wallet?.address ?? user.id ?? '').toLowerCase() === 
+    String(project?.creatorwalletaddress ?? project?.creator_id ?? '').toLowerCase()
+  ));
 
   // Platform-aware external link handler
   const handleExternalLink = async (url: string, event: React.MouseEvent) => {

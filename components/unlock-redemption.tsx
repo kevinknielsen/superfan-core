@@ -35,12 +35,20 @@ import { getAccessToken } from "@privy-io/react-auth";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 
 // Extended unlock type with tier reward specific fields
+interface ClaimOption {
+  upgrade?: {
+    purchase_type: 'tier_boost' | 'direct_unlock';
+    price_cents?: number;
+  };
+}
+
 interface TierRewardFields {
   user_can_claim_free?: boolean;
-  claim_options?: any[];
+  claim_options?: ClaimOption[];
   tier_boost_price_cents?: number;
   direct_unlock_price_cents?: number;
   inventory_status?: string;
+  metadata?: Record<string, any>;
   club_info?: {
     id: string;
     name: string;
@@ -177,7 +185,7 @@ export default function UnlockRedemption({
     if (unlock.user_can_claim_free !== undefined) {
       const notSoldOut = unlock.inventory_status !== 'sold_out' && unlock.inventory_status !== 'unavailable';
       const isActive = unlock.is_active !== false;
-      return isActive && notSoldOut && (unlock.user_can_claim_free || (unlock.claim_options?.length > 0));
+      return isActive && notSoldOut && (unlock.user_can_claim_free || hasClaimOptions(unlock));
     }
     
     // Fallback to original logic for backward compatibility
@@ -204,10 +212,44 @@ export default function UnlockRedemption({
   const formatCurrencyOrFree = (cents?: number) =>
     cents ? formatCurrency(cents) : 'Free';
 
+  // Helper to normalize claim_options (handle array and object shapes)
+  const getClaimOptionsPurchaseType = (unlock: Unlock): 'tier_boost' | 'direct_unlock' | null => {
+    if (!unlock.claim_options) return null;
+    
+    // Handle array shape
+    if (Array.isArray(unlock.claim_options)) {
+      const option = unlock.claim_options[0];
+      return option?.upgrade?.purchase_type || null;
+    }
+    
+    // Handle object shape
+    if (typeof unlock.claim_options === 'object') {
+      const claimObj = unlock.claim_options as any;
+      return claimObj.upgrade?.purchase_type || null;
+    }
+    
+    return null;
+  };
+
+  // Helper to check if claim_options is available (array or object)
+  const hasClaimOptions = (unlock: Unlock): boolean => {
+    if (!unlock.claim_options) return false;
+    
+    if (Array.isArray(unlock.claim_options)) {
+      return unlock.claim_options.length > 0;
+    }
+    
+    if (typeof unlock.claim_options === 'object') {
+      return Object.keys(unlock.claim_options).length > 0;
+    }
+    
+    return false;
+  };
+
 
   const handleRedeem = async (unlock: Unlock) => {
     // Check if this is a tier reward with upgrade options
-    if (!unlock.user_can_claim_free && unlock.claim_options?.length > 0) {
+    if (!unlock.user_can_claim_free && hasClaimOptions(unlock)) {
       // Handle upgrade purchase flow
       handleUpgradePurchase(unlock);
       return;
@@ -332,19 +374,10 @@ export default function UnlockRedemption({
       }
 
       // Determine the correct purchase type from reward's claim options
-      let purchaseType = 'tier_boost'; // default fallback
+      const purchaseType = getClaimOptionsPurchaseType(reward);
       
-      if (reward.claim_options?.upgrade?.purchase_type) {
-        const allowedTypes = ['tier_boost', 'direct_unlock'];
-        const rewardPurchaseType = reward.claim_options.upgrade.purchase_type;
-        
-        if (allowedTypes.includes(rewardPurchaseType)) {
-          purchaseType = rewardPurchaseType;
-        } else {
-          console.warn(`Invalid purchase_type '${rewardPurchaseType}' in reward claim_options, using fallback '${purchaseType}'`);
-        }
-      } else {
-        console.warn('No purchase_type found in reward.claim_options.upgrade, using fallback tier_boost');
+      if (!purchaseType) {
+        throw new Error('No valid purchase type found in reward claim options');
       }
 
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
@@ -481,7 +514,14 @@ export default function UnlockRedemption({
                       : isAvailable 
                         ? unlock.user_can_claim_free 
                           ? 'Claim Free'
-                          : `Boost for ${formatCurrencyOrFree(unlock.tier_boost_price_cents)}`
+                          : (() => {
+                              const purchaseType = getClaimOptionsPurchaseType(unlock);
+                              const price = purchaseType === 'direct_unlock' 
+                                ? unlock.direct_unlock_price_cents 
+                                : unlock.tier_boost_price_cents;
+                              const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
+                              return `${verb} for ${formatCurrencyOrFree(price)}`;
+                            })()
                         : 'Locked'
                     }
                   </button>
@@ -580,7 +620,14 @@ export default function UnlockRedemption({
                 >
                   {isRedeeming ? 'Processing...' : 
                    selectedUnlock.user_can_claim_free ? 'Claim Free' :
-                   `Boost for ${formatCurrencyOrFree(selectedUnlock.tier_boost_price_cents)}`
+                   (() => {
+                     const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
+                     const price = purchaseType === 'direct_unlock' 
+                       ? selectedUnlock.direct_unlock_price_cents 
+                       : selectedUnlock.tier_boost_price_cents;
+                     const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
+                     return `${verb} for ${formatCurrencyOrFree(price)}`;
+                   })()
                   }
                 </Button>
               </div>

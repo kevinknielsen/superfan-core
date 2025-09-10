@@ -31,10 +31,10 @@ interface UnifiedAuthContextType {
 const UnifiedAuthContext = createContext<UnifiedAuthContextType | null>(null);
 
 // Helper to extract wallet address from Privy user object
-const getPrivyWalletAddress = (u: typeof privyUser) =>
-  typeof u?.wallet === 'string' ? u?.wallet
-  : (typeof u?.wallet === 'object' && u?.wallet?.address) ? u?.wallet.address
-  : null;
+const getPrivyWalletAddress = (u?: { wallet?: string | { address?: string } }): string | undefined =>
+  typeof u?.wallet === 'string' ? u.wallet
+  : (typeof u?.wallet === 'object' && u.wallet?.address) ? u.wallet.address
+  : undefined;
 
 export function UnifiedAuthProvider({ children }: { children: React.ReactNode }) {
   const { isInWalletApp, isInFarcaster, isInCoinbaseWallet, platform, user: farcasterUser, isSDKLoaded, frameContext } = useFarcaster();

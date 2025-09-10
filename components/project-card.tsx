@@ -70,7 +70,10 @@ export default function ProjectCard({
   const fundingError = presaleError ? "Failed to load presale data" : null;
 
   const isPending = project.status === "pending";
-  const isCreator = user && (user.wallet?.address === project.creator_id || user.id === project.creator_id);
+  const isCreator = !!(user && (
+    String(user.wallet?.address ?? user.id ?? '').toLowerCase() === 
+    String(project.creatorwalletaddress ?? project.creator_id ?? '').toLowerCase()
+  ));
 
 
 

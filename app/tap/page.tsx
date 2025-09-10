@@ -25,6 +25,46 @@ interface TapInResponse {
   membership: any;
 }
 
+// Helper function to get point value with qr/qr_code mapping
+function getPointValue(source?: string): number {
+  if (!source) return TAP_IN_POINT_VALUES.default;
+  
+  switch (source) {
+    case 'qr':
+    case 'qr_code':
+      return TAP_IN_POINT_VALUES.qr_code;
+    case 'nfc':
+      return TAP_IN_POINT_VALUES.nfc;
+    case 'link':
+      return TAP_IN_POINT_VALUES.link;
+    case 'show_entry':
+      return TAP_IN_POINT_VALUES.show_entry;
+    case 'merch_purchase':
+      return TAP_IN_POINT_VALUES.merch_purchase;
+    case 'presave':
+      return TAP_IN_POINT_VALUES.presave;
+    default:
+      return TAP_IN_POINT_VALUES.default;
+  }
+}
+
+// Helper function to get source label with qr/qr_code mapping
+function getSourceLabel(source?: string): string {
+  if (!source) return 'Tap Detected';
+  
+  switch (source) {
+    case 'qr':
+    case 'qr_code':
+      return 'QR Code Scanned';
+    case 'nfc':
+      return 'NFC Tap Detected';
+    case 'link':
+      return 'Link Opened';
+    default:
+      return 'Tap Detected';
+  }
+}
+
 function TapPageContent() {
   const router = useRouter();
   
@@ -214,7 +254,7 @@ function TapPageContent() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 text-sm">Points</span>
-                        <span className="text-green-400 text-sm">+{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-sm">+{getPointValue(source || undefined)} on join</span>
                   </div>
                 </div>
 
@@ -222,11 +262,7 @@ function TapPageContent() {
                 <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-slate-400">
                     <QrCode className="w-4 h-4" />
-                    <span className="text-xs">
-                      {source === 'nfc' ? 'NFC Tap Detected' :
-                       source === 'link' ? 'Link Opened' :
-                       'QR Code Scanned'}
-                    </span>
+                    <span className="text-xs">{getSourceLabel(source || undefined)}</span>
                   </div>
                 </div>
               </div>
@@ -317,7 +353,7 @@ function TapPageContent() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-xs">+{getPointValue(source || undefined)} on join</span>
                       </div>
                     </div>
                   </div>
@@ -344,7 +380,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} points
+                  +{getPointValue(source || undefined)} points
                 </span>
               </div>
             </motion.div>
