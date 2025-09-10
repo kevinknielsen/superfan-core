@@ -156,6 +156,15 @@ export default function WalletSettings() {
   const { fundWallet } = useFundWallet();
 
   const handleFund = () => {
+    if (isInWalletApp) {
+      toast({
+        title: "Funding unavailable",
+        description: "Funding is not available in wallet app. Please use the web app.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     if (!holder?.address) return;
     fundWallet(holder?.address);
   };

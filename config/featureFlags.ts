@@ -41,8 +41,25 @@ const flags: FeatureFlags = {
 
 export { flags };
 
-// Route guard utility
+// Route guard utility with secure bypass mechanism
 export function isRouteEnabled(path: string): boolean {
+  // SECURITY: Check for dangerous bypass configuration in production
+  if (process.env.NODE_ENV === 'production' && process.env.FEATURE_FLAGS_DISABLE_ROUTE_GUARD === 'true') {
+    console.error('[SECURITY ERROR] FEATURE_FLAGS_DISABLE_ROUTE_GUARD must not be enabled in production');
+    // Exit the process to prevent accidental startup with guards disabled
+    process.exit(1);
+  }
+  
+  // Allow bypass only in non-production with explicit two-step confirmation
+  const allowBypass = process.env.NODE_ENV !== 'production' && 
+    process.env.FEATURE_FLAGS_DISABLE_ROUTE_GUARD === 'true' && 
+    process.env.FEATURE_FLAGS_ALLOW_BYPASS === 'yes-I-know';
+    
+  if (allowBypass) {
+    console.warn('[DEVELOPMENT] Route guards bypassed - all routes enabled');
+    return true;
+  }
+
   // Legacy funding routes that should be blocked
   const legacyRoutes = [
     '/launch',

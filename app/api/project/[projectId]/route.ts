@@ -93,9 +93,9 @@ async function createPresale(projectId: string) {
     !project.financing?.end_date ||
     !project.financing.target_raise
   ) {
-    console.warn("[Server]: tried to recreate a presale");
+    console.warn("[Server]: presale creation skipped - already exists or financing disabled");
     return {
-      data: { presale_id: project.presale_id },
+      data: { presale_id: project.presale_id || null },
       error: null,
     };
   }
