@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { STATUS_THRESHOLDS, computeStatus, nextStatus as computeNext } from '@/lib/status';
+import { STATUS_THRESHOLDS, computeStatus, getNextStatus as computeNext } from '@/lib/points';
 import { getCachedUser, queryCache, cacheKeys } from '@/lib/query-cache';
 
 export async function POST(request: NextRequest) {

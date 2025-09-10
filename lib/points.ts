@@ -1,12 +1,320 @@
 /**
- * Points System Helper Functions
+ * Unified Points System - Single Source of Truth
  * 
- * This module contains all the business logic for the community-locked points system,
- * including guardrails, pricing calculations, and reserve management.
+ * This module consolidates ALL points-related logic including:
+ * - Status calculations and thresholds
+ * - Points formatting and display
+ * - Tap-in point values
+ * - Purchase bundles and pricing
+ * - Spending power calculations
+ * - Reserve management (legacy)
  */
 
 import { supabase } from './supabase';
 
+// ================================
+// STATUS SYSTEM - UNIFIED
+// ================================
+
+export type StatusKey = 'cadet' | 'resident' | 'headliner' | 'superfan';
+
+export const STATUS_THRESHOLDS = Object.freeze({
+  cadet: 0,
+  resident: 5000,
+  headliner: 15000,
+  superfan: 40000,
+} satisfies Record<StatusKey, number>);
+
+export const STATUS_ORDER = ['cadet', 'resident', 'headliner', 'superfan'] as const;
+
+// Comprehensive status configuration with UI data
+export const STATUS_CONFIG = Object.freeze({
+  cadet: { 
+    color: 'bg-gray-500', 
+    label: 'Cadet', 
+    icon: '🌟',
+    threshold: 0,
+    description: 'New member getting started'
+  },
+  resident: { 
+    color: 'bg-blue-500', 
+    label: 'Resident', 
+    icon: '🏠',
+    threshold: 5000,
+    description: 'Regular community member'
+  },
+  headliner: { 
+    color: 'bg-purple-500', 
+    label: 'Headliner', 
+    icon: '🎤',
+    threshold: 15000,
+    description: 'Active community contributor'
+  },
+  superfan: { 
+    color: 'bg-yellow-500', 
+    label: 'Superfan', 
+    icon: '👑',
+    threshold: 40000,
+    description: 'Ultimate community champion'
+  }
+} satisfies Record<StatusKey, {
+  color: string;
+  label: string;
+  icon: string;
+  threshold: number;
+  description: string;
+}>);
+
+/**
+ * Calculate status from status points (earned - escrowed)
+ */
+export function computeStatus(statusPoints: number): StatusKey {
+  const pts = Number.isFinite(statusPoints) ? Math.max(0, statusPoints) : 0;
+  if (pts >= STATUS_THRESHOLDS.superfan) return 'superfan';
+  if (pts >= STATUS_THRESHOLDS.headliner) return 'headliner';
+  if (pts >= STATUS_THRESHOLDS.resident) return 'resident';
+  return 'cadet';
+}
+
+/**
+ * Get the next status tier
+ */
+export function getNextStatus(current: StatusKey): StatusKey | null {
+  const currentIndex = STATUS_ORDER.indexOf(current);
+  return currentIndex >= 0 && currentIndex < STATUS_ORDER.length - 1 
+    ? STATUS_ORDER[currentIndex + 1] 
+    : null;
+}
+
+/**
+ * Calculate progress to next status
+ */
+export function calculateStatusProgress(statusPoints: number): {
+  current: StatusKey;
+  next: StatusKey | null;
+  currentThreshold: number;
+  nextThreshold: number | null;
+  pointsToNext: number;
+  progressPercentage: number;
+} {
+  const current = computeStatus(statusPoints);
+  const next = getNextStatus(current);
+  const currentThreshold = STATUS_THRESHOLDS[current];
+  const nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+  
+  const pointsToNext = nextThreshold ? Math.max(0, nextThreshold - statusPoints) : 0;
+  const progressPercentage = nextThreshold 
+    ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
+    : 100;
+
+  return {
+    current,
+    next,
+    currentThreshold,
+    nextThreshold,
+    pointsToNext,
+    progressPercentage,
+  };
+}
+
+/**
+ * Get status configuration for UI display
+ */
+export function getStatusInfo(status: StatusKey) {
+  return STATUS_CONFIG[status] || STATUS_CONFIG.cadet;
+}
+
+/**
+ * Get all status configurations for UI lists
+ */
+export function getAllStatusInfo() {
+  return Object.entries(STATUS_CONFIG).map(([key, value]) => ({
+    key: key as StatusKey,
+    ...value
+  }));
+}
+
+// ================================
+// TAP-IN POINT VALUES
+// ================================
+
+export const TAP_IN_POINT_VALUES = Object.freeze({
+  qr_code: 20,
+  nfc: 20,
+  link: 10,
+  show_entry: 100,
+  merch_purchase: 50,
+  presave: 40,
+  default: 10
+} satisfies Record<string, number>);
+
+/**
+ * Get point value for a tap-in source
+ */
+export function getTapInPointValue(source: string): number {
+  return TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default;
+}
+
+// ================================
+// POINTS FORMATTING & DISPLAY
+// ================================
+
+/**
+ * Format points for display with proper thousands separators
+ */
+export function formatPoints(points: number): string {
+  return Math.floor(points).toLocaleString();
+}
+
+/**
+ * Format points with custom suffix
+ */
+export function formatPointsWithSuffix(points: number, suffix: string = 'pts'): string {
+  return `${formatPoints(points)} ${suffix}`;
+}
+
+/**
+ * Format points compactly for tight spaces (e.g., 1.2K, 5.6M)
+ */
+export function formatPointsCompact(points: number): string {
+  const absPoints = Math.abs(points);
+  
+  if (absPoints >= 1_000_000) {
+    return `${(points / 1_000_000).toFixed(1)}M`;
+  } else if (absPoints >= 1_000) {
+    return `${(points / 1_000).toFixed(1)}K`;
+  } else {
+    return formatPoints(points);
+  }
+}
+
+/**
+ * Format currency for display (cents to dollars)
+ */
+export function formatCurrency(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Get relative points change display (e.g., "+50", "-25")
+ */
+export function formatPointsChange(change: number): string {
+  const prefix = change > 0 ? '+' : '';
+  return `${prefix}${formatPoints(change)}`;
+}
+
+// ================================
+// SPENDING POWER CALCULATIONS  
+// ================================
+
+/**
+ * Calculate spending power breakdown for status protection
+ */
+export function calculateSpendingPower(
+  earnedPoints: number, 
+  purchasedPoints: number, 
+  escrowedPoints: number,
+  currentStatus: StatusKey,
+  preserveStatus: boolean = false
+): {
+  totalSpendable: number;
+  purchasedAvailable: number;
+  earnedAvailable: number;
+  earnedLockedForStatus: number;
+  escrowed: number;
+} {
+  const currentThreshold = STATUS_THRESHOLDS[currentStatus];
+  
+  // Points locked to preserve status (if protection enabled)
+  const earnedLockedForStatus = preserveStatus ? Math.min(currentThreshold, earnedPoints) : 0;
+  
+  // Available points from each source
+  const purchasedAvailable = Math.max(0, purchasedPoints);
+  const earnedAvailable = Math.max(0, earnedPoints - earnedLockedForStatus - escrowedPoints);
+  const totalSpendable = purchasedAvailable + earnedAvailable;
+
+  return {
+    totalSpendable,
+    purchasedAvailable,
+    earnedAvailable,
+    earnedLockedForStatus,
+    escrowed: escrowedPoints,
+  };
+}
+
+/**
+ * Check if user can spend a certain amount
+ */
+export function canSpendPoints(
+  amount: number,
+  earnedPoints: number,
+  purchasedPoints: number,
+  escrowedPoints: number,
+  currentStatus: StatusKey,
+  preserveStatus: boolean = false
+): boolean {
+  const spendingPower = calculateSpendingPower(
+    earnedPoints, 
+    purchasedPoints, 
+    escrowedPoints,
+    currentStatus, 
+    preserveStatus
+  );
+  
+  return spendingPower.totalSpendable >= amount;
+}
+
+/**
+ * Calculate optimal spending breakdown (purchased first, then earned)
+ */
+export function calculateSpendingBreakdown(
+  amountToSpend: number,
+  earnedPoints: number,
+  purchasedPoints: number,
+  escrowedPoints: number,
+  currentStatus: StatusKey,
+  preserveStatus: boolean = false
+): {
+  canSpend: boolean;
+  spendPurchased: number;
+  spendEarned: number;
+  remainingBalance: number;
+  error?: string;
+} {
+  const spendingPower = calculateSpendingPower(
+    earnedPoints, 
+    purchasedPoints, 
+    escrowedPoints,
+    currentStatus, 
+    preserveStatus
+  );
+
+  if (amountToSpend > spendingPower.totalSpendable) {
+    return {
+      canSpend: false,
+      spendPurchased: 0,
+      spendEarned: 0,
+      remainingBalance: earnedPoints + purchasedPoints,
+      error: preserveStatus 
+        ? 'Insufficient points (status protection enabled)'
+        : 'Insufficient points'
+    };
+  }
+
+  // Spend purchased points first, then earned
+  const spendPurchased = Math.min(amountToSpend, spendingPower.purchasedAvailable);
+  const spendEarned = Math.max(0, amountToSpend - spendPurchased);
+
+  return {
+    canSpend: true,
+    spendPurchased,
+    spendEarned,
+    remainingBalance: (earnedPoints + purchasedPoints) - amountToSpend,
+  };
+}
+
+// ================================
+// LEGACY PRICING & BUNDLES
 // Constants from the spec
 export const PLATFORM_FEE = 0.10; // 10%
 export const BREAKAGE = 0.15; // 15% expected breakage
@@ -397,16 +705,41 @@ export async function updateWalletBalance(
   };
 }
 
+// ================================
+// VALIDATION & UTILITIES
+// ================================
+
 /**
- * Format points for display
+ * Validate that points amount is valid
  */
-export function formatPoints(points: number): string {
-  return points.toLocaleString();
+export function validatePointsAmount(points: number): { isValid: boolean; error?: string } {
+  if (!Number.isFinite(points)) {
+    return { isValid: false, error: 'Points must be a valid number' };
+  }
+  
+  if (points < 0) {
+    return { isValid: false, error: 'Points cannot be negative' };
+  }
+  
+  if (points > 1_000_000) {
+    return { isValid: false, error: 'Points amount too large' };
+  }
+  
+  if (!Number.isInteger(points)) {
+    return { isValid: false, error: 'Points must be a whole number' };
+  }
+  
+  return { isValid: true };
 }
 
 /**
- * Format currency for display
+ * Safely parse points amount from user input
  */
-export function formatCurrency(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+export function parsePointsAmount(input: string | number): number {
+  if (typeof input === 'number') {
+    return Math.max(0, Math.floor(input));
+  }
+  
+  const parsed = parseInt(input.replace(/[^\d]/g, ''), 10);
+  return Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
 }

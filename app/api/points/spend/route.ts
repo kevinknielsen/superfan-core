@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { computeStatus } from '@/lib/status';
+import { computeStatus } from '@/lib/points';
 import { 
   createStandardError, 
   createErrorResponse, 

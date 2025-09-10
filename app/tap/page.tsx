@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
 import Header from "@/components/header";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
-import { POINT_VALUES } from "@/hooks/use-tap-ins";
+import { TAP_IN_POINT_VALUES } from "@/lib/points";
 
 // New custom hooks for cleaner separation of concerns
 import { useTapQRParams } from "@/hooks/use-tap-qr-params";
@@ -214,7 +214,7 @@ function TapPageContent() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400 text-sm">Points</span>
-                    <span className="text-green-400 text-sm">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-sm">+{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} on join</span>
                   </div>
                 </div>
 
@@ -313,7 +313,7 @@ function TapPageContent() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{POINT_VALUES[source as keyof typeof POINT_VALUES] || POINT_VALUES.default} on join</span>
+                        <span className="text-green-400 text-xs">+{TAP_IN_POINT_VALUES[source as keyof typeof TAP_IN_POINT_VALUES] || TAP_IN_POINT_VALUES.default} on join</span>
                       </div>
                     </div>
                   </div>

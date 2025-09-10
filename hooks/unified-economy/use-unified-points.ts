@@ -247,7 +247,7 @@ export function useUnifiedPoints(clubId: string) {
   }, [breakdown]);
 
   const formatPoints = useCallback((points: number) => {
-    return points.toLocaleString();
+    return Math.floor(points).toLocaleString(); // Use consistent formatting from consolidated lib
   }, []);
 
   return {
@@ -285,55 +285,28 @@ export function useUnifiedPoints(clubId: string) {
   };
 }
 
-// Static status configuration (unified peg thresholds)
-const statusConfig = {
-  cadet: { 
-    color: 'bg-gray-500', 
-    label: 'Cadet', 
-    icon: '🌟',
-    threshold: 0,
-    description: 'New member getting started'
-  },
-  resident: { 
-    color: 'bg-blue-500', 
-    label: 'Resident', 
-    icon: '🏠',
-    threshold: 5000,  // 50 points at $1 per 100 pts
-    description: 'Regular community member'
-  },
-  headliner: { 
-    color: 'bg-purple-500', 
-    label: 'Headliner', 
-    icon: '🎤',
-    threshold: 15000, // 150 points at $1 per 100 pts
-    description: 'Active community contributor'
-  },
-  superfan: { 
-    color: 'bg-yellow-500', 
-    label: 'Superfan', 
-    icon: '👑',
-    threshold: 40000, // 400 points at $1 per 100 pts
-    description: 'Ultimate community champion'
-  }
+// Re-export consolidated status utilities
+import { getStatusInfo, getAllStatusInfo, STATUS_CONFIG } from '@/lib/points';
+
+export { 
+  getStatusInfo,
+  getAllStatusInfo as getAllStatuses,
+  STATUS_CONFIG as statusConfig 
 };
 
-// Utility hook for status information
+// Utility hook for status information - now uses consolidated logic
 export function useStatusInfo() {
-
-  const getStatusInfo = useCallback((status: string) => {
-    return statusConfig[status as keyof typeof statusConfig] || statusConfig.cadet;
+  const getStatusInfoCallback = useCallback((status: string) => {
+    return getStatusInfo(status as any);
   }, []);
 
-  const getAllStatuses = useCallback(() => {
-    return Object.entries(statusConfig).map(([key, value]) => ({
-      key,
-      ...value
-    }));
+  const getAllStatusesCallback = useCallback(() => {
+    return getAllStatusInfo();
   }, []);
 
   return {
-    getStatusInfo,
-    getAllStatuses,
-    statusConfig,
+    getStatusInfo: getStatusInfoCallback,
+    getAllStatuses: getAllStatusesCallback,
+    statusConfig: STATUS_CONFIG,
   };
 }
