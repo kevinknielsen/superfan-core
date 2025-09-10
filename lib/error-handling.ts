@@ -248,7 +248,7 @@ export function createErrorResponse(error: StandardError): NextResponse {
       success: false,
       error: {
         code: error.code,
-        message: error.userMessage,
+        userMessage: error.userMessage,
         suggestions: error.suggestions,
         ...(process.env.NODE_ENV === 'development' && {
           debug: {
@@ -313,7 +313,7 @@ export function handleApiError(error: unknown, context?: string): NextResponse {
     // Common Supabase/PostgreSQL errors
     switch (dbError.code) {
       case 'PGRST116': // Row not found
-        return createErrorResponse(createStandardError('NOT_FOUND', dbError));
+        return createErrorResponse(createStandardError('USER_NOT_FOUND', dbError));
       case '23505': // Unique constraint violation
         return createErrorResponse(createStandardError('BUSINESS_LOGIC', dbError, 'This action conflicts with existing data'));
       case '23503': // Foreign key constraint violation

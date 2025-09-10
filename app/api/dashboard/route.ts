@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
           status_points: statusPoints,
           current_status: current,
           next_status: next,
-          progress_to_next: nextThreshold
+          progress_to_next: nextThreshold && nextThreshold !== currentThreshold
             ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
             : 100,
         };

@@ -281,6 +281,17 @@ export function calculateSpendingBreakdown(
   remainingBalance: number;
   error?: string;
 } {
+  // Validate negative amounts early
+  if (amountToSpend < 0) {
+    return {
+      canSpend: false,
+      spendPurchased: 0,
+      spendEarned: 0,
+      remainingBalance: earnedPoints + purchasedPoints,
+      error: "Invalid amount to spend"
+    };
+  }
+
   const spendingPower = calculateSpendingPower(
     earnedPoints, 
     purchasedPoints, 

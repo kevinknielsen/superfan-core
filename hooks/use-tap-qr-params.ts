@@ -61,14 +61,41 @@ export function useTapQRParams(): QRState {
       setParamError(null);
 
       try {
-        const response = await fetch(`/api/clubs/${params.clubId}`);
-        if (response.ok) {
-          const club = await response.json();
-          setClubInfo(club);
-          setParamError(null);
-        } else {
-          setClubInfo(null);
-          setParamError("Club not found");
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 10000); // 10 second timeout
+
+        try {
+          const response = await fetch(`/api/clubs/${params.clubId}`, {
+            signal: controller.signal
+          });
+          
+          // Clear timeout on successful response
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const club = await response.json();
+            setClubInfo(club);
+            setParamError(null);
+          } else {
+            setClubInfo(null);
+            setParamError("Club not found");
+          }
+        } catch (fetchError: any) {
+          // Clear timeout in case of error
+          clearTimeout(timeoutId);
+          
+          if (fetchError.name === 'AbortError') {
+            // Handle timeout specifically
+            console.error("Request timeout loading club:", fetchError);
+            setClubInfo(null);
+            setParamError("Request timed out. Please check your connection and try again.");
+          } else {
+            // Handle other fetch errors
+            throw fetchError;
+          }
         }
       } catch (error) {
         console.error("Error loading club:", error);

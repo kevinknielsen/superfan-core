@@ -36,11 +36,39 @@ export function isRouteEnabled(path: string): boolean {
   return true;
 }
 
-// API route guard utility (simplified - legacy routes already removed)
+// API route guard utility - performs real authorization checks
 export function isApiRouteEnabled(path: string): boolean {
-  // All current API routes are enabled by default
-  // Individual route authorization handled at the route level
-  return true;
+  // Check if route bypass is explicitly enabled (for development/testing)
+  if (process.env.FEATURE_FLAGS_DISABLE_ROUTE_GUARD === 'true') {
+    console.warn(`[FEATURE_FLAGS] Route guard bypassed for ${path} - development mode`);
+    return true;
+  }
+
+  // Define enabled API routes - add new routes here as they're implemented
+  const enabledApiRoutes = new Set([
+    '/api/auth',
+    '/api/dashboard',
+    '/api/points',
+    '/api/clubs',
+    '/api/tap-in',
+    '/api/memberships',
+    '/api/projects',
+    '/api/admin',
+    '/api/rewards',
+    '/api/notifications'
+  ]);
+
+  // Check if the route or its parent path is enabled
+  const isEnabled = enabledApiRoutes.has(path) || 
+    Array.from(enabledApiRoutes).some(enabledRoute => 
+      path.startsWith(enabledRoute + '/') || path.startsWith(enabledRoute + '?')
+    );
+
+  if (!isEnabled) {
+    console.warn(`[FEATURE_FLAGS] API route not found in configuration: ${path}`);
+  }
+
+  return isEnabled;
 }
 
 // Component feature guard decorator

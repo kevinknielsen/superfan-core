@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useUnifiedAuth } from '@/lib/unified-auth-context';
 import { usePrivy } from '@privy-io/react-auth';
 import { useFarcaster } from '@/lib/farcaster-context';
+import { useToast } from '@/hooks/use-toast';
 
 interface TapAuthState {
   isReady: boolean;
@@ -35,6 +36,7 @@ export function useTapAuthentication({
   const { user, isAuthenticated, isLoading: authLoading, isInWalletApp } = useUnifiedAuth();
   const { getAccessToken, login } = usePrivy();
   const { user: farcasterUser } = useFarcaster();
+  const { toast } = useToast();
   
   const [authError, setAuthError] = useState<string | null>(null);
   const autoLoginTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -86,7 +88,16 @@ export function useTapAuthentication({
       // Skip Privy login in wallet app context
       if (isInWalletApp) {
         console.warn("Cannot trigger Privy login in wallet app context");
-        return;
+        
+        // Show user-visible notification
+        toast({
+          title: "Authentication Disabled",
+          description: "Authentication is disabled in wallet app context. Please use the web version.",
+          variant: "destructive",
+        });
+        
+        // Return rejected promise for programmatic handling
+        throw new Error("Authentication is disabled in wallet app context");
       }
 
       // If already authenticated, no need to login again
@@ -97,9 +108,20 @@ export function useTapAuthentication({
       await login();
     } catch (error) {
       console.error("Authentication failed:", error);
-      setAuthError("Authentication failed. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Authentication failed. Please try again.";
+      setAuthError(errorMessage);
+      
+      // Show user-visible toast for all auth errors
+      toast({
+        title: "Authentication Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      
+      // Re-throw for caller handling
+      throw error;
     }
-  }, [clearAutoLoginTimer, isInWalletApp, isAuthenticated, user, login]);
+  }, [clearAutoLoginTimer, isInWalletApp, isAuthenticated, user, login, toast]);
 
   // Auto-login timer management
   useEffect(() => {

@@ -132,13 +132,31 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
       });
 
       if (!response.ok) {
-        let errorData: { error?: string };
+        let errorMessage = 'Failed to process tap-in';
+        
         try {
-          errorData = await response.json() as { error?: string };
-        } catch {
-          errorData = { error: 'Invalid response from server' };
+          // First try to parse as JSON
+          const errorData = await response.json() as { error?: string; message?: string; detail?: string };
+          
+          // Check common error fields in order of preference
+          errorMessage = errorData.error || errorData.message || errorData.detail || errorMessage;
+        } catch (jsonError) {
+          try {
+            // If JSON parsing fails, try to get text content
+            const textContent = await response.text();
+            if (textContent && textContent.trim()) {
+              errorMessage = textContent.trim();
+            } else {
+              // Fall back to status text or default message
+              errorMessage = response.statusText || errorMessage;
+            }
+          } catch (textError) {
+            // Final fallback to status text or default
+            errorMessage = response.statusText || errorMessage;
+          }
         }
-        throw new Error(errorData.error || 'Failed to process tap-in');
+        
+        throw new Error(errorMessage);
       }
 
       let result: TapInResponse;

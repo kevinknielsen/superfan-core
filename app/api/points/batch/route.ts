@@ -55,7 +55,13 @@ export async function POST(request: NextRequest) {
 
       if (walletsError) {
         console.error('Error fetching wallet data:', walletsError);
-        // Don't fail the entire request, just log the error
+        return NextResponse.json(
+          { 
+            error: 'Failed to fetch wallet data', 
+            details: walletsError.message || 'Database error occurred'
+          }, 
+          { status: 500 }
+        );
       }
 
       // Process each wallet and cache the results
@@ -75,7 +81,7 @@ export async function POST(request: NextRequest) {
           status_points: statusPoints,
           current_status: current,
           next_status: next,
-          progress_to_next: nextThreshold
+          progress_to_next: nextThreshold && (nextThreshold - currentThreshold) !== 0
             ? Math.min(100, Math.max(0, ((statusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100))
             : 100,
           points_to_next: nextThreshold ? Math.max(0, nextThreshold - statusPoints) : 0,
