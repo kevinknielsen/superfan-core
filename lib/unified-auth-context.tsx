@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useFarcaster } from '@/lib/farcaster-context';
 import { usePrivy } from '@/lib/auth-context';
 import { useAccount } from 'wagmi';
-import { useMetalHolder } from '@/hooks/use-metal-holder';
+// useMetalHolder removed - Metal integration disabled
 import { useUserStatus } from '@/hooks/use-status';
 import { useUserSync } from '@/hooks/use-user-sync';
 
@@ -37,10 +37,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   // Use Wagmi useAccount hook for web context
   const wagmiAccount = useAccount();
 
-  // Get metal holder data for fallback wallet address
-  const { data: metalHolder } = useMetalHolder({ 
-    user: isInWalletApp ? null : privyUser 
-  });
+  // Metal holder removed - no longer used for fallback addresses
 
   // Admin status state
   const [isAdmin, setIsAdmin] = useState(false);
@@ -175,31 +172,28 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
     };
   }, [isAuthenticated, isLoading, user?.id]);
 
-  // Extract wallet address - prioritize connected wallet for better UX
+  // Extract wallet address - use connected wallet only (Metal holder fallback removed)
   const walletAddress = (() => {
     if (isInWalletApp) {
-      // In Wallet App: ONLY return the connected wallet address
-      // Never show Metal holder address in wallet apps
+      // In Wallet App: return the connected wallet address
       console.log("[UnifiedAuth] Wallet app debug:", {
         wagmiAddress: wagmiAccount?.address,
         wagmiConnected: wagmiAccount?.isConnected,
         isConnecting: wagmiAccount?.isConnecting,
-        metalHolderAddress: metalHolder?.address,
         isSDKLoaded
       });
       
-      // Return the connected wallet address or undefined (no fallback to Metal holder)
       return wagmiAccount?.address;
     } else {
-      // Web context - use Privy wallet, with Metal holder as fallback
+      // Web context - use Privy wallet only
       if (typeof privyUser?.wallet === 'string') {
         return privyUser.wallet;
       }
       if (typeof privyUser?.wallet === 'object' && privyUser.wallet?.address) {
         return privyUser.wallet.address;
       }
-      // Fallback to Metal holder address for web context
-      return metalHolder?.address;
+      // No fallback - user must connect a wallet
+      return undefined;
     }
   })();
 

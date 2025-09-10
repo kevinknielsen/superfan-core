@@ -2,17 +2,7 @@
 // This file controls the availability of legacy funding features vs new membership features
 
 export interface FeatureFlags {
-  // Legacy funding features (ALL DISABLED during transition)
-  enableFunding: boolean;
-  enableTokens: boolean;
-  enablePresales: boolean;
-  enableRevenueSplits: boolean;
-  enableCapTable: boolean;
-  enableProjectReview: boolean;
-  enableMetal: boolean;
-  enableContributions: boolean;
-  
-  // New membership features
+  // Current membership features
   enableMembership: boolean;
   enableHouseAccounts: boolean;
   enableRedemptionCodes: boolean;
@@ -22,17 +12,7 @@ export interface FeatureFlags {
 }
 
 const flags: FeatureFlags = {
-  // Legacy features - ALL DISABLED
-  enableFunding: false,
-  enableTokens: false,
-  enablePresales: false,
-  enableRevenueSplits: false,
-  enableCapTable: false,
-  enableProjectReview: false,
-  enableMetal: false,
-  enableContributions: false,
-  
-  // New features - membership enabled, others gated by env vars
+  // Current features - membership enabled, others gated by env vars
   enableMembership: true,
   enableHouseAccounts: process.env.ENABLE_HOUSE_ACCOUNTS === 'true',
   enableRedemptionCodes: process.env.ENABLE_REDEMPTION_CODES === 'true',
@@ -43,33 +23,6 @@ export { flags };
 
 // Route guard utility
 export function isRouteEnabled(path: string): boolean {
-  // Legacy funding routes that should be blocked
-  const legacyRoutes = [
-    '/launch',
-    '/your-projects', 
-    '/review',
-    '/moonpay-test'
-  ];
-  
-  // Block specific project sub-routes
-  const legacyProjectRoutes = [
-    '/projects/[id]/cap-table',
-    '/projects/[id]/collaborators' // Will be simplified later
-  ];
-  
-  // Check for exact legacy route matches
-  if (legacyRoutes.includes(path)) {
-    return false;
-  }
-  
-  // Check for legacy project sub-routes
-  if (legacyProjectRoutes.some(route => {
-    const pattern = route.replace('[id]', '\\w+');
-    return new RegExp(`^${pattern}$`).test(path);
-  })) {
-    return false;
-  }
-  
   // Check membership routes
   if (path.startsWith('/membership') && !flags.enableMembership) {
     return false;
@@ -83,23 +36,11 @@ export function isRouteEnabled(path: string): boolean {
   return true;
 }
 
-// API route guard utility
+// API route guard utility (simplified - legacy routes already removed)
 export function isApiRouteEnabled(path: string): boolean {
-  const legacyApiRoutes = [
-    '/api/contributions',
-    '/api/funded-projects',
-    '/api/presales',
-    '/api/metal',
-    '/api/project/[projectId]/financing'
-  ];
-  
-  return !legacyApiRoutes.some(route => {
-    if (route.includes('[projectId]')) {
-      const pattern = route.replace('[projectId]', '\\w+');
-      return new RegExp(`^${pattern}$`).test(path);
-    }
-    return path === route;
-  });
+  // All current API routes are enabled by default
+  // Individual route authorization handled at the route level
+  return true;
 }
 
 // Component feature guard decorator
@@ -120,14 +61,7 @@ export function useFeatureFlag(flag: keyof FeatureFlags): boolean {
   return flags[flag];
 }
 
-// Legacy route redirects
+// Legacy route redirects (no longer needed - routes removed)
 export function getLegacyRouteRedirect(path: string): string | null {
-  const redirectMap: Record<string, string> = {
-    '/launch': '/membership',
-    '/your-projects': '/',
-    '/review': '/',
-    '/moonpay-test': '/',
-  };
-  
-  return redirectMap[path] || null;
+  return null;
 }
