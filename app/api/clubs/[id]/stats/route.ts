@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getServerUser } from '@/lib/auth-utils';
-import { isAdmin } from '@/lib/security';
+import { isAdmin } from '@/lib/security.server';
 import { calculateCoverageRatio, getWeekStart } from '@/lib/points';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Get authenticated user
@@ -18,7 +18,7 @@ export async function GET(
       );
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
 
     // Get club details to check ownership
     const { data: club, error: clubError } = await supabase

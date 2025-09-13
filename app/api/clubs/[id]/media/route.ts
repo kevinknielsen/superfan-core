@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "../../../supabase";
 import { verifyUnifiedAuth } from "../../../auth";
+import { isAdmin } from "@/lib/security.server";
+
+// Helper function to get internal user by auth
+async function getInternalUserByAuth(auth: { type: string; userId: string }) {
+  const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('id')
+    .eq(userIdField, auth.userId)
+    .single();
+
+  if (userError || !user) {
+    throw new Error('User not found');
+  }
+
+  return user;
+}
 
 // Define the expected shape for club media
 interface ClubMedia {
@@ -32,14 +49,24 @@ const supabaseTyped = supabase as unknown as {
 };
 
 // URL cache to reduce repeated Supabase API calls
-const urlCache = new Map<string, string>();
+const urlCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_TTL = 3600000; // 1 hour
+
+function getCachedUrl(key: string): string | null {
+  const cached = urlCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.url;
+  }
+  urlCache.delete(key);
+  return null;
+}
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const clubId = params.id;
+    const { id: clubId } = await params;
 
     console.log(`[Club Media API] Fetching media for club: ${clubId}`);
 
@@ -77,13 +104,14 @@ function getMediaUrl(filePath: string): string {
   if (!filePath) return '';
   
   // Check cache first
-  if (urlCache.has(filePath)) {
-    return urlCache.get(filePath)!;
+  const cachedUrl = getCachedUrl(filePath);
+  if (cachedUrl) {
+    return cachedUrl;
   }
   
   // If it's already a full URL, return as is
   if (filePath.startsWith('http')) {
-    urlCache.set(filePath, filePath);
+    urlCache.set(filePath, { url: filePath, timestamp: Date.now() });
     return filePath;
   }
   
@@ -93,16 +121,16 @@ function getMediaUrl(filePath: string): string {
     .getPublicUrl(filePath);
   
   const url = data?.publicUrl || filePath;
-  urlCache.set(filePath, url);
+  urlCache.set(filePath, { url, timestamp: Date.now() });
   return url;
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const clubId = params.id;
+    const { id: clubId } = await params;
     
     // Authentication guard - BEFORE parsing formData
     const auth = await verifyUnifiedAuth(request);
@@ -111,14 +139,8 @@ export async function POST(
     }
 
     // Get user ID (support both Privy and Farcaster auth)
-    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq(userIdField, auth.userId)
-      .single();
-
-    if (userError || !user) {
+    const user = await getInternalUserByAuth(auth).catch(() => null);
+    if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -133,11 +155,16 @@ export async function POST(
       return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
 
-    // Check if user is club owner
-    if (clubAuth.owner_id !== user.id) {
-      // TODO: Check for admin role when role column is added to users table
+    // Check if user is club owner or admin
+    const userIsAdmin = isAdmin(auth.userId);
+    console.log(`[Club Media POST] User ${user.id}, Auth User ID: ${auth.userId}, Club Owner: ${clubAuth.owner_id}, Is Admin: ${userIsAdmin}`);
+    
+    if (clubAuth.owner_id !== user.id && !userIsAdmin) {
+      console.log(`[Club Media POST] Authorization failed - not owner and not admin`);
       return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
+    
+    console.log(`[Club Media POST] Authorization passed`);
     
     // Only parse formData after authentication succeeds
     const formData = await request.formData();
@@ -265,10 +292,10 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const clubId = params.id;
+    const { id: clubId } = await params;
     const { searchParams } = new URL(request.url);
     const mediaId = searchParams.get('media_id');
 
@@ -283,14 +310,8 @@ export async function DELETE(
     }
 
     // Get user ID (support both Privy and Farcaster auth)
-    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq(userIdField, auth.userId)
-      .single();
-
-    if (userError || !user) {
+    const user = await getInternalUserByAuth(auth).catch(() => null);
+    if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -305,13 +326,16 @@ export async function DELETE(
       return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
 
-    // Check if user is club owner
-    if (clubAuth.owner_id !== user.id) {
-      // TODO: Check for admin role when role column is added to users table
+    // Check if user is club owner or admin
+    const userIsAdmin = isAdmin(auth.userId);
+    console.log(`[Club Media DELETE] User ${user.id}, Auth User ID: ${auth.userId}, Club Owner: ${clubAuth.owner_id}, Is Admin: ${userIsAdmin}`);
+    
+    if (clubAuth.owner_id !== user.id && !userIsAdmin) {
+      console.log(`[Club Media DELETE] Authorization failed - not owner and not admin`);
       return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
-
-    console.log(`[Club Media API] Deleting media ${mediaId} for club: ${clubId}`);
+    
+    console.log(`[Club Media DELETE] Authorization passed - deleting media ${mediaId} for club: ${clubId}`);
 
     // Get media record first
     const { data: media, error: fetchError } = await supabaseTyped

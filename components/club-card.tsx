@@ -11,6 +11,7 @@ import dynamic from "next/dynamic";
 const QRScanner = dynamic(() => import("./qr-scanner"), { ssr: false });
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
+import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { getNextStatus, getPointsToNext } from "@/types/club.types";
@@ -108,6 +109,7 @@ const CircleProgress = ({
 interface ClubCardProps {
   club: Club;
   membership?: ClubMembership | null;
+  index?: number;
 }
 
 // (removed unused STATUS_* constants)
@@ -123,9 +125,11 @@ const STATUS_GRADIENT_COLORS = {
 export default function ClubCard({
   club,
   membership: propMembership,
+  index,
 }: ClubCardProps) {
-  const { user, isAuthenticated } = useUnifiedAuth();
+  const { user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
+  const { login: privyLogin } = usePrivy();
   const router = useRouter();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
@@ -135,9 +139,9 @@ export default function ClubCard({
   // Get club images for enhanced display
   const { data: images, primaryImage } = useClubImages(club.id);
 
-  // Get user's membership for this club
+  // Get user's membership for this club - only when authenticated
   const { data: fetchedMembership } = useUserClubMembership(
-    user?.id || null, 
+    isAuthenticated ? (user?.id || null) : null, 
     club.id
   );
   
@@ -153,7 +157,7 @@ export default function ClubCard({
 
   // Status calculation - use status_points for tier progression with nullish coalescing
   const currentStatus = membership?.current_status || 'cadet';
-  const currentPoints = breakdown?.wallet.status_points ?? membership?.status_points ?? membership?.points ?? 0;
+  const currentPoints = breakdown?.wallet.status_points ?? membership?.points ?? 0;
   const nextStatus = getNextStatus(currentStatus);
   
   // Progress calculation - show progress relative to current tier
@@ -179,29 +183,34 @@ export default function ClubCard({
 
   // (removed unused StatusIcon)
 
+  const performJoin = async () => {
+    if (!user?.id) return;
+    try {
+      await joinClubMutation.mutateAsync({ privyUserId: user.id, clubId: club.id });
+      toast({ title: "Membership added!", description: `You've successfully joined ${club.name}` });
+    } catch (error) {
+      console.error('Error joining club:', error);
+      toast({ title: "Failed to add membership", description: "Please try again later", variant: "destructive" });
+    }
+  };
+
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    requireAuth('membership', async () => {
-      try {
-        await joinClubMutation.mutateAsync({
-          privyUserId: user.id,
-          clubId: club.id,
-        });
-        
-        toast({
-          title: "Membership added!",
-          description: `You've successfully joined ${club.name}`,
-        });
-      } catch (error) {
-        console.error('Error joining club:', error);
-        toast({
-          title: "Failed to add membership",
-          description: "Please try again later",
-          variant: "destructive",
-        });
+    // If user is not authenticated, trigger login
+    if (!isAuthenticated) {
+      if (isInWalletApp) {
+        // Wallet app: require auth then perform join
+        requireAuth('membership', () => { void performJoin(); });
+      } else {
+        // In web context, directly open Privy modal
+        privyLogin();
       }
-    });
+      return;
+    }
+    
+    // User is authenticated, proceed with joining club
+    await performJoin();
   };
 
   const handleQRScan = (data: string) => {

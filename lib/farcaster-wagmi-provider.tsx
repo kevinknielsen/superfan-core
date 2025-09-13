@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createConfig, http, WagmiProvider, useConnect, useAccount } from 'wagmi';
 import { base } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -80,11 +80,14 @@ export function FarcasterWagmiProvider({ children }: FarcasterWagmiProviderProps
   const isInWalletApp = farcasterContext?.isInWalletApp ?? false;
   const isSDKLoaded = farcasterContext?.isSDKLoaded ?? false;
   
-  // Add a mounting state to prevent early renders
-  const [isMounted, setIsMounted] = React.useState(false);
+  // Add a mounting state to prevent early renders and hydration mismatches
+  const [isMounted, setIsMounted] = useState(false);
   
   useEffect(() => {
-    setIsMounted(true);
+    // Use a microtask to ensure we're not in the middle of a render cycle
+    Promise.resolve().then(() => {
+      setIsMounted(true);
+    });
   }, []);
   
   // Memoize the config to prevent unnecessary re-renders

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { getServerUser } from '@/lib/auth-utils';
 import { validatePricingGuardrails } from '@/lib/points';
-import { isAdmin } from '@/lib/security';
+import { isAdmin } from '@/lib/security.server';
 
 const PricingUpdateSchema = z.object({
   sellCents: z.number().int().positive(),

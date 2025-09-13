@@ -57,6 +57,15 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    
+    /* Fix mobile scroll bounce/twitching */
+    overscroll-behavior-y: none;
+    position: relative;
+  }
+  
+  html {
+    /* Prevent elastic scrolling on iOS */
+    overscroll-behavior-y: none;
   }
   h1 {
     @apply text-3xl font-bold md:text-4xl text-white;

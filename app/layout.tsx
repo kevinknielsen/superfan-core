@@ -1,5 +1,5 @@
 import type React from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "./providers";
 import { inter } from "./fonts";
@@ -105,6 +105,12 @@ export async function generateMetadata(): Promise<Metadata> {
       'msapplication-TileColor': '#8B5CF6',
     },
   };
+}
+
+// Separate viewport export as required by Next.js 14+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 }
 
 export default function RootLayout({

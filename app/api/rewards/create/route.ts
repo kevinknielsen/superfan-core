@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { getServerUser } from '@/lib/auth-utils';
-import { isAdmin } from '@/lib/security';
+import { isAdmin } from '@/lib/security.server';
 
 const CreateRewardSchema = z.object({
   club_id: z.string().uuid(),

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { getAccessToken } from '@privy-io/react-auth';
 import { useErrorHandler, createMutationErrorHandler } from '@/lib/frontend-error-handling';
+import { useUnifiedAuth } from '@/lib/unified-auth-context';
 
 export interface PointsBreakdown {
   wallet: {
@@ -56,10 +57,11 @@ export interface TransferPointsRequest {
   transferType?: 'purchased_only' | 'any';
 }
 
-export function useUnifiedPoints(clubId: string) {
+export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { handlePointsError } = useErrorHandler();
+  const { user } = useUnifiedAuth();
 
   // Fetch points breakdown
   const {
@@ -68,7 +70,7 @@ export function useUnifiedPoints(clubId: string) {
     error,
     refetch
   } = useQuery({
-    queryKey: ['points-breakdown', clubId],
+    queryKey: ['points-breakdown', clubId, user?.id || 'anonymous'],
     queryFn: async (): Promise<PointsBreakdown> => {
       const accessToken = await getAccessToken();
       if (!accessToken) {
@@ -108,7 +110,7 @@ export function useUnifiedPoints(clubId: string) {
         throw error;
       }
     },
-    enabled: !!clubId,
+    enabled: options?.enabled !== false && !!clubId,
     staleTime: 30000, // 30 seconds - balance between freshness and performance
     gcTime: 300000, // 5 minutes - reasonable cache duration
     retry: 1, // Only retry once on failure
@@ -145,7 +147,7 @@ export function useUnifiedPoints(clubId: string) {
       return response.json() as any;
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId] });
+      queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId, user?.id || 'anonymous'] });
       toast({
         title: "Points Spent! 🎉",
         description: `Successfully spent ${data.transaction?.points_spent || 'some'} points`,
@@ -186,7 +188,7 @@ export function useUnifiedPoints(clubId: string) {
       return response.json() as any;
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId] });
+      queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId, user?.id || 'anonymous'] });
       toast({
         title: "Transfer Successful! 📤",
         description: `Sent ${data.transfer?.points_transferred || 'some'} points to ${data.transfer?.recipient_email || 'recipient'}`,
@@ -213,7 +215,7 @@ export function useUnifiedPoints(clubId: string) {
         }
         return response.json();
       },
-      enabled: !!clubId,
+      enabled: options?.enabled !== false && !!clubId,
     });
   };
 
@@ -233,7 +235,7 @@ export function useUnifiedPoints(clubId: string) {
         }
         return response.json();
       },
-      enabled: !!clubId,
+      enabled: options?.enabled !== false && !!clubId,
     });
   };
 

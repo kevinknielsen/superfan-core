@@ -28,6 +28,7 @@ import PerkRedemptionConfirmation from "./perk-redemption-confirmation";
 import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
 import { formatDate } from "@/lib/utils";
+import { StatusProgressionCard } from "./status-progression-card";
 
 // Use compatible types with existing components
 type RedemptionData = any; // Keep flexible for now since it comes from API
@@ -51,17 +52,15 @@ const STATUS_ICONS = {
 
 
 
-// Helper function to render club media (supports images and videos)
-// Note: Multiple ClubMediaDisplay instances with same clubId are automatically
-// deduplicated by React Query's caching (same queryKey: ['club-media', clubId])
+// Helper function to render club cover image (from clubs table, not club_media)
 function renderClubImages(club: Club) {
   return (
-    <ClubMediaDisplay
-      clubId={club.id}
-      className="h-full w-full pointer-events-none"
-      showControls={false}
-      autoPlay={false}
-      fallbackImage="/placeholder.svg?height=400&width=600&query=music club"
+    <img
+      loading="lazy"
+      decoding="async"
+      src={club.image_url || "/placeholder.svg?height=400&width=600&query=music club"}
+      alt={club.name}
+      className="h-full w-full object-cover"
     />
   );
 }
@@ -92,13 +91,14 @@ export default function ClubDetailsModal({
   
   // Get complete club data including unlocks
   const { data: clubData } = useClub(club.id);
-  const { data: userClubData } = useUserClubData(user?.id || null, club.id);
+  const { data: userClubData } = useUserClubData(isAuthenticated ? (user?.id || null) : null, club.id);
   
   const membership = propMembership || userClubData?.membership;
   const joinClubMutation = useJoinClub();
 
-  // Get unified points data - same as wallet component
-  const { breakdown } = useUnifiedPoints(club.id);
+  // Get unified points data - only when authenticated and has membership
+  const enabled = Boolean(club.id && membership && isAuthenticated);
+  const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
 
   // Status calculations - use unified points data if available
   const currentStatus = membership?.current_status || 'cadet';
@@ -108,24 +108,6 @@ export default function ClubDetailsModal({
   const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
   const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
 
-  // Helper function for progress bar width calculation
-  const getProgressBarWidth = () => {
-    if (breakdown?.status.progress_to_next != null) {
-      return `${breakdown.status.progress_to_next}%`;
-    }
-    if (!nextStatus) return '100%';
-    
-    const currentThreshold = STATUS_THRESHOLDS[currentStatus];
-    const nextThreshold = STATUS_THRESHOLDS[nextStatus];
-    
-    // Guard against division by zero
-    if (nextThreshold === currentThreshold) {
-      return '100%';
-    }
-    
-    const progress = ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100;
-    return `${Math.max(0, Math.min(progress, 100))}%`;
-  };
   
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
@@ -134,7 +116,7 @@ export default function ClubDetailsModal({
   const handleExternalLink = async (url: string, event: React.MouseEvent) => {
     event.preventDefault();
     try {
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       console.error('Failed to open link:', error);
     }
@@ -371,15 +353,6 @@ export default function ClubDetailsModal({
                     />
                   {/* Subtle overlay for better text contrast */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                  
-                  {/* Enhanced play button */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                    <div className="w-20 h-20 bg-white/95 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-sm border border-white/20">
-                      <svg className="w-8 h-8 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    </div>
-                  </div>
                 </div>
                 
                 {/* Enhanced content section */}
@@ -397,8 +370,66 @@ export default function ClubDetailsModal({
             </div>
 
 
-            {/* Club Details Grid */}
-            <div className="mb-8 grid grid-cols-2 gap-4">
+            {/* Enhanced Membership Status Section - Moved to Top for Prominence */}
+            {membership != null ? (
+              <StatusProgressionCard 
+                currentStatus={currentStatus}
+                currentPoints={currentPoints}
+                nextStatus={nextStatus}
+                pointsToNext={pointsToNext}
+                statusIcon={StatusIcon}
+              />
+            ) : (
+              <div className="mb-8">
+                <h3 className="mb-4 text-xl font-semibold">Join Club</h3>
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+                  <h4 className="font-semibold text-white mb-2">Add Membership</h4>
+                  <p className="text-gray-400">
+                    Join this club to start earning points and unlocking exclusive perks
+                  </p>
+                  <button
+                    onClick={handleJoinClub}
+                    disabled={joinClubMutation.isPending}
+                    className="mt-4 w-full rounded-lg bg-primary px-4 py-3 font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {joinClubMutation.isPending ? "Joining..." : "Join Club"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Perks and Benefits Section - Grid Layout */}
+            {membership && (
+              <div className="mb-8">
+                <h3 className="mb-4 text-xl font-semibold">Perks and Benefits</h3>
+                <UnlockRedemption
+                  clubId={club.id}
+                  clubName={club.name}
+                  userStatus={currentStatus}
+                  userPoints={currentPoints}
+                  onRedemption={async () => {
+                    await refetch();
+                    toast({
+                      title: "Perk Redeemed!",
+                      description: "Wallet and status updated",
+                    });
+                  }}
+                  onShowRedemptionConfirmation={(redemption, unlock) => {
+                    setRedemptionConfirmation({ redemption, unlock });
+                  }}
+                  onShowPerkDetails={(unlock, redemption) => {
+                    setPerkDetails({ isOpen: true, unlock, redemption });
+                  }}
+                />
+              </div>
+            )}
+
+
+
+            {/* Club Details Grid - Moved to Bottom */}
+            <div className="mb-8">
+              <h3 className="mb-4 text-xl font-semibold">Details</h3>
+              <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl border border-gray-800 p-4 bg-gray-900/30">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="h-5 w-5 text-primary" />
@@ -442,86 +473,8 @@ export default function ClubDetailsModal({
                   <span className="text-green-400">Verified</span>
                 </div>
               </div>
+              </div>
             </div>
-
-            {/* Perks and Benefits Section - Grid Layout */}
-            {membership && (
-              <div className="mb-8">
-                <h3 className="mb-4 text-xl font-semibold">Perks and Benefits</h3>
-                <UnlockRedemption
-                  clubId={club.id}
-                  clubName={club.name}
-                  userStatus={currentStatus}
-                  userPoints={currentPoints}
-                  onRedemption={() => {
-                    // Optionally refetch data or show success message
-                    toast({
-                      title: "Perk Redeemed!",
-                      description: "Check your email for details",
-                    });
-                  }}
-                  onShowRedemptionConfirmation={(redemption, unlock) => {
-                    setRedemptionConfirmation({ redemption, unlock });
-                  }}
-                  onShowPerkDetails={(unlock, redemption) => {
-                    setPerkDetails({ isOpen: true, unlock, redemption });
-                  }}
-                />
-              </div>
-            )}
-
-
-
-            {/* Membership Status Section - Moved to Bottom */}
-            {membership ? (
-              <div className="mb-8">
-                <h3 className="mb-4 text-xl font-semibold">Your Status</h3>
-                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className={`flex h-16 w-16 items-center justify-center rounded-full ${STATUS_COLORS[currentStatus]} bg-current/20`}>
-                      <StatusIcon className="h-8 w-8" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xl font-semibold text-white mb-1">
-                        {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)} Status
-                      </h4>
-                      <p className="text-gray-400">
-                        {currentPoints.toLocaleString()} points • {nextStatus ? `${Number(pointsToNext).toLocaleString()} to ${nextStatus}` : "Max level!"}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {/* Status Progress - Same as Unified Wallet */}
-                  {nextStatus && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Progress to {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}</span>
-                        <span>{pointsToNext} points needed</span>
-                      </div>
-                      <div className="w-full bg-gray-800 rounded-full h-2">
-                        <div 
-                          className={`h-2 rounded-full transition-all duration-500 ${
-                            currentStatus === 'superfan' ? 'bg-yellow-500' : 'bg-primary'
-                          }`}
-                          style={{ width: getProgressBarWidth() }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  
-                </div>
-              </div>
-            ) : (
-              <div className="mb-8">
-                <h3 className="mb-4 text-xl font-semibold">Join Club</h3>
-                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
-                  <h4 className="font-semibold text-white mb-2">Add Membership</h4>
-                  <p className="text-gray-400">
-                    Become a member to earn points, unlock perks, and access the community.
-                  </p>
-                </div>
-              </div>
-            )}
 
             {/* Bottom spacing for anchored button */}
             <div className="h-20" />

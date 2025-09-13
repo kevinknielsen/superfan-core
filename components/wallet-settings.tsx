@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, ExternalLink, Link2 } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFundWallet, usePrivy } from "@privy-io/react-auth";
 // useMetalHolder removed - legacy Metal integration disabled
@@ -11,8 +11,6 @@ import { isManagerApp } from "@/lib/feature-flags";
 import { useProjects } from "@/hooks/use-projects";
 // useUserPresales removed - part of legacy funding system
 import { useFarcaster } from "@/lib/farcaster-context";
-import { useBalance } from "wagmi";
-import { Address } from "viem";
 import { useQuery } from '@tanstack/react-query';
 import { getAccessToken } from '@privy-io/react-auth';
 import { Globe, TrendingUp, DollarSign, ArrowUpRight } from 'lucide-react';
@@ -37,7 +35,6 @@ export default function WalletSettings() {
   const { toast } = useToast();
   const { login, authenticated } = usePrivy();
   const { openUrl } = useFarcaster();
-  const [showFullAddress, setShowFullAddress] = useState(false);
 
   // Use unified auth to get user and wallet address for both contexts
   const { user: unifiedUser, walletAddress: unifiedWalletAddress, isInWalletApp } = useUnifiedAuth();
@@ -50,9 +47,6 @@ export default function WalletSettings() {
   // For Wallet App: use unified wallet address (from Farcaster/Coinbase)
   // For Web: use unified wallet address (Metal integration disabled)
   const walletAddress = unifiedWalletAddress;
-  
-  // USDC contract address on Base
-  const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
   
   // Get global points balance
   const {
@@ -77,8 +71,11 @@ export default function WalletSettings() {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch global balance (${response.status}): ${errorText}`);
+        if (response.status === 401 && !isInWalletApp) {
+          throw new Error('Authentication required');
+        }
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Failed to fetch global balance (${response.status})${errorText ? `: ${errorText}` : ''}`);
       }
       
       return response.json() as Promise<GlobalPointsData>;
@@ -88,24 +85,9 @@ export default function WalletSettings() {
     enabled: !!user && (authenticated || isInWalletApp),
   });
 
-  // Get USDC balance of the connected wallet (in wallet apps)
-  const { data: connectedWalletUsdcBalance } = useBalance({
-    address: isInWalletApp && walletAddress ? (walletAddress as Address) : undefined,
-    token: USDC_BASE_ADDRESS,
-    query: { enabled: !!walletAddress && isInWalletApp }
-  });
+  // USDC balance intentionally disabled; remove related hook to avoid dead code.
+  // Re-introduce with UI in a follow-up when needed.
 
-  // Show connected wallet's USDC balance (Metal integration disabled)
-  const balance = connectedWalletUsdcBalance?.formatted;
-
-  // Debug logging to verify correct balance display
-  if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Balance debug:", {
-    isInWalletApp,
-    walletAddress,
-    connectedWalletBalance: connectedWalletUsdcBalance?.formatted,
-    finalBalance: balance,
-    balanceSource: "connected wallet (Metal integration disabled)"
-  });
 
   // Debug global points data
   if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Global points debug:", {
@@ -123,28 +105,6 @@ export default function WalletSettings() {
   });
 
   // Removed presales - part of legacy funding system
-
-  const handleCopy = () => {
-    if (walletAddress) {
-      navigator.clipboard.writeText(walletAddress);
-      toast({
-        title: "Address copied",
-        description: "Wallet address copied to clipboard",
-      });
-    }
-  };
-
-  // Platform-aware BaseScan link handler
-  const handleBaseScanLink = async (event: React.MouseEvent) => {
-    event.preventDefault();
-    if (walletAddress) {
-      await openUrl(`https://basescan.org/address/${walletAddress}`);
-    }
-  };
-
-  // Helper to shorten address
-  const getShortAddress = (addr: string) =>
-    addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
   const { fundWallet } = useFundWallet();
 
@@ -193,9 +153,6 @@ export default function WalletSettings() {
               <div className="flex items-center gap-2">
                 <Globe className="h-5 w-5 text-primary" />
                 <h3 className="text-base font-medium">Global Points Balance</h3>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                100 points = $1 USD
               </div>
             </div>
 
@@ -295,71 +252,6 @@ export default function WalletSettings() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Wallet Address Section */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h3 className="mb-4 text-lg font-medium">Wallet Address</h3>
-        <div className="flex flex-col items-center">
-          <div
-            className="w-full bg-background/50 rounded-md px-3 py-4 font-mono text-lg break-all text-center select-all mb-2"
-            style={{ wordBreak: "break-all" }}
-          >
-            {walletAddress ? (
-              showFullAddress ? (
-                walletAddress
-              ) : (
-                getShortAddress(walletAddress)
-              )
-            ) : isInWalletApp ? (
-              <span className="text-muted-foreground">
-                Connecting wallet...
-              </span>
-            ) : (
-              <span className="text-muted-foreground">
-                No wallet address found
-              </span>
-            )}
-          </div>
-
-          {!authenticated && !isInWalletApp && (
-            <button
-              onClick={() => login()}
-              className="mb-4 bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Connect Wallet
-            </button>
-          )}
-          {walletAddress && (
-            <button
-              className="text-primary text-sm mb-2 focus:outline-none hover:underline"
-              onClick={() => setShowFullAddress((v) => !v)}
-              type="button"
-            >
-              {showFullAddress ? "Hide full address" : "Show full address"}
-            </button>
-          )}
-          {walletAddress && (
-            <div className="flex flex-row justify-center gap-6 mt-1 mb-2">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="text-muted-foreground hover:text-white p-2 rounded-full bg-background/70"
-              >
-                <Copy className="h-6 w-6" />
-              </button>
-              <button
-                onClick={handleBaseScanLink}
-                className="text-muted-foreground hover:text-white p-2 rounded-full bg-background/70"
-              >
-                <ExternalLink className="h-6 w-6" />
-              </button>
-            </div>
-          )}
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground text-center">
-          This is your connected wallet address on Base network. Use it to receive USDC and other tokens.
-        </p>
       </div>
 
       {/* Legacy funding projects section removed for Club platform */}

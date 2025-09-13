@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, LogOut, User, Star, QrCode } from "lucide-react";
+import { ArrowLeft, Star, QrCode, User } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
+import { usePrivy } from "@privy-io/react-auth";
 import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFeatureFlag } from "@/config/featureFlags";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import dynamic from 'next/dynamic';
 import Logo from "./logo";
+import ProfileDropdown from "./ui/profile-dropdown";
 
 // Dynamic import for scanner-wallet toggle to prevent SSR issues
 const ScannerWalletToggle = dynamic(() => import('./scanner-wallet-toggle'), {
@@ -26,6 +28,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
   const router = useRouter();
   const { logout, user, isAuthenticated, isInWalletApp, isAdmin } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
+  const { login: privyLogin } = usePrivy();
   const enableMembership = useFeatureFlag('enableMembership');
   const [showScannerWallet, setShowScannerWallet] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -34,31 +37,44 @@ export default function Header({ showBackButton = false }: HeaderProps) {
     setIsClient(true);
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await logout();
     } finally {
-      // Don't redirect to login in Wallet App context
+      // Stay on dashboard in unauthenticated state instead of redirecting to login
       if (!isInWalletApp) {
-        router.push("/login");
+        router.replace("/dashboard");
       }
     }
-  };
+  }, [logout, isInWalletApp, router]);
 
-  const handleCheckInClick = () => {
+  const handleCheckInClick = useCallback(() => {
     requireAuth('checkin', () => {
       setShowScannerWallet(true);
     });
-  };
+  }, [requireAuth]);
 
-  const handleProfileClick = () => {
-    requireAuth('profile', () => {
-      router.push("/profile");
-    });
-  };
+  const handleProfileClick = useCallback(() => {
+    router.push("/profile");
+  }, [router]);
+
+  const handleAdminClick = useCallback(() => {
+    router.push("/admin");
+  }, [router]);
 
   const handleLoginClick = () => {
-    requireAuth('general');
+    // In wallet app context, still use requireAuth for proper handling
+    if (isInWalletApp) {
+      requireAuth('general');
+    } else {
+      // In web context, directly open Privy modal
+      try {
+        privyLogin();
+      } catch (error) {
+        console.error('Login failed:', error);
+        // Optionally show a user-friendly error message
+      }
+    }
   };
 
   return (
@@ -73,6 +89,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
           <div className="flex items-center gap-2">
             {showBackButton && (
               <button
+                type="button"
                 onClick={() => router.push("/")}
                 className="mr-2 flex items-center text-muted-foreground hover:text-foreground"
               >
@@ -92,6 +109,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
                 {/* Check In button - show when membership is enabled */}
                 {!showBackButton && enableMembership && (
                   <button
+                    type="button"
                     onClick={handleCheckInClick}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white text-sm font-medium transition-all duration-200"
                   >
@@ -100,39 +118,24 @@ export default function Header({ showBackButton = false }: HeaderProps) {
                   </button>
                 )}
 
-                {/* Admin Dashboard Link - show for admin users */}
-                {isAdmin && !showBackButton && (
-                  <Link
-                    href="/admin"
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white text-sm font-medium transition-all duration-200"
-                  >
-                    <Star className="h-4 w-4" />
-                    <span className="hidden sm:inline">Admin</span>
-                  </Link>
-                )}
-
-                {/* Profile & Settings button */}
-                <button 
-                  onClick={handleProfileClick}
-                  title="Profile & Settings"
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors">
-                    <User className="h-4 w-4" />
-                  </div>
-                </button>
-
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center text-muted-foreground hover:text-foreground"
-                >
-                  <LogOut className="h-5 w-5" />
-                  <span className="ml-2 hidden sm:inline">Logout</span>
-                </button>
+                {/* Profile Dropdown - includes admin link and logout */}
+                <ProfileDropdown
+                  user={{
+                    name: user?.google?.name || user?.twitter?.name || user?.email?.address,
+                    email: user?.email?.address || "",
+                    phone: user?.phone?.number || "",
+                  }}
+                  onProfileClick={handleProfileClick}
+                  onAdminClick={handleAdminClick}
+                  onLogout={handleLogout}
+                  isAdmin={isAdmin}
+                />
               </>
             ) : (
               <>
                 {/* Unauthenticated User Navigation */}
                 <button
+                  type="button"
                   onClick={handleLoginClick}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-all duration-200"
                 >
