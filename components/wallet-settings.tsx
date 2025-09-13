@@ -11,8 +11,6 @@ import { isManagerApp } from "@/lib/feature-flags";
 import { useProjects } from "@/hooks/use-projects";
 // useUserPresales removed - part of legacy funding system
 import { useFarcaster } from "@/lib/farcaster-context";
-import { useBalance } from "wagmi";
-import { Address } from "viem";
 import { useQuery } from '@tanstack/react-query';
 import { getAccessToken } from '@privy-io/react-auth';
 import { Globe, TrendingUp, DollarSign, ArrowUpRight } from 'lucide-react';
@@ -50,9 +48,6 @@ export default function WalletSettings() {
   // For Web: use unified wallet address (Metal integration disabled)
   const walletAddress = unifiedWalletAddress;
   
-  // USDC contract address on Base
-  const USDC_BASE_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
-  
   // Get global points balance
   const {
     data: globalPointsData,
@@ -76,8 +71,11 @@ export default function WalletSettings() {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch global balance (${response.status}): ${errorText}`);
+        if (response.status === 401 && !isInWalletApp) {
+          throw new Error('Authentication required');
+        }
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Failed to fetch global balance (${response.status})${errorText ? `: ${errorText}` : ''}`);
       }
       
       return response.json() as Promise<GlobalPointsData>;
@@ -87,29 +85,9 @@ export default function WalletSettings() {
     enabled: !!user && (authenticated || isInWalletApp),
   });
 
-  // Feature toggle until balance is surfaced in UI
-  const SHOW_USDC_BALANCE = false;
-  
-  // TODO: USDC balance is fetched but not displayed in UI
-  // Consider displaying the balance or removing this unused code to avoid unnecessary API calls
-  // Get USDC balance of the connected wallet (in wallet apps)
-  const { data: connectedWalletUsdcBalance } = useBalance({
-    address: isInWalletApp && walletAddress ? (walletAddress as Address) : undefined,
-    token: USDC_BASE_ADDRESS,
-    query: { enabled: !!walletAddress && isInWalletApp && SHOW_USDC_BALANCE }
-  });
+  // USDC balance intentionally disabled; remove related hook to avoid dead code.
+  // Re-introduce with UI in a follow-up when needed.
 
-  // Show connected wallet's USDC balance (Metal integration disabled)
-  const balance = SHOW_USDC_BALANCE ? connectedWalletUsdcBalance?.formatted : undefined;
-
-  // Debug logging to verify correct balance display
-  if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Balance debug:", {
-    isInWalletApp,
-    walletAddress,
-    connectedWalletBalance: connectedWalletUsdcBalance?.formatted,
-    finalBalance: balance,
-    balanceSource: "connected wallet (Metal integration disabled)"
-  });
 
   // Debug global points data
   if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Global points debug:", {

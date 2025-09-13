@@ -86,11 +86,15 @@ function StatusProgressSection({
   // Sparkle animation when near completion
   useEffect(() => {
     if (progressPercentage > 80) {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       const interval = setInterval(() => {
         setShowSparkles(true);
-        setTimeout(() => setShowSparkles(false), 1000);
+        timeout = setTimeout(() => setShowSparkles(false), 1000);
       }, 3000);
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        if (timeout) clearTimeout(timeout);
+      };
     }
   }, [progressPercentage]);
 

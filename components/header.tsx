@@ -89,6 +89,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
           <div className="flex items-center gap-2">
             {showBackButton && (
               <button
+                type="button"
                 onClick={() => router.push("/")}
                 className="mr-2 flex items-center text-muted-foreground hover:text-foreground"
               >
@@ -108,6 +109,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
                 {/* Check In button - show when membership is enabled */}
                 {!showBackButton && enableMembership && (
                   <button
+                    type="button"
                     onClick={handleCheckInClick}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white text-sm font-medium transition-all duration-200"
                   >
@@ -133,6 +135,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
               <>
                 {/* Unauthenticated User Navigation */}
                 <button
+                  type="button"
                   onClick={handleLoginClick}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-all duration-200"
                 >

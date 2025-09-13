@@ -47,6 +47,11 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
     if (isOpen) {
       document.addEventListener('pointerdown', handleClickOutside)
       document.addEventListener('keydown', handleKeyDown)
+      // Focus first actionable item
+      setTimeout(() => {
+        const firstButton = dropdownRef.current?.querySelector('#profile-menu button') as HTMLButtonElement;
+        firstButton?.focus();
+      }, 0)
     }
 
     return () => {
@@ -57,9 +62,12 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <button 
+      <button
+        type="button"
+        id="profile-menu-button"
         className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F141E] text-primary hover:bg-[#161b26] transition-colors"
         title="Profile & Settings"
+        aria-label="Open profile menu"
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
@@ -71,7 +79,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
       {isOpen && (
         <div
           id="profile-menu"
-          role="menu"
+          aria-labelledby="profile-menu-button"
           className="absolute right-0 top-10 w-56 bg-[#0F141E] border border-[#1E1E32]/20 rounded-md shadow-lg z-50"
         >
           {displayName && (
@@ -89,20 +97,20 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
           
           <div className="py-1">
             <button
-              role="menuitem"
+              type="button"
               onClick={() => {
                 onProfileClick()
                 setIsOpen(false)
               }}
               className="w-full px-3 py-2 text-sm text-left hover:bg-[#161b26] transition-colors flex items-center"
             >
-              <User className="mr-2 h-4 w-4" />
+              <Settings className="mr-2 h-4 w-4" />
               Settings
             </button>
             
             {isAdmin && (
               <button
-                role="menuitem"
+                type="button"
                 onClick={() => {
                   onAdminClick()
                   setIsOpen(false)
@@ -117,7 +125,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
           
           <div className="border-t border-[#1E1E32]/20 py-1">
             <button
-              role="menuitem"
+              type="button"
               onClick={() => {
                 onLogout()
                 setIsOpen(false)

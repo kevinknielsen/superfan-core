@@ -118,6 +118,7 @@ export function ClubMediaDisplay({
             ref={videoRef}
             src={currentMedia.file_url ?? currentMedia.file_path}
             className="w-full h-full object-cover"
+            poster={currentMedia.thumbnail_url ?? undefined}
             muted={isMuted}
             loop
             playsInline
@@ -202,6 +203,8 @@ export function ClubMediaDisplay({
               <button
                 key={index}
                 onClick={() => setCurrentIndex(index)}
+                aria-label={`Show media ${index + 1} of ${displayMedia.length}`}
+                aria-pressed={index === currentIndex}
                 className={`w-2 h-2 rounded-full transition-colors ${
                   index === currentIndex ? 'bg-white' : 'bg-white/50'
                 }`}

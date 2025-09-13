@@ -63,14 +63,16 @@ export function StatusProgressionCard({
   // Sparkle animation when near completion
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     if (progressPercentage > 80) {
       interval = setInterval(() => {
         setShowSparkles(true);
-        setTimeout(() => setShowSparkles(false), 1000);
+        timeout = setTimeout(() => setShowSparkles(false), 1000);
       }, 3000);
     }
     return () => {
       if (interval) clearInterval(interval);
+      if (timeout) clearTimeout(timeout);
     };
   }, [progressPercentage]);
 
