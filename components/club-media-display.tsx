@@ -25,6 +25,9 @@ export function ClubMediaDisplay({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(!autoPlay);
   const videoRef = useRef<HTMLVideoElement>(null);
+  
+  // Generate unique ID for debugging
+  const componentId = React.useMemo(() => Math.random().toString(36).substr(2, 9), []);
 
   // Get primary media first, then fallback to ordered media
   const displayMedia = React.useMemo(() => {
@@ -57,9 +60,11 @@ export function ClubMediaDisplay({
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        videoRef.current.play().catch(error => {
+          console.error('Error playing video:', error);
+        });
       }
-      setIsPlaying(!isPlaying);
+      // Don't set state manually - let onPlay/onPause events handle it
     }
   };
 
@@ -123,22 +128,32 @@ export function ClubMediaDisplay({
           />
           
           {/* Video Controls */}
-          <div
-            className={`absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity ${
-              isPlaying
-                ? 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
-                : 'opacity-100'
-            }`}
-          >
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleVideoToggle}
-              className="bg-black/70 hover:bg-black/90 text-white"
-            >
-              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </Button>
-          </div>
+          {!isPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleVideoToggle}
+                className="bg-black/70 hover:bg-black/90 text-white"
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          
+          {/* Pause Controls - only show on hover when playing */}
+          {isPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 hover:opacity-100 transition-opacity">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleVideoToggle}
+                className="bg-black/70 hover:bg-black/90 text-white"
+              >
+                <Pause className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
 
           {/* Mute Toggle - moved to bottom right */}
           <Button

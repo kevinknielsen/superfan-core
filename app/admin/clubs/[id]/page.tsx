@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
 import { usePrivy } from "@privy-io/react-auth";
 import Header from "@/components/header";
+import ClubMediaManager from "@/components/admin/club-media-manager";
 
 interface Club {
   id: string;
@@ -377,6 +378,10 @@ export default function ClubManagementPage() {
                 />
               </div>
 
+              {/* Media Management Section */}
+              <div className="space-y-4 pt-6 border-t border-border">
+                <ClubMediaManager clubId={clubId} />
+              </div>
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4">

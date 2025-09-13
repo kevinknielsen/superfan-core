@@ -1,13 +1,19 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
   TrendingUp, 
   ArrowUpRight, 
   ArrowDownRight, 
-  Users
+  Users,
+  Crown,
+  Star,
+  Trophy,
+  Shield,
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +31,238 @@ interface UnifiedPointsWalletProps {
   showPurchaseOptions?: boolean;
   showTransferOptions?: boolean;
   className?: string;
+}
+
+// Enhanced status icons mapping
+const ENHANCED_STATUS_ICONS = {
+  cadet: Shield,
+  resident: Star,
+  headliner: Trophy,
+  superfan: Crown,
+};
+
+// Status tier thresholds
+const STATUS_THRESHOLDS = {
+  cadet: 0,
+  resident: 5000,
+  headliner: 15000,
+  superfan: 50000,
+};
+
+// Status Progress Section Component (matching Your Status design)
+function StatusProgressSection({ 
+  currentStatus, 
+  currentPoints, 
+  nextStatus, 
+  pointsToNext, 
+  progressPercentage 
+}: {
+  currentStatus: string;
+  currentPoints: number;
+  nextStatus: string | null;
+  pointsToNext: number | null;
+  progressPercentage: number;
+}) {
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [showSparkles, setShowSparkles] = useState(false);
+
+  const CurrentStatusIcon = ENHANCED_STATUS_ICONS[currentStatus as keyof typeof ENHANCED_STATUS_ICONS] || Shield;
+  const NextStatusIcon = nextStatus ? ENHANCED_STATUS_ICONS[nextStatus as keyof typeof ENHANCED_STATUS_ICONS] : Crown;
+
+  // Animate progress bar on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAnimatedProgress(progressPercentage);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [progressPercentage]);
+
+  // Sparkle animation when near completion
+  useEffect(() => {
+    if (progressPercentage > 80) {
+      const interval = setInterval(() => {
+        setShowSparkles(true);
+        setTimeout(() => setShowSparkles(false), 1000);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [progressPercentage]);
+
+  // Status-specific gradient colors
+  const getStatusGradient = (status: string) => {
+    switch (status) {
+      case 'cadet': return 'from-blue-500 to-blue-400';
+      case 'resident': return 'from-green-500 to-green-400';
+      case 'headliner': return 'from-purple-500 to-purple-400';
+      case 'superfan': return 'from-yellow-500 to-yellow-400';
+      default: return 'from-gray-500 to-gray-400';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'cadet': return 'text-blue-400';
+      case 'resident': return 'text-green-400';
+      case 'headliner': return 'text-purple-400';
+      case 'superfan': return 'text-yellow-400';
+      default: return 'text-gray-400';
+    }
+  };
+
+  const getStatusBgColor = (status: string) => {
+    switch (status) {
+      case 'cadet': return 'bg-blue-900/30';
+      case 'resident': return 'bg-green-900/30';
+      case 'headliner': return 'bg-purple-900/30';
+      case 'superfan': return 'bg-yellow-900/30';
+      default: return 'bg-gray-800';
+    }
+  };
+
+  if (!nextStatus) {
+    return (
+      <div className="text-center p-4 rounded-xl bg-gradient-to-r from-yellow-500/20 to-yellow-400/20 border border-yellow-500/30">
+        <Crown className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
+        <h5 className="text-yellow-400 font-bold mb-1">Maximum Status!</h5>
+        <p className="text-yellow-300/80 text-sm">All benefits unlocked</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      {/* Animated background sparkles */}
+      <AnimatePresence>
+        {showSparkles && (
+          <motion.div
+            className="absolute inset-0 pointer-events-none"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            {[...Array(4)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute"
+                initial={{ 
+                  opacity: 0, 
+                  scale: 0,
+                  x: Math.random() * 100 + '%',
+                  y: Math.random() * 100 + '%'
+                }}
+                animate={{ 
+                  opacity: [0, 1, 0], 
+                  scale: [0, 1, 0],
+                  rotate: 360
+                }}
+                transition={{ 
+                  duration: 2, 
+                  delay: i * 0.2,
+                  repeat: Infinity,
+                  repeatDelay: 3
+                }}
+              >
+                <Sparkles className="w-3 h-3 text-yellow-400" />
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Side-by-side tier comparison */}
+      <div className="flex items-center justify-between mb-4">
+        {/* Current Tier */}
+        <motion.div 
+          className="flex items-center gap-2"
+          initial={{ x: -10, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          <motion.div 
+            className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(currentStatus)} ${getStatusColor(currentStatus)}`}
+            whileHover={{ scale: 1.05 }}
+          >
+            <CurrentStatusIcon className="w-4 h-4" />
+          </motion.div>
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">
+              {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
+            </h4>
+            <p className="text-xs text-muted-foreground">{formatPoints(currentPoints)} points</p>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.2 }}
+        >
+          <ArrowRight className="w-4 h-4 text-muted-foreground" />
+        </motion.div>
+
+        {/* Next Tier */}
+        <motion.div 
+          className="flex items-center gap-2 opacity-60"
+          initial={{ x: 10, opacity: 0 }}
+          animate={{ x: 0, opacity: 0.6 }}
+          transition={{ delay: 0.15 }}
+        >
+          <motion.div 
+            className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(nextStatus)} ${getStatusColor(nextStatus)}`}
+            whileHover={{ scale: 1.05, opacity: 1 }}
+          >
+            <NextStatusIcon className="w-4 h-4" />
+          </motion.div>
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">
+              {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}
+            </h4>
+            <p className={`text-xs ${getStatusColor(nextStatus)}`}>
+              {STATUS_THRESHOLDS[nextStatus as keyof typeof STATUS_THRESHOLDS]?.toLocaleString()} points
+            </p>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Progress section */}
+      <motion.div 
+        className="space-y-2"
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3 }}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            {formatPoints(pointsToNext ?? 0)} points to go
+          </span>
+          <motion.span 
+            className={`text-sm font-semibold ${getStatusColor(nextStatus)}`}
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
+          >
+            {Math.round(progressPercentage)}%
+          </motion.span>
+        </div>
+
+        <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+          <motion.div
+            className={`h-full bg-gradient-to-r ${getStatusGradient(nextStatus)} rounded-full relative`}
+            initial={{ width: 0 }}
+            animate={{ width: `${animatedProgress}%` }}
+            transition={{ duration: 1.5, ease: "easeOut" }}
+          >
+            {/* Animated shine effect */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              animate={{ x: ['-100%', '100%'] }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+            />
+          </motion.div>
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
 
@@ -187,52 +425,54 @@ export default function UnifiedPointsWallet({
           </div>
         </div>
 
-        {/* Status Progress */}
-        {status.next_status && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>Progress to {status.next_status ? getStatusInfo(status.next_status).label : 'Max Status'}</span>
-              <span>{formatPoints(status.points_to_next ?? 0)} points needed</span>
-            </div>
-            <Progress value={status.progress_to_next} className="h-2" />
-          </div>
-        )}
+        {/* Enhanced Status Progress - Matching Your Status Design */}
+        <StatusProgressSection 
+          currentStatus={status.current}
+          currentPoints={wallet.total_balance ?? 0}
+          nextStatus={status.next_status}
+          pointsToNext={status.points_to_next}
+          progressPercentage={status.progress_to_next}
+        />
 
-        {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Action Button - Full Width */}
+        <div className="space-y-3">
           {showPurchaseOptions && (
-              <Button
-                type="button"
-                variant="default"
-                className="w-full"
-                disabled={isPurchasing}
+            <Button
+              type="button"
+              variant="default"
+              className="w-full"
+              disabled={isPurchasing}
               onClick={(e) => {
                 e.stopPropagation();
                 handleBuyPoints();
               }}
             >
               <ArrowDownRight className="h-4 w-4 mr-2" />
-              Buy Points
+              Buy Points to Boost Status
             </Button>
           )}
           
-          <Button
-            type="button"
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowSpendModal(true);
-            }}
-            disabled={(wallet.total_balance ?? 0) <= 0}
-          >
-            <ArrowUpRight className="h-4 w-4 mr-2" />
-            Spend Points
-          </Button>
+          {/* Spend Points button hidden for now - doesn't work yet */}
+          {false && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSpendModal(true);
+              }}
+              disabled={(wallet.total_balance ?? 0) <= 0}
+            >
+              <ArrowUpRight className="h-4 w-4 mr-2" />
+              Spend Points
+            </Button>
+          )}
 
           {showTransferOptions && (
             <Button
               type="button"
               variant="outline"
+              className="w-full"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowTransferModal(true);
@@ -243,7 +483,6 @@ export default function UnifiedPointsWallet({
               Transfer
             </Button>
           )}
-
         </div>
       </CardContent>
 

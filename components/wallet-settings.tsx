@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, ExternalLink, Link2 } from "lucide-react";
+import { Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useFundWallet, usePrivy } from "@privy-io/react-auth";
 // useMetalHolder removed - legacy Metal integration disabled
@@ -37,7 +37,6 @@ export default function WalletSettings() {
   const { toast } = useToast();
   const { login, authenticated } = usePrivy();
   const { openUrl } = useFarcaster();
-  const [showFullAddress, setShowFullAddress] = useState(false);
 
   // Use unified auth to get user and wallet address for both contexts
   const { user: unifiedUser, walletAddress: unifiedWalletAddress, isInWalletApp } = useUnifiedAuth();
@@ -123,28 +122,6 @@ export default function WalletSettings() {
   });
 
   // Removed presales - part of legacy funding system
-
-  const handleCopy = () => {
-    if (walletAddress) {
-      navigator.clipboard.writeText(walletAddress);
-      toast({
-        title: "Address copied",
-        description: "Wallet address copied to clipboard",
-      });
-    }
-  };
-
-  // Platform-aware BaseScan link handler
-  const handleBaseScanLink = async (event: React.MouseEvent) => {
-    event.preventDefault();
-    if (walletAddress) {
-      await openUrl(`https://basescan.org/address/${walletAddress}`);
-    }
-  };
-
-  // Helper to shorten address
-  const getShortAddress = (addr: string) =>
-    addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
   const { fundWallet } = useFundWallet();
 
@@ -295,71 +272,6 @@ export default function WalletSettings() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Wallet Address Section */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h3 className="mb-4 text-lg font-medium">Wallet Address</h3>
-        <div className="flex flex-col items-center">
-          <div
-            className="w-full bg-background/50 rounded-md px-3 py-4 font-mono text-lg break-all text-center select-all mb-2"
-            style={{ wordBreak: "break-all" }}
-          >
-            {walletAddress ? (
-              showFullAddress ? (
-                walletAddress
-              ) : (
-                getShortAddress(walletAddress)
-              )
-            ) : isInWalletApp ? (
-              <span className="text-muted-foreground">
-                Connecting wallet...
-              </span>
-            ) : (
-              <span className="text-muted-foreground">
-                No wallet address found
-              </span>
-            )}
-          </div>
-
-          {!authenticated && !isInWalletApp && (
-            <button
-              onClick={() => login()}
-              className="mb-4 bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Connect Wallet
-            </button>
-          )}
-          {walletAddress && (
-            <button
-              className="text-primary text-sm mb-2 focus:outline-none hover:underline"
-              onClick={() => setShowFullAddress((v) => !v)}
-              type="button"
-            >
-              {showFullAddress ? "Hide full address" : "Show full address"}
-            </button>
-          )}
-          {walletAddress && (
-            <div className="flex flex-row justify-center gap-6 mt-1 mb-2">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="text-muted-foreground hover:text-white p-2 rounded-full bg-background/70"
-              >
-                <Copy className="h-6 w-6" />
-              </button>
-              <button
-                onClick={handleBaseScanLink}
-                className="text-muted-foreground hover:text-white p-2 rounded-full bg-background/70"
-              >
-                <ExternalLink className="h-6 w-6" />
-              </button>
-            </div>
-          )}
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground text-center">
-          This is your connected wallet address on Base network. Use it to receive USDC and other tokens.
-        </p>
       </div>
 
       {/* Legacy funding projects section removed for Club platform */}

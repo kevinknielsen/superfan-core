@@ -9,7 +9,7 @@ import { getOrCreateUser } from '@/lib/user-management';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const auth = await verifyUnifiedAuth(request);
@@ -20,7 +20,7 @@ export async function POST(
       );
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
 
     // Ensure user exists in our system
     const user = await getOrCreateUser({

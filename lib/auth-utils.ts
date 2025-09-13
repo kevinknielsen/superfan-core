@@ -1,10 +1,25 @@
 import { useMemo } from 'react';
 import { NextRequest } from 'next/server';
-import { isAdmin } from './security';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 
-// Re-export security functions for convenience
-export { isAdmin, truncateText, validateEmail, debugLog, productionLog, errorLog } from './security';
+// Re-export client-safe security functions for convenience
+export { truncateText, validateEmail, debugLog, productionLog, errorLog } from './security';
+
+// Server-side admin check - only works in server context
+export async function isAdmin(userId: string | undefined): Promise<boolean> {
+  if (!userId) return false;
+  
+  // This will only work in server context where process.env is available
+  if (typeof window !== 'undefined') {
+    console.warn('isAdmin called in client context - returning false');
+    return false;
+  }
+  
+  const adminIds = process.env.ADMIN_USER_IDS?.split(',')
+    .map(id => id.trim())
+    .filter(Boolean) || [];
+  return adminIds.includes(userId);
+}
 
 // Server-side user authentication
 export async function getServerUser(request?: NextRequest) {
@@ -33,7 +48,7 @@ export function getUserWalletAddress(user: any): string | null {
   return null;
 }
 
-// Project role checking hook
+// Project role checking hook - client-side version without admin check
 export function useProjectRoles(project: any, user: any, teamMembers?: any[]) {
   return useMemo(() => {
     if (!user || !project) {
@@ -47,19 +62,19 @@ export function useProjectRoles(project: any, user: any, teamMembers?: any[]) {
     }
 
     const isCreator = user.id === project.creator_id;
-    const isUserAdmin = isAdmin(user.id);
+    // Note: isAdmin check removed for client-side hook - use server-side admin checking where needed
     const userWalletAddress = getUserWalletAddress(user);
     
     const isTeamMember = teamMembers?.some(
       (member: any) => member.wallet_address === userWalletAddress
     ) || false;
 
-    const canEdit = isCreator || isUserAdmin;
-    const canView = isCreator || isUserAdmin || isTeamMember;
+    const canEdit = isCreator; // Admin check would need to be done server-side
+    const canView = isCreator || isTeamMember;
 
     return {
       isCreator,
-      isAdmin: isUserAdmin,
+      isAdmin: false, // Client-side hook can't determine admin status
       isTeamMember,
       canEdit,
       canView,

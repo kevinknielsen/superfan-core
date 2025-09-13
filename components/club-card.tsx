@@ -11,6 +11,7 @@ import dynamic from "next/dynamic";
 const QRScanner = dynamic(() => import("./qr-scanner"), { ssr: false });
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
+import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { getNextStatus, getPointsToNext } from "@/types/club.types";
@@ -124,8 +125,9 @@ export default function ClubCard({
   club,
   membership: propMembership,
 }: ClubCardProps) {
-  const { user, isAuthenticated } = useUnifiedAuth();
+  const { user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
+  const { login: privyLogin } = usePrivy();
   const router = useRouter();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
@@ -135,9 +137,9 @@ export default function ClubCard({
   // Get club images for enhanced display
   const { data: images, primaryImage } = useClubImages(club.id);
 
-  // Get user's membership for this club
+  // Get user's membership for this club - only when authenticated
   const { data: fetchedMembership } = useUserClubMembership(
-    user?.id || null, 
+    isAuthenticated ? (user?.id || null) : null, 
     club.id
   );
   
@@ -182,26 +184,37 @@ export default function ClubCard({
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    requireAuth('membership', async () => {
-      try {
-        await joinClubMutation.mutateAsync({
-          privyUserId: user.id,
-          clubId: club.id,
-        });
-        
-        toast({
-          title: "Membership added!",
-          description: `You've successfully joined ${club.name}`,
-        });
-      } catch (error) {
-        console.error('Error joining club:', error);
-        toast({
-          title: "Failed to add membership",
-          description: "Please try again later",
-          variant: "destructive",
-        });
+    // If user is not authenticated, trigger login
+    if (!isAuthenticated) {
+      if (isInWalletApp) {
+        // In wallet app, still use requireAuth for proper handling
+        requireAuth('membership', () => handleJoinClub(e));
+      } else {
+        // In web context, directly open Privy modal
+        privyLogin();
       }
-    });
+      return;
+    }
+    
+    // User is authenticated, proceed with joining club
+    try {
+      await joinClubMutation.mutateAsync({
+        privyUserId: user.id,
+        clubId: club.id,
+      });
+      
+      toast({
+        title: "Membership added!",
+        description: `You've successfully joined ${club.name}`,
+      });
+    } catch (error) {
+      console.error('Error joining club:', error);
+      toast({
+        title: "Failed to add membership",
+        description: "Please try again later",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleQRScan = (data: string) => {

@@ -56,7 +56,7 @@ export interface TransferPointsRequest {
   transferType?: 'purchased_only' | 'any';
 }
 
-export function useUnifiedPoints(clubId: string) {
+export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { handlePointsError } = useErrorHandler();
@@ -108,7 +108,7 @@ export function useUnifiedPoints(clubId: string) {
         throw error;
       }
     },
-    enabled: !!clubId,
+    enabled: options?.enabled !== false && !!clubId,
     staleTime: 30000, // 30 seconds - balance between freshness and performance
     gcTime: 300000, // 5 minutes - reasonable cache duration
     retry: 1, // Only retry once on failure
@@ -213,7 +213,7 @@ export function useUnifiedPoints(clubId: string) {
         }
         return response.json();
       },
-      enabled: !!clubId,
+      enabled: options?.enabled !== false && !!clubId,
     });
   };
 
@@ -233,7 +233,7 @@ export function useUnifiedPoints(clubId: string) {
         }
         return response.json();
       },
-      enabled: !!clubId,
+      enabled: options?.enabled !== false && !!clubId,
     });
   };
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { isAdmin } from '@/lib/security';
+import { isAdmin } from '@/lib/security.server';
 
 /**
  * Debug endpoint to check admin authentication

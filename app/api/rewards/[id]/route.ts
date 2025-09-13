@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 import { getServerUser } from '@/lib/auth-utils';
-import { isAdmin } from '@/lib/security';
+import { isAdmin } from '@/lib/security.server';
 
 const RewardUpdateSchema = z.object({
   kind: z.enum(['ACCESS', 'PRESALE_LOCK', 'VARIANT']).optional(),

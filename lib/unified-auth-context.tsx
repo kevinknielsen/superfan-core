@@ -40,8 +40,14 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const { isInWalletApp, isInFarcaster, isInCoinbaseWallet, platform, user: farcasterUser, isSDKLoaded, frameContext } = useFarcaster();
   const { authenticated: privyAuthenticated, user: privyUser, ready: privyReady, logout: privyLogout } = usePrivy();
   
-  // Use Wagmi useAccount hook for web context
-  const wagmiAccount = useAccount();
+  // Use Wagmi useAccount hook for web context - with error boundary
+  let wagmiAccount;
+  try {
+    wagmiAccount = useAccount();
+  } catch (error) {
+    // Fallback if Wagmi context is not ready
+    wagmiAccount = { address: undefined, isConnected: false, isConnecting: false };
+  }
 
   // Metal holder removed - no longer used for fallback addresses
 

@@ -5,9 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import Header from "@/components/header";
-import ProfileSettings from "@/components/profile-settings";
 import WalletSettings from "@/components/wallet-settings";
-import { User, Wallet, Crown, Settings } from "lucide-react";
+import { Wallet, Bell, Settings } from "lucide-react";
 import { Suspense } from "react";
 import dynamic from 'next/dynamic';
 
@@ -61,27 +60,16 @@ function ProfilePageContent() {
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
               <Settings className="h-5 w-5 text-primary" />
             </div>
-            <h1 className="text-2xl font-bold text-white">Profile & Settings</h1>
+            <h1 className="text-2xl font-bold text-white">Settings</h1>
           </div>
           <p className="text-muted-foreground">
-            Manage your profile, wallet, and club membership preferences.
+            Manage your wallet and preferences.
           </p>
         </motion.div>
 
         {/* Tab Navigation */}
         <div className="mb-8 border-b border-border">
           <div className="flex space-x-6">
-            <button
-              onClick={() => setActiveTab("profile")}
-              className={`pb-3 px-1 font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === "profile"
-                  ? "border-primary text-white"
-                  : "border-transparent text-muted-foreground hover:text-white"
-              }`}
-            >
-              <User className="h-4 w-4" />
-              Profile
-            </button>
             <button
               onClick={() => setActiveTab("wallet")}
               className={`pb-3 px-1 font-medium border-b-2 transition-colors flex items-center gap-2 ${
@@ -94,15 +82,15 @@ function ProfilePageContent() {
               Wallet
             </button>
             <button
-              onClick={() => setActiveTab("membership")}
+              onClick={() => setActiveTab("notifications")}
               className={`pb-3 px-1 font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === "membership"
+                activeTab === "notifications"
                   ? "border-primary text-white"
                   : "border-transparent text-muted-foreground hover:text-white"
               }`}
             >
-              <Crown className="h-4 w-4" />
-              Membership
+              <Bell className="h-4 w-4" />
+              Notifications
             </button>
           </div>
         </div>
@@ -114,43 +102,14 @@ function ProfilePageContent() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
         >
-          {activeTab === "profile" && <ProfileSettings />}
           {activeTab === "wallet" && (
             <div className="space-y-6">
-              {/* Billfold Wallet Button */}
-              <div className="rounded-lg border border-border bg-card p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-medium">Your Payment QR</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Show vendors your QR code for Billfold payments
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowBillfoldWallet(true)}
-                  className="w-full p-4 bg-primary/10 hover:bg-primary/20 border-2 border-dashed border-primary/30 rounded-lg transition-colors group"
-                >
-                  <div className="flex flex-col items-center space-y-2">
-                    <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center group-hover:scale-105 transition-transform">
-                      <Wallet className="h-8 w-8 text-primary" />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-medium text-primary">Open Your Wallet</p>
-                      <p className="text-xs text-muted-foreground">
-                        View QR code & balances
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              </div>
-              
               <WalletSettings />
             </div>
           )}
-          {activeTab === "membership" && (
+          {activeTab === "notifications" && (
             <div className="rounded-xl border border-gray-800 p-6">
-              <h3 className="text-lg font-semibold mb-4">Club Membership Preferences</h3>
+              <h3 className="text-lg font-semibold mb-4">Notification Preferences</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 rounded-lg bg-gray-800/50">
                   <div>
