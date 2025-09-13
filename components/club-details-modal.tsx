@@ -56,6 +56,8 @@ const STATUS_ICONS = {
 function renderClubImages(club: Club) {
   return (
     <img
+      loading="lazy"
+      decoding="async"
       src={club.image_url || "/placeholder.svg?height=400&width=600&query=music club"}
       alt={club.name}
       className="h-full w-full object-cover"
@@ -96,7 +98,7 @@ export default function ClubDetailsModal({
 
   // Get unified points data - only when authenticated and has membership
   const enabled = Boolean(club.id && membership && isAuthenticated);
-  const { breakdown } = useUnifiedPoints(club.id, { enabled });
+  const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
 
   // Status calculations - use unified points data if available
   const currentStatus = membership?.current_status || 'cadet';
@@ -106,24 +108,6 @@ export default function ClubDetailsModal({
   const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
   const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
 
-  // Helper function for progress bar width calculation
-  const getProgressBarWidth = () => {
-    if (breakdown?.status.progress_to_next != null) {
-      return `${breakdown.status.progress_to_next}%`;
-    }
-    if (!nextStatus) return '100%';
-    
-    const currentThreshold = STATUS_THRESHOLDS[currentStatus];
-    const nextThreshold = STATUS_THRESHOLDS[nextStatus];
-    
-    // Guard against division by zero
-    if (nextThreshold === currentThreshold) {
-      return '100%';
-    }
-    
-    const progress = ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100;
-    return `${Math.max(0, Math.min(progress, 100))}%`;
-  };
   
   const StatusIcon = STATUS_ICONS[currentStatus];
   const statusColor = STATUS_COLORS[currentStatus];
@@ -132,7 +116,7 @@ export default function ClubDetailsModal({
   const handleExternalLink = async (url: string, event: React.MouseEvent) => {
     event.preventDefault();
     try {
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       console.error('Failed to open link:', error);
     }
@@ -387,14 +371,13 @@ export default function ClubDetailsModal({
 
 
             {/* Enhanced Membership Status Section - Moved to Top for Prominence */}
-            {membership ? (
+            {membership != null ? (
               <StatusProgressionCard 
                 currentStatus={currentStatus}
                 currentPoints={currentPoints}
                 nextStatus={nextStatus}
                 pointsToNext={pointsToNext}
                 statusIcon={StatusIcon}
-                statusColors={STATUS_COLORS}
               />
             ) : (
               <div className="mb-8">
@@ -424,11 +407,11 @@ export default function ClubDetailsModal({
                   clubName={club.name}
                   userStatus={currentStatus}
                   userPoints={currentPoints}
-                  onRedemption={() => {
-                    // Optionally refetch data or show success message
+                  onRedemption={async () => {
+                    await refetch();
                     toast({
                       title: "Perk Redeemed!",
-                      description: "Check your email for details",
+                      description: "Wallet and status updated",
                     });
                   }}
                   onShowRedemptionConfirmation={(redemption, unlock) => {

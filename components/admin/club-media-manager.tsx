@@ -23,8 +23,8 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
   const handleFileUpload = async (files: FileList) => {
@@ -37,7 +37,9 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
         throw new Error('Not authenticated');
       }
 
-      // Upload each file
+      // Upload each file, but don't abort the whole batch on a single failure
+      let uploadedCount = 0;
+      let failedCount = 0;
       for (const file of Array.from(files)) {
         // Validate file type
         const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
@@ -47,6 +49,7 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
             description: `${file.name} is not a supported format`,
             variant: "destructive",
           });
+          failedCount++;
           continue;
         }
         
@@ -55,24 +58,42 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
         formData.append('media_type', file.type.startsWith('image/') ? 'image' : 'video');
         formData.append('alt_text', file.name);
 
-        const response = await fetch(`/api/clubs/${clubId}/media`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json() as { error?: string };
-          throw new Error(errorData.error || 'Failed to upload file');
+        try {
+          const response = await fetch(`/api/clubs/${clubId}/media`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            body: formData,
+          });
+          if (!response.ok) {
+            // Try to parse JSON; fall back to text to avoid JSON parse errors
+            let errorMsg = 'Failed to upload file';
+            try {
+              const errorData = await response.json() as { error?: string };
+              errorMsg = errorData.error || errorMsg;
+            } catch {
+              const text = await response.text().catch(() => '');
+              if (text) errorMsg = text;
+            }
+            throw new Error(errorMsg);
+          }
+          uploadedCount++;
+        } catch (err) {
+          failedCount++;
+          console.error('Upload error (file):', file.name, err);
+          toast({
+            title: "Upload Failed",
+            description: `${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+            variant: "destructive",
+          });
         }
       }
 
-      toast({
-        title: "Success! 🎉",
-        description: `Uploaded ${files.length} file${files.length > 1 ? 's' : ''} successfully`,
-      });
+      if (uploadedCount > 0) {
+        toast({
+          title: "Success! 🎉",
+          description: `Uploaded ${uploadedCount} file${uploadedCount > 1 ? 's' : ''}${failedCount ? ` • ${failedCount} failed` : ''}`,
+        });
+      }
 
       // Refresh the media list
       refetch();
@@ -85,6 +106,7 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
       });
     } finally {
       setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 

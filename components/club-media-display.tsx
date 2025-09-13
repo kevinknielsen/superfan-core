@@ -50,8 +50,7 @@ export function ClubMediaDisplay({
   // Auto-play video when it becomes current
   useEffect(() => {
     if (currentMedia?.media_type === 'video' && videoRef.current && autoPlay) {
-      videoRef.current.play();
-      setIsPlaying(true);
+      videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
     }
   }, [currentIndex, currentMedia, autoPlay]);
 

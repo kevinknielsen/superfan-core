@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
-import { formatPoints } from '@/lib/points';
+import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
 import { getAccessToken } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
 import SpendPointsModal from './spend-points-modal';
@@ -41,13 +41,6 @@ const ENHANCED_STATUS_ICONS = {
   superfan: Crown,
 };
 
-// Status tier thresholds
-const STATUS_THRESHOLDS = {
-  cadet: 0,
-  resident: 5000,
-  headliner: 15000,
-  superfan: 50000,
-};
 
 // Status Progress Section Component (matching Your Status design)
 function StatusProgressSection({ 
@@ -441,7 +434,7 @@ export default function UnifiedPointsWallet({
         {/* Enhanced Status Progress - Matching Your Status Design */}
         <StatusProgressSection 
           currentStatus={status.current}
-          currentPoints={wallet.total_balance ?? 0}
+          currentPoints={wallet.status_points ?? 0}
           nextStatus={status.next_status}
           pointsToNext={status.points_to_next}
           progressPercentage={status.progress_to_next}

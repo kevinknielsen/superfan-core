@@ -9,7 +9,7 @@ import { useAuthAction } from "@/lib/universal-auth-context";
 import { usePrivy } from "@privy-io/react-auth";
 import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFeatureFlag } from "@/config/featureFlags";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import dynamic from 'next/dynamic';
 import Logo from "./logo";
 import ProfileDropdown from "./ui/profile-dropdown";
@@ -37,30 +37,30 @@ export default function Header({ showBackButton = false }: HeaderProps) {
     setIsClient(true);
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await logout();
     } finally {
       // Stay on dashboard in unauthenticated state instead of redirecting to login
       if (!isInWalletApp) {
-        router.push("/dashboard");
+        router.replace("/dashboard");
       }
     }
-  };
+  }, [logout, isInWalletApp, router]);
 
-  const handleCheckInClick = () => {
+  const handleCheckInClick = useCallback(() => {
     requireAuth('checkin', () => {
       setShowScannerWallet(true);
     });
-  };
+  }, [requireAuth]);
 
-  const handleProfileClick = () => {
+  const handleProfileClick = useCallback(() => {
     router.push("/profile");
-  };
+  }, [router]);
 
-  const handleAdminClick = () => {
+  const handleAdminClick = useCallback(() => {
     router.push("/admin");
-  };
+  }, [router]);
 
   const handleLoginClick = () => {
     // In wallet app context, still use requireAuth for proper handling

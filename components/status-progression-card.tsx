@@ -15,7 +15,7 @@ interface StatusProgressionCardProps {
 }
 
 // Enhanced status icons mapping
-const ENHANCED_STATUS_ICONS = {
+const ENHANCED_STATUS_ICONS: Record<ClubStatus, React.ComponentType<any>> = {
   cadet: Shield,
   resident: Star,
   headliner: Trophy,
@@ -23,7 +23,7 @@ const ENHANCED_STATUS_ICONS = {
 };
 
 // Status tier thresholds for calculating next tier points
-const STATUS_THRESHOLDS = {
+const STATUS_THRESHOLDS: Record<ClubStatus, number> = {
   cadet: 0,
   resident: 5000,
   headliner: 15000,
@@ -62,7 +62,7 @@ export function StatusProgressionCard({
 
   // Sparkle animation when near completion
   useEffect(() => {
-    let interval: NodeJS.Timeout | undefined;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (progressPercentage > 80) {
       interval = setInterval(() => {
         setShowSparkles(true);
@@ -225,7 +225,7 @@ export function StatusProgressionCard({
           </div>
 
           {/* Progress section */}
-          {nextStatus && pointsToNext && (
+          {nextStatus && pointsToNext != null && (
             <motion.div 
               className="space-y-3"
               initial={{ y: 20, opacity: 0 }}

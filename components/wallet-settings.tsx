@@ -87,17 +87,20 @@ export default function WalletSettings() {
     enabled: !!user && (authenticated || isInWalletApp),
   });
 
+  // Feature toggle until balance is surfaced in UI
+  const SHOW_USDC_BALANCE = false;
+  
   // TODO: USDC balance is fetched but not displayed in UI
   // Consider displaying the balance or removing this unused code to avoid unnecessary API calls
   // Get USDC balance of the connected wallet (in wallet apps)
   const { data: connectedWalletUsdcBalance } = useBalance({
     address: isInWalletApp && walletAddress ? (walletAddress as Address) : undefined,
     token: USDC_BASE_ADDRESS,
-    query: { enabled: !!walletAddress && isInWalletApp }
+    query: { enabled: !!walletAddress && isInWalletApp && SHOW_USDC_BALANCE }
   });
 
   // Show connected wallet's USDC balance (Metal integration disabled)
-  const balance = connectedWalletUsdcBalance?.formatted;
+  const balance = SHOW_USDC_BALANCE ? connectedWalletUsdcBalance?.formatted : undefined;
 
   // Debug logging to verify correct balance display
   if (process.env.NODE_ENV !== 'production') console.log("[WalletSettings] Balance debug:", {
@@ -172,9 +175,6 @@ export default function WalletSettings() {
               <div className="flex items-center gap-2">
                 <Globe className="h-5 w-5 text-primary" />
                 <h3 className="text-base font-medium">Global Points Balance</h3>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                100 points = $1 USD
               </div>
             </div>
 
