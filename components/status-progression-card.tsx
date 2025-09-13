@@ -12,7 +12,6 @@ interface StatusProgressionCardProps {
   nextStatus: ClubStatus | null;
   pointsToNext: number | null;
   statusIcon: React.ComponentType<any>;
-  statusColors: Record<string, string>;
 }
 
 // Enhanced status icons mapping
@@ -37,7 +36,6 @@ export function StatusProgressionCard({
   nextStatus,
   pointsToNext,
   statusIcon: StatusIcon,
-  statusColors,
 }: StatusProgressionCardProps) {
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [showSparkles, setShowSparkles] = useState(false);
@@ -45,9 +43,12 @@ export function StatusProgressionCard({
   // Calculate progress percentage and next tier points
   const currentThreshold = STATUS_THRESHOLDS[currentStatus] || 0;
   const nextThreshold = nextStatus ? STATUS_THRESHOLDS[nextStatus] : null;
-  const progressPercentage = nextThreshold 
-    ? ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100
-    : 100;
+  
+  let progressPercentage = 100; // Default to 100% if no next threshold
+  if (nextThreshold && nextThreshold > currentThreshold) {
+    const rawPercent = ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100;
+    progressPercentage = Math.max(0, Math.min(100, rawPercent));
+  }
 
   const NextStatusIcon = nextStatus ? ENHANCED_STATUS_ICONS[nextStatus] : Crown;
 
@@ -61,13 +62,16 @@ export function StatusProgressionCard({
 
   // Sparkle animation when near completion
   useEffect(() => {
+    let interval: NodeJS.Timeout | undefined;
     if (progressPercentage > 80) {
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         setShowSparkles(true);
         setTimeout(() => setShowSparkles(false), 1000);
       }, 3000);
-      return () => clearInterval(interval);
     }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [progressPercentage]);
 
   // Status-specific gradient colors

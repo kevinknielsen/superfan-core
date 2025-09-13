@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Header from "@/components/header";
 import ClubCard from "@/components/club-card";
 import ClubDetailsModal from "@/components/club-details-modal";
-import { Search, Plus, Users, Star, Crown } from "lucide-react";
+import { Search, Users, Star } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";

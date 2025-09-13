@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
@@ -65,6 +65,19 @@ function StatusProgressSection({
 }) {
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [showSparkles, setShowSparkles] = useState(false);
+  
+  // Generate sparkle positions once on client-side to avoid SSR hydration mismatch
+  const sparklePositions = useMemo(() => {
+    if (typeof window === 'undefined') {
+      // Return default positions for SSR
+      return Array.from({ length: 4 }, (_, i) => ({ x: i * 25 + '%', y: i * 25 + '%' }));
+    }
+    // Generate random positions on client
+    return Array.from({ length: 4 }, () => ({
+      x: Math.random() * 100 + '%',
+      y: Math.random() * 100 + '%'
+    }));
+  }, []);
 
   const CurrentStatusIcon = ENHANCED_STATUS_ICONS[currentStatus as keyof typeof ENHANCED_STATUS_ICONS] || Shield;
   const NextStatusIcon = nextStatus ? ENHANCED_STATUS_ICONS[nextStatus as keyof typeof ENHANCED_STATUS_ICONS] : Crown;
@@ -140,15 +153,15 @@ function StatusProgressSection({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            {[...Array(4)].map((_, i) => (
+            {sparklePositions.map((position, i) => (
               <motion.div
                 key={i}
                 className="absolute"
                 initial={{ 
                   opacity: 0, 
                   scale: 0,
-                  x: Math.random() * 100 + '%',
-                  y: Math.random() * 100 + '%'
+                  x: position.x,
+                  y: position.y
                 }}
                 animate={{ 
                   opacity: [0, 1, 0], 

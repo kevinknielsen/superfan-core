@@ -87,6 +87,8 @@ export default function WalletSettings() {
     enabled: !!user && (authenticated || isInWalletApp),
   });
 
+  // TODO: USDC balance is fetched but not displayed in UI
+  // Consider displaying the balance or removing this unused code to avoid unnecessary API calls
   // Get USDC balance of the connected wallet (in wallet apps)
   const { data: connectedWalletUsdcBalance } = useBalance({
     address: isInWalletApp && walletAddress ? (walletAddress as Address) : undefined,

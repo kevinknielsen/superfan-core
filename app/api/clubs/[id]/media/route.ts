@@ -3,6 +3,22 @@ import { supabase } from "../../../supabase";
 import { verifyUnifiedAuth } from "../../../auth";
 import { isAdmin } from "@/lib/security.server";
 
+// Helper function to get internal user by auth
+async function getInternalUserByAuth(auth: { type: string; userId: string }) {
+  const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select('id')
+    .eq(userIdField, auth.userId)
+    .single();
+
+  if (userError || !user) {
+    throw new Error('User not found');
+  }
+
+  return user;
+}
+
 // Define the expected shape for club media
 interface ClubMedia {
   id: string;
@@ -33,7 +49,17 @@ const supabaseTyped = supabase as unknown as {
 };
 
 // URL cache to reduce repeated Supabase API calls
-const urlCache = new Map<string, string>();
+const urlCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_TTL = 3600000; // 1 hour
+
+function getCachedUrl(key: string): string | null {
+  const cached = urlCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.url;
+  }
+  urlCache.delete(key);
+  return null;
+}
 
 export async function GET(
   request: NextRequest,
@@ -78,13 +104,14 @@ function getMediaUrl(filePath: string): string {
   if (!filePath) return '';
   
   // Check cache first
-  if (urlCache.has(filePath)) {
-    return urlCache.get(filePath)!;
+  const cachedUrl = getCachedUrl(filePath);
+  if (cachedUrl) {
+    return cachedUrl;
   }
   
   // If it's already a full URL, return as is
   if (filePath.startsWith('http')) {
-    urlCache.set(filePath, filePath);
+    urlCache.set(filePath, { url: filePath, timestamp: Date.now() });
     return filePath;
   }
   
@@ -94,7 +121,7 @@ function getMediaUrl(filePath: string): string {
     .getPublicUrl(filePath);
   
   const url = data?.publicUrl || filePath;
-  urlCache.set(filePath, url);
+  urlCache.set(filePath, { url, timestamp: Date.now() });
   return url;
 }
 
@@ -112,14 +139,8 @@ export async function POST(
     }
 
     // Get user ID (support both Privy and Farcaster auth)
-    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq(userIdField, auth.userId)
-      .single();
-
-    if (userError || !user) {
+    const user = await getInternalUserByAuth(auth).catch(() => null);
+    if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -289,14 +310,8 @@ export async function DELETE(
     }
 
     // Get user ID (support both Privy and Farcaster auth)
-    const userIdField = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq(userIdField, auth.userId)
-      .single();
-
-    if (userError || !user) {
+    const user = await getInternalUserByAuth(auth).catch(() => null);
+    if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 

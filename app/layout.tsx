@@ -1,5 +1,5 @@
 import type React from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "./providers";
 import { inter } from "./fonts";
@@ -108,11 +108,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 // Separate viewport export as required by Next.js 14+
-export const viewport = {
+export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 }
 
 export default function RootLayout({

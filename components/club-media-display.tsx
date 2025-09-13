@@ -26,8 +26,8 @@ export function ClubMediaDisplay({
   const [isMuted, setIsMuted] = useState(!autoPlay);
   const videoRef = useRef<HTMLVideoElement>(null);
   
-  // Generate unique ID for debugging
-  const componentId = React.useMemo(() => Math.random().toString(36).substr(2, 9), []);
+  // (optional) Add back a debug-only ID if needed during local debugging
+  // const componentId = React.useMemo(() => Math.random().toString(36).substr(2, 9), []);
 
   // Get primary media first, then fallback to ordered media
   const displayMedia = React.useMemo(() => {
@@ -37,7 +37,7 @@ export function ClubMediaDisplay({
     const primaryVideo = media.find(m => m.media_type === 'video' && m.is_primary);
     const otherMedia = media.filter(m => !m.is_primary).sort((a, b) => a.display_order - b.display_order);
     
-    const orderedMedia = [];
+    const orderedMedia: ClubMedia[] = [];
     if (primaryImage) orderedMedia.push(primaryImage);
     if (primaryVideo) orderedMedia.push(primaryVideo);
     orderedMedia.push(...otherMedia);
@@ -131,6 +131,7 @@ export function ClubMediaDisplay({
           {!isPlaying && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
               <Button
+                aria-label="Play video"
                 variant="secondary"
                 size="sm"
                 onClick={handleVideoToggle}
@@ -145,6 +146,7 @@ export function ClubMediaDisplay({
           {isPlaying && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 hover:opacity-100 transition-opacity">
               <Button
+                aria-label="Pause video"
                 variant="secondary"
                 size="sm"
                 onClick={handleVideoToggle}

@@ -109,6 +109,7 @@ const CircleProgress = ({
 interface ClubCardProps {
   club: Club;
   membership?: ClubMembership | null;
+  index?: number;
 }
 
 // (removed unused STATUS_* constants)
@@ -124,6 +125,7 @@ const STATUS_GRADIENT_COLORS = {
 export default function ClubCard({
   club,
   membership: propMembership,
+  index,
 }: ClubCardProps) {
   const { user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
@@ -155,7 +157,7 @@ export default function ClubCard({
 
   // Status calculation - use status_points for tier progression with nullish coalescing
   const currentStatus = membership?.current_status || 'cadet';
-  const currentPoints = breakdown?.wallet.status_points ?? membership?.status_points ?? membership?.points ?? 0;
+  const currentPoints = breakdown?.wallet.status_points ?? membership?.points ?? 0;
   const nextStatus = getNextStatus(currentStatus);
   
   // Progress calculation - show progress relative to current tier
@@ -181,14 +183,25 @@ export default function ClubCard({
 
   // (removed unused StatusIcon)
 
+  const performJoin = async () => {
+    if (!user?.id) return;
+    try {
+      await joinClubMutation.mutateAsync({ privyUserId: user.id, clubId: club.id });
+      toast({ title: "Membership added!", description: `You've successfully joined ${club.name}` });
+    } catch (error) {
+      console.error('Error joining club:', error);
+      toast({ title: "Failed to add membership", description: "Please try again later", variant: "destructive" });
+    }
+  };
+
   const handleJoinClub = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
     // If user is not authenticated, trigger login
     if (!isAuthenticated) {
       if (isInWalletApp) {
-        // In wallet app, still use requireAuth for proper handling
-        requireAuth('membership', () => handleJoinClub(e));
+        // Wallet app: require auth then perform join
+        requireAuth('membership', () => { void performJoin(); });
       } else {
         // In web context, directly open Privy modal
         privyLogin();
@@ -197,24 +210,7 @@ export default function ClubCard({
     }
     
     // User is authenticated, proceed with joining club
-    try {
-      await joinClubMutation.mutateAsync({
-        privyUserId: user.id,
-        clubId: club.id,
-      });
-      
-      toast({
-        title: "Membership added!",
-        description: `You've successfully joined ${club.name}`,
-      });
-    } catch (error) {
-      console.error('Error joining club:', error);
-      toast({
-        title: "Failed to add membership",
-        description: "Please try again later",
-        variant: "destructive",
-      });
-    }
+    await performJoin();
   };
 
   const handleQRScan = (data: string) => {

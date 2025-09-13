@@ -68,7 +68,12 @@ export default function Header({ showBackButton = false }: HeaderProps) {
       requireAuth('general');
     } else {
       // In web context, directly open Privy modal
-      privyLogin();
+      try {
+        privyLogin();
+      } catch (error) {
+        console.error('Login failed:', error);
+        // Optionally show a user-friendly error message
+      }
     }
   };
 

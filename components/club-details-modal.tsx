@@ -444,7 +444,9 @@ export default function ClubDetailsModal({
 
 
             {/* Club Details Grid - Moved to Bottom */}
-            <div className="mb-8 grid grid-cols-2 gap-4">
+            <div className="mb-8">
+              <h3 className="mb-4 text-xl font-semibold">Details</h3>
+              <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl border border-gray-800 p-4 bg-gray-900/30">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="h-5 w-5 text-primary" />
@@ -487,6 +489,7 @@ export default function ClubDetailsModal({
                 <div className="font-medium text-white">
                   <span className="text-green-400">Verified</span>
                 </div>
+              </div>
               </div>
             </div>
 

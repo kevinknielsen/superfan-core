@@ -16,6 +16,7 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
   const { toast } = useToast();
   const { data: existingMedia, isLoading, refetch } = useClubMedia(clubId);
   const [isUploading, setIsUploading] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const formatFileSize = (bytes: number): string => {
@@ -38,6 +39,17 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
 
       // Upload each file
       for (const file of Array.from(files)) {
+        // Validate file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
+        if (!allowedTypes.includes(file.type)) {
+          toast({
+            title: "Invalid file type",
+            description: `${file.name} is not a supported format`,
+            variant: "destructive",
+          });
+          continue;
+        }
+        
         const formData = new FormData();
         formData.append('file', file);
         formData.append('media_type', file.type.startsWith('image/') ? 'image' : 'video');
@@ -52,7 +64,7 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
+          const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to upload file');
         }
       }
@@ -83,6 +95,23 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
   };
 
   const deleteMedia = async (mediaId: string) => {
+    // Check if already deleting this item
+    if (deletingIds.has(mediaId)) {
+      return;
+    }
+
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this media item? This cannot be undone."
+    );
+    
+    if (!confirmed) {
+      return; // User cancelled - no network call or refetch
+    }
+
+    // Set deleting state
+    setDeletingIds(prev => new Set(prev).add(mediaId));
+
     try {
       const accessToken = await getAccessToken();
       if (!accessToken) {
@@ -97,7 +126,7 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string };
         throw new Error(errorData.error || 'Failed to delete media');
       }
 
@@ -114,6 +143,13 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
         title: "Delete Failed",
         description: error instanceof Error ? error.message : 'Failed to delete media',
         variant: "destructive",
+      });
+    } finally {
+      // Clear deleting state
+      setDeletingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(mediaId);
+        return newSet;
       });
     }
   };
@@ -263,13 +299,14 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
                     transition={{ type: "spring", stiffness: 400, damping: 20 }}
                   >
                     <motion.button
-                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium bg-destructive text-white shadow-lg hover:bg-destructive/90 h-8 w-8 hover:shadow-xl"
+                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium bg-destructive text-white shadow-lg hover:bg-destructive/90 h-8 w-8 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={deletingIds.has(media.id)}
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteMedia(media.id);
                       }}
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: deletingIds.has(media.id) ? 1 : 1.1 }}
+                      whileTap={{ scale: deletingIds.has(media.id) ? 1 : 0.95 }}
                     >
                       <motion.div
                         animate={{ rotate: [0, -5, 5, -5, 0] }}
@@ -287,12 +324,7 @@ const ClubMediaManager: React.FC<ClubMediaManagerProps> = ({ clubId }) => {
                     whileHover={{ scale: 1.1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                   >
-                    <motion.div
-                      animate={{ rotate: [0, 360] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                    >
-                      {getFileIcon(media.media_type)}
-                    </motion.div>
+                    {getFileIcon(media.media_type)}
                     {media.media_type}
                   </motion.div>
                 </motion.div>
