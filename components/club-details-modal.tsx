@@ -39,6 +39,7 @@ interface ClubDetailsModalProps {
   membership?: ClubMembership | null;
   onClose: () => void;
   isOpen: boolean;
+  scrollToRewards?: boolean;
 }
 
 // Status icon mapping
@@ -56,6 +57,8 @@ const STATUS_ICONS = {
 function renderClubImages(club: Club) {
   return (
     <img
+      width="600"
+      height="400"
       loading="lazy"
       decoding="async"
       src={club.image_url || "/placeholder.svg?height=400&width=600&query=music club"}
@@ -70,10 +73,12 @@ export default function ClubDetailsModal({
   membership: propMembership,
   onClose,
   isOpen,
+  scrollToRewards = false,
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
   const modalRef = useRef<HTMLDivElement>(null);
+  const rewardsRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
   const [redemptionConfirmation, setRedemptionConfirmation] = useState<{
     redemption: RedemptionData;
@@ -91,7 +96,7 @@ export default function ClubDetailsModal({
   
   // Get complete club data including unlocks
   const { data: clubData } = useClub(club.id);
-  const { data: userClubData } = useUserClubData(isAuthenticated ? (user?.id || null) : null, club.id);
+  const { data: userClubData, refetch: refetchUserClubData } = useUserClubData(isAuthenticated ? (user?.id || null) : null, club.id);
   
   const membership = propMembership || userClubData?.membership;
   const joinClubMutation = useJoinClub();
@@ -110,17 +115,7 @@ export default function ClubDetailsModal({
 
   
   const StatusIcon = STATUS_ICONS[currentStatus];
-  const statusColor = STATUS_COLORS[currentStatus];
 
-  // Platform-aware external link handler (matches project modal)
-  const handleExternalLink = async (url: string, event: React.MouseEvent) => {
-    event.preventDefault();
-    try {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      console.error('Failed to open link:', error);
-    }
-  };
 
   const handleJoinClub = async () => {
     if (!isAuthenticated || !user?.id) {
@@ -137,6 +132,12 @@ export default function ClubDetailsModal({
         privyUserId: user.id,
         clubId: club.id,
       });
+      
+      // Refresh membership and points state
+      await Promise.all([
+        refetchUserClubData(),
+        refetch() // Refresh unified points
+      ]);
       
       toast({
         title: "Membership added!",
@@ -235,6 +236,21 @@ export default function ClubDetailsModal({
     };
   }, [isOpen]);
 
+  // Scroll to rewards section when modal opens with scrollToRewards prop
+  useEffect(() => {
+    if (isOpen && scrollToRewards && rewardsRef.current && membership) {
+      // Wait for modal animation to complete, then scroll
+      const timer = setTimeout(() => {
+        rewardsRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start' 
+        });
+      }, 400); // Wait for modal slide-in animation
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, scrollToRewards, membership]);
+
   // Early return after all hooks
   if (!isOpen) return null;
 
@@ -267,6 +283,7 @@ export default function ClubDetailsModal({
 
             {/* Back button */}
             <button
+              aria-label="Close club details"
               onClick={onClose}
               className="absolute left-4 top-12 rounded-full bg-black/40 backdrop-blur-sm p-3 text-white hover:bg-black/60 transition-colors z-30"
             >
@@ -400,7 +417,7 @@ export default function ClubDetailsModal({
 
             {/* Perks and Benefits Section - Grid Layout */}
             {membership && (
-              <div className="mb-8">
+              <div className="mb-8" ref={rewardsRef}>
                 <h3 className="mb-4 text-xl font-semibold">Perks and Benefits</h3>
                 <UnlockRedemption
                   clubId={club.id}

@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef } from "react";
 import Image from "next/image";
 import { Plus, QrCode } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -12,7 +12,6 @@ const QRScanner = dynamic(() => import("./qr-scanner"), { ssr: false });
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
 import { usePrivy } from "@privy-io/react-auth";
-import { useRouter } from "next/navigation";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import { getNextStatus, getPointsToNext } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
@@ -109,7 +108,6 @@ const CircleProgress = ({
 interface ClubCardProps {
   club: Club;
   membership?: ClubMembership | null;
-  index?: number;
 }
 
 // (removed unused STATUS_* constants)
@@ -125,12 +123,10 @@ const STATUS_GRADIENT_COLORS = {
 export default function ClubCard({
   club,
   membership: propMembership,
-  index,
 }: ClubCardProps) {
   const { user, isAuthenticated, isInWalletApp } = useUnifiedAuth();
   const { requireAuth } = useAuthAction();
   const { login: privyLogin } = usePrivy();
-  const router = useRouter();
   const [showDetails, setShowDetails] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [isHovered, setIsHovered] = useState(false);

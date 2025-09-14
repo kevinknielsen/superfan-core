@@ -63,10 +63,10 @@ function getCachedUrl(key: string): string | null {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id: clubId } = await params;
+    const { id: clubId } = params;
 
     console.log(`[Club Media API] Fetching media for club: ${clubId}`);
 
@@ -127,10 +127,10 @@ function getMediaUrl(filePath: string): string {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id: clubId } = await params;
+    const { id: clubId } = params;
     
     // Authentication guard - BEFORE parsing formData
     const auth = await verifyUnifiedAuth(request);
@@ -157,10 +157,8 @@ export async function POST(
 
     // Check if user is club owner or admin
     const userIsAdmin = isAdmin(auth.userId);
-    console.log(`[Club Media POST] User ${user.id}, Auth User ID: ${auth.userId}, Club Owner: ${clubAuth.owner_id}, Is Admin: ${userIsAdmin}`);
     
     if (clubAuth.owner_id !== user.id && !userIsAdmin) {
-      console.log(`[Club Media POST] Authorization failed - not owner and not admin`);
       return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
     
@@ -292,10 +290,10 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id: clubId } = await params;
+    const { id: clubId } = params;
     const { searchParams } = new URL(request.url);
     const mediaId = searchParams.get('media_id');
 
@@ -328,14 +326,10 @@ export async function DELETE(
 
     // Check if user is club owner or admin
     const userIsAdmin = isAdmin(auth.userId);
-    console.log(`[Club Media DELETE] User ${user.id}, Auth User ID: ${auth.userId}, Club Owner: ${clubAuth.owner_id}, Is Admin: ${userIsAdmin}`);
     
     if (clubAuth.owner_id !== user.id && !userIsAdmin) {
-      console.log(`[Club Media DELETE] Authorization failed - not owner and not admin`);
       return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
-    
-    console.log(`[Club Media DELETE] Authorization passed - deleting media ${mediaId} for club: ${clubId}`);
 
     // Get media record first
     const { data: media, error: fetchError } = await supabaseTyped

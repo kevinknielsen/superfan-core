@@ -648,10 +648,13 @@ function TapPageContent() {
                   transition={{ delay: 1.6 }}
                 >
                   <button
-                    onClick={() => router.push('/dashboard')}
+                    onClick={() => {
+                      console.log('View Available Rewards clicked:', { clubInfo });
+                      setShowClubDetails(true);
+                    }}
                     className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
                   >
-                    Return to Dashboard
+                    View Available Rewards
                   </button>
                   
                   <button
@@ -680,6 +683,7 @@ function TapPageContent() {
           membership={tapResult?.membership}
           isOpen={showClubDetails}
           onClose={() => setShowClubDetails(false)}
+          scrollToRewards={true}
         />
       )}
     </>

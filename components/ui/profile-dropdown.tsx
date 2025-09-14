@@ -80,6 +80,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
         <div
           id="profile-menu"
           aria-labelledby="profile-menu-button"
+          role="menu"
           className="absolute right-0 top-10 w-56 bg-[#0F141E] border border-[#1E1E32]/20 rounded-md shadow-lg z-50"
         >
           {displayName && (
@@ -98,6 +99,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
           <div className="py-1">
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 onProfileClick()
                 setIsOpen(false)
@@ -111,6 +113,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
             {isAdmin && (
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => {
                   onAdminClick()
                   setIsOpen(false)
@@ -126,6 +129,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
           <div className="border-t border-[#1E1E32]/20 py-1">
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 onLogout()
                 setIsOpen(false)

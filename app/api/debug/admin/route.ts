@@ -9,18 +9,27 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await verifyUnifiedAuth(request);
     
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    
+    // Admin guard - check before exposing any sensitive information
+    if (!isAdmin(auth.userId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    
     const adminIds = process.env.ADMIN_USER_IDS?.split(",")
       .map((id) => id.trim())
       .filter(Boolean) || [];
     
     const debugInfo = {
-      auth: auth ? {
+      auth: {
         userId: auth.userId,
         type: auth.type
-      } : null,
+      },
       adminIds: adminIds,
-      isMatch: auth ? adminIds.includes(auth.userId) : false,
-      isAdminResult: auth ? isAdmin(auth.userId) : false,
+      isMatch: adminIds.includes(auth.userId),
+      isAdminResult: isAdmin(auth.userId),
       envVar: process.env.ADMIN_USER_IDS || 'NOT_SET'
     };
     

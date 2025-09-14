@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Crown, Star, Trophy, Shield, ArrowRight, Sparkles } from "lucide-react";
 import type { ClubStatus } from "@/types/club.types";
+import { STATUS_THRESHOLDS } from "@/lib/status";
 
 interface StatusProgressionCardProps {
   currentStatus: ClubStatus;
@@ -22,13 +23,6 @@ const ENHANCED_STATUS_ICONS: Record<ClubStatus, React.ComponentType<any>> = {
   superfan: Crown,
 };
 
-// Status tier thresholds for calculating next tier points
-const STATUS_THRESHOLDS: Record<ClubStatus, number> = {
-  cadet: 0,
-  resident: 5000,
-  headliner: 15000,
-  superfan: 50000,
-};
 
 export function StatusProgressionCard({
   currentStatus,
@@ -248,7 +242,14 @@ export function StatusProgressionCard({
                 </motion.span>
               </div>
 
-              <div className="w-full h-4 bg-gray-700/50 rounded-full overflow-hidden">
+              <div
+                className="w-full h-4 bg-gray-700/50 rounded-full overflow-hidden"
+                role="progressbar"
+                aria-label="Status progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progressPercentage)}
+              >
                 <motion.div
                   className={`h-full bg-gradient-to-r ${getStatusGradient(nextStatus)} rounded-full relative`}
                   initial={{ width: 0 }}

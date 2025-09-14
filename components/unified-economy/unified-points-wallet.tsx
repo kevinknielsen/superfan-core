@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
@@ -301,9 +300,7 @@ export default function UnifiedPointsWallet({
     transferPoints,
     isSpending,
     isTransferring,
-    canSpend,
-    totalBalance,
-    currentStatus
+    totalBalance
   } = useUnifiedPoints(clubId);
 
   // Debug logging to compare with global balance

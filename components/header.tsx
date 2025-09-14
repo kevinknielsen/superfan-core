@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Star, QrCode, User } from "lucide-react";
+import { ArrowLeft, QrCode, User } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
 import { usePrivy } from "@privy-io/react-auth";
-import { isManagerApp, isMainApp } from "@/lib/feature-flags";
 import { useFeatureFlag } from "@/config/featureFlags";
 import { useState, useEffect, useCallback } from "react";
 import dynamic from 'next/dynamic';
@@ -90,7 +89,7 @@ export default function Header({ showBackButton = false }: HeaderProps) {
             {showBackButton && (
               <button
                 type="button"
-                onClick={() => router.push("/")}
+                onClick={() => router.push("/dashboard")}
                 className="mr-2 flex items-center text-muted-foreground hover:text-foreground"
               >
                 <ArrowLeft className="mr-1 h-4 w-4" />
@@ -121,7 +120,11 @@ export default function Header({ showBackButton = false }: HeaderProps) {
                 {/* Profile Dropdown - includes admin link and logout */}
                 <ProfileDropdown
                   user={{
-                    name: user?.google?.name || user?.twitter?.name || user?.email?.address,
+                    name: user?.google?.name
+                      || user?.twitter?.name
+                      || user?.email?.address
+                      || user?.phone?.number
+                      || "User",
                     email: user?.email?.address || "",
                     phone: user?.phone?.number || "",
                   }}
