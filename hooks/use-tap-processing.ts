@@ -118,6 +118,11 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
 
           const decoded = JSON.parse(decodedString) as AdditionalData;
           additionalData = decoded;
+          
+          // Debug log for points extraction
+          if (process.env.NODE_ENV === 'development' && decoded.points) {
+            console.log('[TapProcessing] Extracted dynamic points from QR:', decoded.points);
+          }
         } catch (e) {
           console.warn("Could not decode QR data:", e);
         }
@@ -127,6 +132,10 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         club_id: clubId,
         source: source,
         location: location || additionalData.location,
+        // Include dynamic points from QR data if available
+        ...(additionalData.points && typeof additionalData.points === 'number' && {
+          points_earned: additionalData.points
+        }),
         metadata: {
           qr_id: qrId,
           scanned_at: new Date().toISOString(),

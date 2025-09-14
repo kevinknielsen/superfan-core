@@ -81,7 +81,7 @@ export function useTapQRParams(): QRState {
         
         if (fetchError.name === 'AbortError') {
           // Handle timeout/abort specifically - don't update state if aborted
-          console.error("Request aborted loading club:", fetchError);
+          // This is expected behavior when component unmounts or params change
           return;
         } else {
           // Handle other fetch errors

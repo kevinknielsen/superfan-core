@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, Suspense } from "react";
+import React, { useEffect, Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
 import Header from "@/components/header";
+import ClubDetailsModal from "@/components/club-details-modal";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { TAP_IN_POINT_VALUES } from "@/lib/points";
 
@@ -25,8 +26,22 @@ interface TapInResponse {
   membership: any;
 }
 
-// Helper function to get point value with qr/qr_code mapping
-function getPointValue(source?: string): number {
+// Helper function to get point value with dynamic QR data support
+function getPointValue(source?: string, qrData?: string): number {
+  // First try to parse points from QR data if available
+  if (qrData) {
+    try {
+      const decodedData = atob(qrData);
+      const parsedData = JSON.parse(decodedData) as any;
+      if (parsedData?.points && typeof parsedData.points === 'number') {
+        return parsedData.points;
+      }
+    } catch (error) {
+      console.warn('Failed to parse QR data for points:', error);
+    }
+  }
+  
+  // Fallback to default point values by source
   if (!source) return TAP_IN_POINT_VALUES.default;
   
   switch (source) {
@@ -67,6 +82,7 @@ function getSourceLabel(source?: string): string {
 
 function TapPageContent() {
   const router = useRouter();
+  const [showClubDetails, setShowClubDetails] = useState(false);
   
   // Extract QR parameters and load club info
   const { 
@@ -87,7 +103,7 @@ function TapPageContent() {
   } = useTapAuthentication({
     clubInfo,
     hasValidQRParams,
-    autoLoginDelay: 5000
+    autoLoginDelay: 10000
   });
 
   // Handle tap-in processing
@@ -178,11 +194,12 @@ function TapPageContent() {
             style={{ perspective: "1000px" }}
           >
             <motion.div 
-              className="w-80 h-96 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-xl p-6 pb-8 relative overflow-hidden"
+              className="w-80 h-[420px] border border-slate-700 rounded-xl relative overflow-hidden"
               animate={{
-                rotateY: [0, 3, 0, -3, 0],
-                rotateX: [0, 2, 0, -2, 0],
-                scale: [1, 1.02, 1],
+                rotateY: [-5, 12, -5, 15, -5],
+                rotateX: [2, -8, 2, -10, 2],
+                rotateZ: [0, 3, 0, -3, 0],
+                scale: [1, 1.05, 1],
               }}
               transition={{
                 duration: 8,
@@ -194,11 +211,25 @@ function TapPageContent() {
                 transformOrigin: "center center",
               }}
             >
+              {/* Blurred background image */}
+              {clubInfo.image_url && (
+                <div className="absolute inset-0 scale-110 blur-lg opacity-95">
+                  <img
+                    src={clubInfo.image_url}
+                    alt={clubInfo.name}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              )}
+              
+              {/* Gradient overlay */}
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-800/40 via-slate-900/30 to-slate-900/50" />
+              
               {/* Card glow effect */}
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-purple-500/20 opacity-50" />
               
               {/* Card content */}
-              <div className="relative z-10 h-full flex flex-col">
+              <div className="relative z-10 h-full flex flex-col p-6">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
@@ -229,8 +260,15 @@ function TapPageContent() {
                       </div>
                     )}
                   </motion.div>
-                  <h3 className="text-white font-semibold text-lg mb-2">{clubInfo.name}</h3>
-                  <p className="text-slate-400 text-sm text-center">{clubInfo.description}</p>
+                      <h3 className="text-white font-semibold text-lg mb-2">{clubInfo.name}</h3>
+                  <p className="text-slate-400 text-sm text-center" style={{
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden'
+                  }}>
+                    {clubInfo.description}
+                  </p>
                   {clubInfo.city && (
                     <div className="flex items-center gap-1 text-slate-400 text-xs mt-2">
                       <MapPin className="h-3 w-3" />
@@ -239,20 +277,16 @@ function TapPageContent() {
                   )}
                 </div>
 
-                {/* Status preview */}
-                <div className="space-y-3">
+                {/* Club stats */}
+                <div className="mb-6">
                   <div className="flex justify-between items-center">
-                    <span className="text-slate-400 text-sm">Status</span>
-                    <span className="text-purple-400 text-sm">Ready to Join</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-400 text-sm">Points</span>
-                        <span className="text-green-400 text-sm">+{getPointValue(source || undefined)} on join</span>
+                    <span className="text-slate-400 text-sm">Members</span>
+                    <span className="text-blue-400 text-sm">{clubInfo.member_count || 0} joined</span>
                   </div>
                 </div>
 
                 {/* Source indicator */}
-                <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-center">
+                <div className="mt-auto pt-4 border-t border-slate-700 flex items-center justify-center">
                   <div className="flex items-center gap-2 text-slate-400">
                     <QrCode className="w-4 h-4" />
                     <span className="text-xs">{getSourceLabel(source || undefined)}</span>
@@ -281,14 +315,15 @@ function TapPageContent() {
                 style={{ perspective: "1000px" }}
               >
                 <motion.div 
-                  className="w-full h-80 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-xl p-6 pb-8 relative overflow-hidden"
+                  className="w-full h-[340px] border border-slate-700 rounded-xl relative overflow-hidden"
                   animate={{
-                    rotateY: [0, 3, 0, -3, 0],
-                    rotateX: [0, 2, 0, -2, 0],
-                    scale: [1, 1.02, 1],
+                    rotateY: [-3, 8, -3, 10, -3],
+                    rotateX: [1, -5, 1, -7, 1],
+                    rotateZ: [0, 2, 0, -2, 0],
+                    scale: [1, 1.04, 1],
                   }}
                   transition={{
-                    duration: 8,
+                    duration: 7,
                     repeat: Infinity,
                     ease: "easeInOut",
                   }}
@@ -297,11 +332,25 @@ function TapPageContent() {
                     transformOrigin: "center center",
                   }}
                 >
+                  {/* Blurred background image */}
+                  {clubInfo.image_url && (
+                    <div className="absolute inset-0 scale-110 blur-lg opacity-95">
+                      <img
+                        src={clubInfo.image_url}
+                        alt={clubInfo.name}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Gradient overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-800/40 via-slate-900/30 to-slate-900/50" />
+                  
                   {/* Card glow effect */}
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-purple-500/20 opacity-50" />
                   
                   {/* Card content */}
-                  <div className="relative z-10 h-full flex flex-col">
+                  <div className="relative z-10 h-full flex flex-col p-6">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-3">
@@ -329,7 +378,14 @@ function TapPageContent() {
                         )}
                       </div>
                       <h3 className="text-white font-medium text-base mb-2">{clubInfo.name}</h3>
-                      <p className="text-slate-400 text-xs text-center leading-relaxed">{clubInfo.description}</p>
+                      <p className="text-slate-400 text-xs text-center leading-relaxed" style={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }}>
+                        {clubInfo.description}
+                      </p>
                       {clubInfo.city && (
                         <div className="flex items-center gap-1 text-slate-400 text-xs mt-2">
                           <MapPin className="h-3 w-3" />
@@ -338,15 +394,11 @@ function TapPageContent() {
                       )}
                     </div>
 
-                    {/* Status preview */}
-                    <div className="space-y-2">
+                    {/* Club stats */}
+                    <div className="mt-auto mb-4">
                       <div className="flex justify-between items-center">
-                        <span className="text-slate-400 text-xs">Status</span>
-                        <span className="text-purple-400 text-xs">Ready to Join</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 text-xs">Points</span>
-                        <span className="text-green-400 text-xs">+{getPointValue(source || undefined)} on join</span>
+                        <span className="text-slate-400 text-xs">Members</span>
+                        <span className="text-blue-400 text-xs">{clubInfo.member_count || 0} joined</span>
                       </div>
                     </div>
                   </div>
@@ -357,10 +409,10 @@ function TapPageContent() {
             {/* Header */}
             <div className="text-center mb-8">
               <h1 className="text-2xl font-bold text-foreground mb-2">
-                Join {clubInfo.name}
+                ADD {clubInfo.name}
               </h1>
               <p className="text-muted-foreground">
-                Sign in to join and earn points
+                Join the Club and Earn Points
               </p>
             </div>
 
@@ -373,7 +425,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{getPointValue(source || undefined)} points
+                  +{getPointValue(source || undefined, data || undefined)} points
                 </span>
               </div>
             </motion.div>
@@ -603,7 +655,10 @@ function TapPageContent() {
                   </button>
                   
                   <button
-                    onClick={() => router.push(`/dashboard${tapResult.membership?.club_id ? `?club=${tapResult.membership.club_id}` : ''}`)}
+                    onClick={() => {
+                      console.log('View Club Details clicked:', { clubInfo });
+                      setShowClubDetails(true);
+                    }}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details
@@ -618,6 +673,15 @@ function TapPageContent() {
       </div>
       </div>
 
+      {/* Club Details Modal */}
+      {showClubDetails && clubInfo && (
+        <ClubDetailsModal
+          club={clubInfo}
+          membership={tapResult?.membership}
+          isOpen={showClubDetails}
+          onClose={() => setShowClubDetails(false)}
+        />
+      )}
     </>
   );
 }
