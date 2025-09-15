@@ -103,12 +103,40 @@ export default function Dashboard() {
 
   const { toast } = useToast();
 
-  // Handle Stripe purchase success/cancel redirects
+  // Handle URL parameters (Stripe redirects and club details navigation)
   useEffect(() => {
     const clubParam = searchParams.get('club');
     const purchaseParam = searchParams.get('purchase');
+    const viewParam = searchParams.get('view');
     
-  if (clubParam && purchaseParam) {
+    // Handle direct club details navigation (from tap page)
+    if (clubParam && viewParam === 'details' && !purchaseParam) {
+      console.log('Dashboard: Handling club details navigation', { clubParam, viewParam, allClubsLength: allClubs.length, clubsLoading });
+      
+      // Wait for clubs to load
+      if (clubsLoading) {
+        console.log('Dashboard: Clubs still loading, waiting...');
+        return;
+      }
+      
+      const club = allClubs.find(c => c.id === clubParam);
+      console.log('Dashboard: Found club:', club?.name || 'Not found');
+      if (club) {
+        console.log('Dashboard: Setting selected club ID:', clubParam);
+        setSelectedClubId(clubParam);
+      } else {
+        console.log('Dashboard: Club not found in allClubs:', allClubs.map(c => ({ id: c.id, name: c.name })));
+      }
+      // Clean up URL parameters
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('club');
+      newUrl.searchParams.delete('view');
+      router.replace(newUrl.pathname + newUrl.search);
+      return;
+    }
+    
+    // Handle Stripe purchase redirects
+    if (clubParam && purchaseParam) {
     const club = allClubs.find(c => c.id === clubParam);
     if (club) {
       if (purchaseParam === 'success') {
@@ -141,13 +169,13 @@ export default function Dashboard() {
         });
       }
     }
-    // Clean up URL parameters regardless
-    const newUrl = new URL(window.location.href);
-    newUrl.searchParams.delete('club');
-    newUrl.searchParams.delete('purchase');
-    router.replace(newUrl.pathname + newUrl.search);
-  }
-  }, [searchParams, allClubs, router, toast]);
+      // Clean up URL parameters for purchase flow
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('club');
+      newUrl.searchParams.delete('purchase');
+      router.replace(newUrl.pathname + newUrl.search);
+    }
+  }, [searchParams, allClubs, clubsLoading, router, toast]);
 
   // Loading state
   const isLoading = authLoading || clubsLoading || membershipsLoading;

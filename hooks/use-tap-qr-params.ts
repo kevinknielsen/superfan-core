@@ -49,12 +49,14 @@ export function useTapQRParams(): QRState {
     
     const loadClubInfo = async () => {
       if (!params.clubId) {
+        clearTimeout(timeoutId);
         setParamError("Invalid QR code - missing club information");
         setClubInfo(null);
         return;
       }
 
       if (!params.source) {
+        clearTimeout(timeoutId);
         setParamError("Invalid QR code - missing source information");
         setClubInfo(null);
         return;
@@ -81,7 +83,7 @@ export function useTapQRParams(): QRState {
         
         if (fetchError.name === 'AbortError') {
           // Handle timeout/abort specifically - don't update state if aborted
-          console.error("Request aborted loading club:", fetchError);
+          // This is expected behavior when component unmounts or params change
           return;
         } else {
           // Handle other fetch errors

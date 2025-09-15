@@ -32,7 +32,35 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/points";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { getAccessToken } from "@privy-io/react-auth";
+import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
+
+// Helper to get current quarter end date in UTC
+const getQuarterEndDate = () => {
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth(); // 0-based
+  const currentQuarter = Math.floor(currentMonth / 3) + 1; // 1-4
+  
+  // Calculate last day of current quarter
+  const quarterEndMonth = currentQuarter * 3; // 3, 6, 9, 12
+  // Create date using UTC - day 0 means last day of previous month
+  const quarterEndDate = new Date(Date.UTC(currentYear, quarterEndMonth, 0));
+  
+  return quarterEndDate;
+};
+
+// Helper to format quarter end date consistently in UTC
+const formatQuarterEnd = () => {
+  const quarterEnd = getQuarterEndDate();
+  const now = new Date();
+  return quarterEnd.toLocaleDateString('en-US', { 
+    timeZone: 'UTC',
+    month: 'short', 
+    day: 'numeric',
+    year: quarterEnd.getUTCFullYear() !== now.getUTCFullYear() ? 'numeric' : undefined 
+  });
+};
 
 // Extended unlock type with tier reward specific fields
 interface ClaimOption {
@@ -84,6 +112,7 @@ import { STATUS_THRESHOLDS } from "@/lib/status";
 import type { ClubStatus } from "@/types/club.types";
 // Prevent mutation and improve inference
 const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<ClubStatus, number>>;
+
 
 export default function UnlockRedemption({ 
   clubId, 
@@ -481,12 +510,13 @@ export default function UnlockRedemption({
                   <div className="absolute top-3 right-3">
                     {isUnlockRedeemed(unlock) ? (
                       <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
-                    ) : isAvailable ? (
-                      <Badge variant="default" className="bg-green-600/90 backdrop-blur-sm">Available</Badge>
                     ) : (
-                      <Badge variant="secondary" className="flex items-center gap-1 bg-gray-800/90 backdrop-blur-sm">
-                        <Lock className="h-3 w-3" />
-                        Locked
+                      <Badge 
+                        variant="secondary" 
+                        className={`${getStatusBgColor(unlock.min_status as any)} ${getStatusBorderColor(unlock.min_status as any)} ${getStatusTextColor(unlock.min_status as any)} backdrop-blur-sm border font-medium ${!isAvailable ? 'opacity-75' : ''} flex items-center gap-1`}
+                      >
+                        {!isAvailable && <Lock className="h-3 w-3" />}
+                        {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
                       </Badge>
                     )}
                   </div>
@@ -511,8 +541,8 @@ export default function UnlockRedemption({
                   </h4>
                   
                   {/* Requirements info */}
-                  <div className="text-xs text-gray-300 mb-3">
-                    Requires {unlock.min_status} • {(STATUS_POINTS[unlock.min_status as ClubStatus] ?? 0)}+ pts
+                  <div className={`text-sm font-medium mb-3 ${getStatusTextColor(unlock.min_status as any)}`}>
+                    Requires {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
                   </div>
                   
                   {/* Action Button - Like screenshot */}
@@ -581,10 +611,20 @@ export default function UnlockRedemption({
               
               {/* Boost explanation for non-qualified users */}
               {!selectedUnlock.user_can_claim_free && isUnlockAvailable(selectedUnlock) && (
-                <div className="p-3 bg-muted/50 rounded-lg border border-muted">
-                  <p className="text-sm text-muted-foreground">
-                    Boost your status to <strong>{selectedUnlock.min_status}</strong> temporarily to claim and redeem this item for free.
-                  </p>
+                <div className={`p-4 rounded-xl border ${getStatusBgColor(selectedUnlock.min_status as any)} ${getStatusBorderColor(selectedUnlock.min_status as any)} backdrop-blur-sm`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(selectedUnlock.min_status as any)} ${getStatusTextColor(selectedUnlock.min_status as any)}`}>
+                      <Lock className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className={`font-medium mb-1 ${getStatusTextColor(selectedUnlock.min_status as any)}`}>
+                        Boost to {selectedUnlock.min_status.charAt(0).toUpperCase() + selectedUnlock.min_status.slice(1)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Get temporary access until <strong>{formatQuarterEnd()}</strong> to claim this perk for free.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
               

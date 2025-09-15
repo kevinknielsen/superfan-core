@@ -6,23 +6,23 @@ import {
   Wallet, 
   TrendingUp, 
   ArrowUpRight, 
-  ArrowDownRight, 
   Users,
   Crown,
   Star,
   Trophy,
   Shield,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
 import { getAccessToken } from '@privy-io/react-auth';
 import { useToast } from '@/hooks/use-toast';
+import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
 import SpendPointsModal from './spend-points-modal';
 
 interface UnifiedPointsWalletProps {
@@ -98,36 +98,6 @@ function StatusProgressSection({
     }
   }, [progressPercentage]);
 
-  // Status-specific gradient colors
-  const getStatusGradient = (status: string) => {
-    switch (status) {
-      case 'cadet': return 'from-blue-500 to-blue-400';
-      case 'resident': return 'from-green-500 to-green-400';
-      case 'headliner': return 'from-purple-500 to-purple-400';
-      case 'superfan': return 'from-yellow-500 to-yellow-400';
-      default: return 'from-gray-500 to-gray-400';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'cadet': return 'text-blue-400';
-      case 'resident': return 'text-green-400';
-      case 'headliner': return 'text-purple-400';
-      case 'superfan': return 'text-yellow-400';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const getStatusBgColor = (status: string) => {
-    switch (status) {
-      case 'cadet': return 'bg-blue-900/30';
-      case 'resident': return 'bg-green-900/30';
-      case 'headliner': return 'bg-purple-900/30';
-      case 'superfan': return 'bg-yellow-900/30';
-      default: return 'bg-gray-800';
-    }
-  };
 
   if (!nextStatus) {
     return (
@@ -189,7 +159,7 @@ function StatusProgressSection({
           transition={{ delay: 0.1 }}
         >
           <motion.div 
-            className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(currentStatus)} ${getStatusColor(currentStatus)}`}
+            className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(currentStatus as any)} ${getStatusTextColor(currentStatus as any)}`}
             whileHover={{ scale: 1.05 }}
           >
             <CurrentStatusIcon className="w-4 h-4" />
@@ -218,7 +188,7 @@ function StatusProgressSection({
           transition={{ delay: 0.15 }}
         >
           <motion.div 
-            className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(nextStatus)} ${getStatusColor(nextStatus)}`}
+            className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(nextStatus as any)} ${getStatusTextColor(nextStatus as any)}`}
             whileHover={{ scale: 1.05, opacity: 1 }}
           >
             <NextStatusIcon className="w-4 h-4" />
@@ -227,7 +197,7 @@ function StatusProgressSection({
             <h4 className="text-sm font-semibold text-foreground">
               {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}
             </h4>
-            <p className={`text-xs ${getStatusColor(nextStatus)}`}>
+            <p className={`text-xs ${getStatusTextColor(nextStatus as any)}`}>
               {STATUS_THRESHOLDS[nextStatus as keyof typeof STATUS_THRESHOLDS]?.toLocaleString()} points
             </p>
           </div>
@@ -246,7 +216,7 @@ function StatusProgressSection({
             {formatPoints(pointsToNext ?? 0)} points to go
           </span>
           <motion.span 
-            className={`text-sm font-semibold ${getStatusColor(nextStatus)}`}
+            className={`text-sm font-semibold ${getStatusTextColor(nextStatus as any)}`}
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.5, type: "spring", stiffness: 200 }}
@@ -257,7 +227,7 @@ function StatusProgressSection({
 
         <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
           <motion.div
-            className={`h-full bg-gradient-to-r ${getStatusGradient(nextStatus)} rounded-full relative`}
+            className={`h-full bg-gradient-to-r ${getStatusGradientClass(nextStatus as any)} rounded-full relative`}
             initial={{ width: 0 }}
             animate={{ width: `${animatedProgress}%` }}
             transition={{ duration: 1.5, ease: "easeOut" }}
@@ -301,22 +271,9 @@ export default function UnifiedPointsWallet({
     transferPoints,
     isSpending,
     isTransferring,
-    canSpend,
-    totalBalance,
-    currentStatus
+    totalBalance
   } = useUnifiedPoints(clubId);
 
-  // Debug logging to compare with global balance
-  console.log(`[UnifiedPointsWallet] Club ${clubName} (${clubId}) breakdown:`, {
-    isLoading,
-    error: error?.message,
-    totalBalance,
-    breakdown: breakdown ? {
-      wallet: breakdown.wallet,
-      status: breakdown.status,
-      spending_power: breakdown.spending_power
-    } : 'No breakdown data'
-  });
 
   const { getStatusInfo } = useStatusInfo();
 
@@ -457,8 +414,8 @@ export default function UnifiedPointsWallet({
                 handleBuyPoints();
               }}
             >
-              <ArrowDownRight className="h-4 w-4 mr-2" />
-              Buy Points to Boost Status
+              <Zap className="h-4 w-4 mr-2" />
+              Boost Status
             </Button>
           )}
           

@@ -82,17 +82,29 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
       return;
     }
 
-    console.log('[UnifiedAuth] Syncing Privy user to Supabase:', privyUser.id);
-    setHasTriedSync(true);
+    // Use a timeout to ensure we're not in a render cycle
+    const syncTimeout = setTimeout(() => {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[UnifiedAuth] Syncing Privy user to Supabase', { id: privyUser.id });
+      }
+      setHasTriedSync(true);
 
-    // Extract user data from Privy
-    const walletAddr = getPrivyWalletAddress(privyUser);
+      // Extract user data from Privy
+      const walletAddr = getPrivyWalletAddress(privyUser);
 
-    userSyncMutation.mutate({
-      email: privyUser.email?.address || null,
-      name: privyUser.google?.name || privyUser.twitter?.name || null,
-      walletAddress: walletAddr,
-    });
+      userSyncMutation.mutate(
+        {
+          email: privyUser.email?.address || null,
+          name: privyUser.google?.name || privyUser.twitter?.name || null,
+          walletAddress: walletAddr,
+        },
+        {
+          onError: () => setHasTriedSync(false),
+        }
+      );
+    }, 0);
+
+    return () => clearTimeout(syncTimeout);
   }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp, userSyncMutation]);
 
   // Reset sync state when user changes
