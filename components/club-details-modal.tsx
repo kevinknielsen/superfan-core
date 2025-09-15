@@ -107,7 +107,7 @@ export default function ClubDetailsModal({
 
   // Status calculations - use unified points data if available
   const currentStatus = membership?.current_status || 'cadet';
-  const currentPoints = breakdown?.wallet.earned_points || membership?.points || 0;
+  const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
   const nextStatus = getNextStatus(currentStatus);
   // Use unified points data if available, fallback to manual calculation
   const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
@@ -511,7 +511,7 @@ export default function ClubDetailsModal({
                     }}
                     className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
                   >
-                    Open Wallet
+                    View Current Status
                   </button>
                 ) : (
                   <button

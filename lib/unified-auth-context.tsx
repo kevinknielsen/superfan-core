@@ -84,17 +84,24 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
 
     // Use a timeout to ensure we're not in a render cycle
     const syncTimeout = setTimeout(() => {
-      console.log('[UnifiedAuth] Syncing Privy user to Supabase:', privyUser.id);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[UnifiedAuth] Syncing Privy user to Supabase', { id: privyUser.id });
+      }
       setHasTriedSync(true);
 
       // Extract user data from Privy
       const walletAddr = getPrivyWalletAddress(privyUser);
 
-      userSyncMutation.mutate({
-        email: privyUser.email?.address || null,
-        name: privyUser.google?.name || privyUser.twitter?.name || null,
-        walletAddress: walletAddr,
-      });
+      userSyncMutation.mutate(
+        {
+          email: privyUser.email?.address || null,
+          name: privyUser.google?.name || privyUser.twitter?.name || null,
+          walletAddress: walletAddr,
+        },
+        {
+          onError: () => setHasTriedSync(false),
+        }
+      );
     }, 0);
 
     return () => clearTimeout(syncTimeout);
@@ -102,11 +109,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
 
   // Reset sync state when user changes
   useEffect(() => {
-    const resetTimeout = setTimeout(() => {
-      setHasTriedSync(false);
-    }, 0);
-    
-    return () => clearTimeout(resetTimeout);
+    setHasTriedSync(false);
   }, [privyUser?.id]);
 
   // Fetch admin status when user is authenticated

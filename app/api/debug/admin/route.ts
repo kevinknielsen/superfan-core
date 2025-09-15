@@ -18,22 +18,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     
-    const adminIds = process.env.ADMIN_USER_IDS?.split(",")
-      .map((id) => id.trim())
-      .filter(Boolean) || [];
+    // Compute admin status without exposing the full admin list
+    const isAdminUser = isAdmin(auth.userId);
     
     const debugInfo = {
       auth: {
         userId: auth.userId,
         type: auth.type
       },
-      adminIds: adminIds,
-      isMatch: adminIds.includes(auth.userId),
-      isAdminResult: isAdmin(auth.userId),
-      envVar: process.env.ADMIN_USER_IDS || 'NOT_SET'
+      isAdminUser: isAdminUser,
+      timestamp: new Date().toISOString()
     };
     
-    console.log('[Debug Admin] Authentication debug:', debugInfo);
+    console.log('[Debug Admin] Authentication debug:', { userId: auth.userId, isAdmin: isAdminUser });
     
     return NextResponse.json(debugInfo);
   } catch (error) {

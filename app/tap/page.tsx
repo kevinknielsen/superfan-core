@@ -26,18 +26,47 @@ interface TapInResponse {
   membership: any;
 }
 
+// Helper function to normalize base64url to base64
+function normalizeBase64(str: string): string {
+  // Replace base64url characters with base64 equivalents
+  let normalized = str.replace(/-/g, '+').replace(/_/g, '/');
+  // Add padding if needed
+  while (normalized.length % 4) {
+    normalized += '=';
+  }
+  return normalized;
+}
+
 // Helper function to get point value with dynamic QR data support
 function getPointValue(source?: string, qrData?: string): number {
   // First try to parse points from QR data if available
   if (qrData) {
+    let parsedData: any = null;
+    
+    // Strategy 1: Try base64url/base64 decode then JSON parse
     try {
-      const decodedData = atob(qrData);
-      const parsedData = JSON.parse(decodedData) as any;
-      if (parsedData?.points && typeof parsedData.points === 'number') {
-        return parsedData.points;
-      }
+      const normalizedData = normalizeBase64(qrData);
+      const decodedData = atob(normalizedData);
+      parsedData = JSON.parse(decodedData);
     } catch (error) {
-      console.warn('Failed to parse QR data for points:', error);
+      console.warn('Base64 decode failed, trying direct JSON parse:', error);
+      
+      // Strategy 2: Try parsing qrData directly as JSON
+      try {
+        parsedData = JSON.parse(qrData);
+      } catch (jsonError) {
+        console.warn('Direct JSON parse failed:', jsonError);
+        // Continue to fallback
+      }
+    }
+    
+    // Extract and validate points if we got parsed data
+    if (parsedData?.points) {
+      const points = Number(parsedData.points);
+      if (Number.isFinite(points)) {
+        // Clamp to sane range: min 0, max 10000
+        return Math.max(0, Math.min(10000, points));
+      }
     }
   }
   
@@ -83,6 +112,7 @@ function getSourceLabel(source?: string): string {
 function TapPageContent() {
   const router = useRouter();
   const [showClubDetails, setShowClubDetails] = useState(false);
+  const [scrollToRewards, setScrollToRewards] = useState(false);
   
   // Extract QR parameters and load club info
   const { 
@@ -216,7 +246,8 @@ function TapPageContent() {
                 <div className="absolute inset-0 scale-110 blur-lg opacity-95">
                   <img
                     src={clubInfo.image_url}
-                    alt={clubInfo.name}
+                    alt=""
+                    aria-hidden="true"
                     className="h-full w-full object-cover"
                   />
                 </div>
@@ -337,7 +368,8 @@ function TapPageContent() {
                     <div className="absolute inset-0 scale-110 blur-lg opacity-95">
                       <img
                         src={clubInfo.image_url}
-                        alt={clubInfo.name}
+                        alt=""
+                        aria-hidden="true"
                         className="h-full w-full object-cover"
                       />
                     </div>
@@ -649,7 +681,8 @@ function TapPageContent() {
                 >
                   <button
                     onClick={() => {
-                      console.log('View Available Rewards clicked:', { clubInfo });
+                      setScrollToRewards(true);
+                      if (process.env.NODE_ENV !== 'production') console.log('View Available Rewards clicked:', { clubInfo });
                       setShowClubDetails(true);
                     }}
                     className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
@@ -659,7 +692,8 @@ function TapPageContent() {
                   
                   <button
                     onClick={() => {
-                      console.log('View Club Details clicked:', { clubInfo });
+                      setScrollToRewards(false);
+                      if (process.env.NODE_ENV !== 'production') console.log('View Club Details clicked:', { clubInfo });
                       setShowClubDetails(true);
                     }}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
@@ -683,7 +717,7 @@ function TapPageContent() {
           membership={tapResult?.membership}
           isOpen={showClubDetails}
           onClose={() => setShowClubDetails(false)}
-          scrollToRewards={true}
+          scrollToRewards={scrollToRewards}
         />
       )}
     </>

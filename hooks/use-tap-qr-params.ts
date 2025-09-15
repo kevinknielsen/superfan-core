@@ -49,12 +49,14 @@ export function useTapQRParams(): QRState {
     
     const loadClubInfo = async () => {
       if (!params.clubId) {
+        clearTimeout(timeoutId);
         setParamError("Invalid QR code - missing club information");
         setClubInfo(null);
         return;
       }
 
       if (!params.source) {
+        clearTimeout(timeoutId);
         setParamError("Invalid QR code - missing source information");
         setClubInfo(null);
         return;

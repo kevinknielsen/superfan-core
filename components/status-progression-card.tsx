@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Crown, Star, Trophy, Shield, ArrowRight, Sparkles } from "lucide-react";
 import type { ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
+import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from "@/lib/status-colors";
 
 interface StatusProgressionCardProps {
   currentStatus: ClubStatus;
@@ -33,13 +34,14 @@ export function StatusProgressionCard({
 }: StatusProgressionCardProps) {
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [showSparkles, setShowSparkles] = useState(false);
+  const sparkleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Calculate progress percentage and next tier points
   const currentThreshold = STATUS_THRESHOLDS[currentStatus] || 0;
   const nextThreshold = nextStatus ? STATUS_THRESHOLDS[nextStatus] : null;
   
-  let progressPercentage = 100; // Default to 100% if no next threshold
-  if (nextThreshold && nextThreshold > currentThreshold) {
+  let progressPercentage = nextStatus ? 0 : 100; // If next tier exists but threshold is bad/missing, show 0%
+  if (typeof nextThreshold === "number" && nextThreshold > currentThreshold) {
     const rawPercent = ((currentPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100;
     progressPercentage = Math.max(0, Math.min(100, rawPercent));
   }
@@ -57,49 +59,19 @@ export function StatusProgressionCard({
   // Sparkle animation when near completion
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     if (progressPercentage > 80) {
       interval = setInterval(() => {
+        if (sparkleTimeoutRef.current) clearTimeout(sparkleTimeoutRef.current);
         setShowSparkles(true);
-        timeout = setTimeout(() => setShowSparkles(false), 1000);
+        sparkleTimeoutRef.current = setTimeout(() => setShowSparkles(false), 1000);
       }, 3000);
     }
     return () => {
       if (interval) clearInterval(interval);
-      if (timeout) clearTimeout(timeout);
+      if (sparkleTimeoutRef.current) clearTimeout(sparkleTimeoutRef.current);
     };
   }, [progressPercentage]);
 
-  // Status-specific gradient colors
-  const getStatusGradient = (status: ClubStatus) => {
-    switch (status) {
-      case 'cadet': return 'from-blue-500 to-blue-400';
-      case 'resident': return 'from-green-500 to-green-400';
-      case 'headliner': return 'from-purple-500 to-purple-400';
-      case 'superfan': return 'from-yellow-500 to-yellow-400';
-      default: return 'from-gray-500 to-gray-400';
-    }
-  };
-
-  const getStatusColor = (status: ClubStatus) => {
-    switch (status) {
-      case 'cadet': return 'text-blue-400';
-      case 'resident': return 'text-green-400';
-      case 'headliner': return 'text-purple-400';
-      case 'superfan': return 'text-yellow-400';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const getStatusBgColor = (status: ClubStatus) => {
-    switch (status) {
-      case 'cadet': return 'bg-blue-900/30';
-      case 'resident': return 'bg-green-900/30';
-      case 'headliner': return 'bg-purple-900/30';
-      case 'superfan': return 'bg-yellow-900/30';
-      default: return 'bg-gray-800';
-    }
-  };
 
   return (
     <div className="mb-8 space-y-4">
@@ -158,7 +130,7 @@ export function StatusProgressionCard({
               transition={{ delay: 0.2 }}
             >
               <motion.div 
-                className={`flex items-center justify-center w-12 h-12 rounded-lg ${getStatusBgColor(currentStatus)} ${getStatusColor(currentStatus)}`}
+                className={`flex items-center justify-center w-12 h-12 rounded-lg ${getStatusBgColor(currentStatus)} ${getStatusTextColor(currentStatus)}`}
                 whileHover={{ scale: 1.05 }}
               >
                 <StatusIcon className="w-6 h-6" />
@@ -188,7 +160,7 @@ export function StatusProgressionCard({
                 transition={{ delay: 0.3 }}
               >
                 <motion.div 
-                  className={`flex items-center justify-center w-12 h-12 rounded-lg ${getStatusBgColor(nextStatus)} ${getStatusColor(nextStatus)}`}
+                  className={`flex items-center justify-center w-12 h-12 rounded-lg ${getStatusBgColor(nextStatus)} ${getStatusTextColor(nextStatus)}`}
                   whileHover={{ scale: 1.05, opacity: 1 }}
                 >
                   <NextStatusIcon className="w-6 h-6" />
@@ -197,8 +169,8 @@ export function StatusProgressionCard({
                   <h4 className="text-lg font-semibold text-white">
                     {nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1)}
                   </h4>
-                  <p className={`text-sm ${getStatusColor(nextStatus)}`}>
-                    {STATUS_THRESHOLDS[nextStatus]?.toLocaleString()} points
+                  <p className={`text-sm ${getStatusTextColor(nextStatus)}`}>
+                    {nextThreshold != null ? nextThreshold.toLocaleString() : "—"} points
                   </p>
                 </div>
               </motion.div>
@@ -233,7 +205,7 @@ export function StatusProgressionCard({
                   {pointsToNext.toLocaleString()} points to go
                 </span>
                 <motion.span 
-                  className={`font-semibold ${getStatusColor(nextStatus)}`}
+                  className={`font-semibold ${getStatusTextColor(nextStatus)}`}
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.8, type: "spring", stiffness: 200 }}
@@ -248,10 +220,11 @@ export function StatusProgressionCard({
                 aria-label="Status progress"
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={Math.round(progressPercentage)}
+                aria-valuenow={Math.round(animatedProgress)}
+                aria-valuetext={`${Math.round(animatedProgress)}%`}
               >
                 <motion.div
-                  className={`h-full bg-gradient-to-r ${getStatusGradient(nextStatus)} rounded-full relative`}
+                  className={`h-full bg-gradient-to-r ${getStatusGradientClass(nextStatus)} rounded-full relative`}
                   initial={{ width: 0 }}
                   animate={{ width: `${animatedProgress}%` }}
                   transition={{ duration: 1.5, ease: "easeOut" }}

@@ -142,7 +142,10 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
           errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
         }
         const message = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
-        throw new Error(message);
+        const error = new Error(message);
+        (error as any).status = response.status;
+        (error as any).payload = errorPayload;
+        throw error;
       }
 
       return response.json() as any;
@@ -183,8 +186,13 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
           const text = await response.text().catch(() => '');
           errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
         }
-        const message = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
-        throw new Error(message);
+        const baseMessage = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
+        const payloadSnippet = errorPayload ? ` (${JSON.stringify(errorPayload)})` : '';
+        const message = `${baseMessage}${payloadSnippet}`;
+        const error = new Error(message);
+        (error as any).status = response.status;
+        (error as any).payload = errorPayload;
+        throw error;
       }
 
       return response.json() as any;

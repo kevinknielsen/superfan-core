@@ -7,10 +7,10 @@ import { createServiceClient } from '@/app/api/supabase';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const supabase = createServiceClient();
     
     const { data: club, error } = await supabase
