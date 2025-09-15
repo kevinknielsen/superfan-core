@@ -46,22 +46,32 @@ function getPointValue(source?: string, qrData?: string): number {
     // Strategy 1: Try base64url/base64 decode then JSON parse
     try {
       const normalizedData = normalizeBase64(qrData);
-      const decodedData = atob(normalizedData);
+      // Use Unicode-safe decode: base64 → Uint8Array → TextDecoder
+      const binaryString = atob(normalizedData);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const decodedData = new TextDecoder().decode(bytes);
       parsedData = JSON.parse(decodedData);
     } catch (error) {
-      console.warn('Base64 decode failed, trying direct JSON parse:', error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Base64 decode failed, trying direct JSON parse:', error);
+      }
       
       // Strategy 2: Try parsing qrData directly as JSON
       try {
         parsedData = JSON.parse(qrData);
       } catch (jsonError) {
-        console.warn('Direct JSON parse failed:', jsonError);
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Direct JSON parse failed:', jsonError);
+        }
         // Continue to fallback
       }
     }
     
     // Extract and validate points if we got parsed data
-    if (parsedData?.points) {
+    if (parsedData?.points != null) {
       const points = Number(parsedData.points);
       if (Number.isFinite(points)) {
         // Clamp to sane range: min 0, max 10000
@@ -682,7 +692,9 @@ function TapPageContent() {
                   <button
                     onClick={() => {
                       setScrollToRewards(true);
-                      if (process.env.NODE_ENV !== 'production') console.log('View Available Rewards clicked:', { clubInfo });
+                      if (process.env.NODE_ENV !== 'production') {
+                        console.log('View Available Rewards clicked:', { clubInfo });
+                      }
                       setShowClubDetails(true);
                     }}
                     className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
@@ -693,7 +705,9 @@ function TapPageContent() {
                   <button
                     onClick={() => {
                       setScrollToRewards(false);
-                      if (process.env.NODE_ENV !== 'production') console.log('View Club Details clicked:', { clubInfo });
+                      if (process.env.NODE_ENV !== 'production') {
+                        console.log('View Club Details clicked:', { clubInfo });
+                      }
                       setShowClubDetails(true);
                     }}
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"

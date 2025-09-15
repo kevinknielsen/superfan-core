@@ -238,17 +238,31 @@ export default function ClubDetailsModal({
 
   // Scroll to rewards section when modal opens with scrollToRewards prop
   useEffect(() => {
-    if (isOpen && scrollToRewards && rewardsRef.current && membership) {
+    let timer: NodeJS.Timeout | null = null;
+    
+    if (isOpen && scrollToRewards && membership) {
       // Wait for modal animation to complete, then scroll
-      const timer = setTimeout(() => {
-        rewardsRef.current?.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
-        });
+      timer = setTimeout(() => {
+        // Verify rewardsRef.current still exists before scrolling
+        if (rewardsRef.current) {
+          try {
+            rewardsRef.current.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start' 
+            });
+          } catch (error) {
+            console.error('Failed to scroll to rewards section:', error);
+          }
+        }
       }, 400); // Wait for modal slide-in animation
-      
-      return () => clearTimeout(timer);
     }
+    
+    // Always clear timer in cleanup
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
   }, [isOpen, scrollToRewards, membership]);
 
   // Early return after all hooks

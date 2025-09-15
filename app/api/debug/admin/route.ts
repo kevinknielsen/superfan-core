@@ -14,12 +14,10 @@ export async function GET(request: NextRequest) {
     }
     
     // Admin guard - check before exposing any sensitive information
-    if (!isAdmin(auth.userId)) {
+    const isAdminUser = isAdmin(auth.userId);
+    if (!isAdminUser) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    
-    // Compute admin status without exposing the full admin list
-    const isAdminUser = isAdmin(auth.userId);
     
     const debugInfo = {
       auth: {

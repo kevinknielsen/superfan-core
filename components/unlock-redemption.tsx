@@ -35,27 +35,30 @@ import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 
-// Helper to get current quarter end date
+// Helper to get current quarter end date in UTC
 const getQuarterEndDate = () => {
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-based
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth(); // 0-based
   const currentQuarter = Math.floor(currentMonth / 3) + 1; // 1-4
   
   // Calculate last day of current quarter
   const quarterEndMonth = currentQuarter * 3; // 3, 6, 9, 12
-  const quarterEndDate = new Date(currentYear, quarterEndMonth, 0); // Last day of the quarter month
+  // Create date using UTC - day 0 means last day of previous month
+  const quarterEndDate = new Date(Date.UTC(currentYear, quarterEndMonth, 0));
   
   return quarterEndDate;
 };
 
-// Helper to format quarter end date
+// Helper to format quarter end date consistently in UTC
 const formatQuarterEnd = () => {
   const quarterEnd = getQuarterEndDate();
+  const now = new Date();
   return quarterEnd.toLocaleDateString('en-US', { 
+    timeZone: 'UTC',
     month: 'short', 
     day: 'numeric',
-    year: quarterEnd.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined 
+    year: quarterEnd.getUTCFullYear() !== now.getUTCFullYear() ? 'numeric' : undefined 
   });
 };
 

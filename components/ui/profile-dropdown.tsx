@@ -38,7 +38,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
 
   // Keyboard support for role="menu"
   const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const menu = dropdownRef.current?.querySelector(`#${menuId}`) as HTMLElement | null;
+    const menu = document.getElementById(menuId) as HTMLElement | null;
     const items = menu?.querySelectorAll('[role="menuitem"]') as NodeListOf<HTMLButtonElement> | undefined;
     if (!items || items.length === 0) return;
 
@@ -51,7 +51,14 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
 
     switch (e.key) {
       case 'ArrowDown': focusAt((currentIndex + 1 + items.length) % items.length); break;
-      case 'ArrowUp':   focusAt((currentIndex - 1 + items.length) % items.length); break;
+      case 'ArrowUp':   
+        if (currentIndex === -1) {
+          // No item focused, focus the last item
+          focusAt(items.length - 1);
+        } else {
+          focusAt((currentIndex - 1 + items.length) % items.length);
+        }
+        break;
       case 'Home':      focusAt(0); break;
       case 'End':       focusAt(items.length - 1); break;
       case 'Escape':
@@ -78,7 +85,8 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
       document.addEventListener('pointerdown', handleClickOutside)
       // Focus first actionable item
       setTimeout(() => {
-        const firstButton = dropdownRef.current?.querySelector(`#${menuId} button`) as HTMLButtonElement;
+        const menu = document.getElementById(menuId);
+        const firstButton = menu?.querySelector('button') as HTMLButtonElement;
         firstButton?.focus();
       }, 0)
     }
