@@ -105,10 +105,10 @@ export default function ClubDetailsModal({
   const enabled = Boolean(club.id && membership && isAuthenticated);
   const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
 
-  // Status calculations - use unified points data if available
-  const currentStatus = membership?.current_status || 'cadet';
+  // Status calculations - use unified points data if available (now includes temporary boosts)
+  const currentStatus = breakdown?.status.current || membership?.current_status || 'cadet';
   const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
-  const nextStatus = getNextStatus(currentStatus);
+  const nextStatus = breakdown?.status.next_status || getNextStatus(currentStatus);
   // Use unified points data if available, fallback to manual calculation
   const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
   const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;

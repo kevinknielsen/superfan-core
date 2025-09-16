@@ -151,10 +151,10 @@ export default function ClubCard({
   
   const joinClubMutation = useJoinClub();
 
-  // Status calculation - use status_points for tier progression with nullish coalescing
-  const currentStatus = membership?.current_status || 'cadet';
+  // Status calculation - use effective status from database (includes temporary boosts)
+  const currentStatus = breakdown?.status.current || membership?.current_status || 'cadet';
   const currentPoints = breakdown?.wallet.status_points ?? membership?.points ?? 0;
-  const nextStatus = getNextStatus(currentStatus);
+  const nextStatus = breakdown?.status.next_status || getNextStatus(currentStatus);
   
   // Progress calculation - show progress relative to current tier
   const statusProgress = useMemo(() => {

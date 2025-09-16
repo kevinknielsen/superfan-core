@@ -440,8 +440,8 @@ export default function UnlockRedemption({
         },
         body: JSON.stringify({
           purchase_type: purchaseType,
-          success_url: `${window.location.origin}/dashboard?upgrade_success=true`,
-          cancel_url: `${window.location.origin}/dashboard?upgrade_cancelled=true`
+          success_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?upgrade_success=true`,
+          cancel_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?upgrade_cancelled=true`
         })
       });
 

@@ -21,15 +21,16 @@ async function verifyWebhookEvent(
   signature: string
 ): Promise<Stripe.Event | null> {
   try {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      console.error('STRIPE_WEBHOOK_SECRET not configured');
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET_TIER_REWARDS || process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('STRIPE_WEBHOOK_SECRET_TIER_REWARDS or STRIPE_WEBHOOK_SECRET not configured');
       return null;
     }
     
     const event = verifyWebhookSignature(
       rawBody.toString(),
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET
+      webhookSecret
     );
     
     return event;
