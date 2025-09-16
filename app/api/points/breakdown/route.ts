@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
         });
 
       let current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage;
+      let effectiveStatusPoints;
 
       if (tierError || !tierData || tierData.length === 0) {
         // Fallback to basic status calculation
@@ -81,17 +82,18 @@ export async function GET(request: NextRequest) {
         nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
         pointsToNext = nextThreshold ? nextThreshold - 0 : null;
         progressPercentage = 0;
+        effectiveStatusPoints = 0;
       } else {
         // Use effective tier from database (considers temporary boosts)
         const tierInfo = tierData[0];
         current = tierInfo.effective_tier;
         next = computeNext(current); // Calculate next tier since DB function doesn't provide it
-        currentThreshold = STATUS_THRESHOLDS[current];
+        currentThreshold = STATUS_THRESHOLDS[current as keyof typeof STATUS_THRESHOLDS];
         nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
         
         // Calculate effective status points and points to next
-        const effectiveStatusPoints = tierInfo.has_active_boost 
-          ? STATUS_THRESHOLDS[current] // Show the threshold points for the boosted tier
+        effectiveStatusPoints = tierInfo.has_active_boost 
+          ? STATUS_THRESHOLDS[current as keyof typeof STATUS_THRESHOLDS] // Show the threshold points for the boosted tier
           : 0; // Show 0 when no wallet and no boost
         
         pointsToNext = nextThreshold ? nextThreshold - effectiveStatusPoints : null;
@@ -123,10 +125,6 @@ export async function GET(request: NextRequest) {
         progressPercentage = 100;
       }
 
-      // Calculate effective status points - show the threshold for the current tier when boosted
-      const effectiveStatusPoints = tierData && tierData.length > 0 && tierData[0].has_active_boost 
-        ? STATUS_THRESHOLDS[current] // Show the threshold points for the boosted tier
-        : 0; // Show 0 when no wallet and no boost
 
       const response = {
         wallet: {
@@ -195,6 +193,7 @@ export async function GET(request: NextRequest) {
 
     // Get effective tier considering temporary boosts
     let current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage;
+    let effectiveStatusPoints;
     
     const { data: tierData, error: tierError } = await supabase
       .rpc('check_tier_qualification', {
@@ -214,24 +213,24 @@ export async function GET(request: NextRequest) {
       nextThreshold = result.nextThreshold;
       pointsToNext = result.pointsToNext;
       progressPercentage = result.progressPercentage;
+      effectiveStatusPoints = statusPoints;
     } else {
       // Use effective tier from database (considers temporary boosts)
       const tierInfo = tierData[0]; // Get first row
       const effectiveTier = tierInfo.effective_tier;
       current = effectiveTier;
       next = computeNext(current);
-      currentThreshold = STATUS_THRESHOLDS[current];
-      nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+      currentThreshold = STATUS_THRESHOLDS[current as keyof typeof STATUS_THRESHOLDS];
+      nextThreshold = next ? STATUS_THRESHOLDS[next as keyof typeof STATUS_THRESHOLDS] : null;
       // Calculate effective status points first
-      const effectiveStatusPoints = tierData && tierData.length > 0 && tierData[0].has_active_boost 
-        ? STATUS_THRESHOLDS[current] // Show the threshold points for the boosted tier
+      effectiveStatusPoints = tierData && tierData.length > 0 && tierData[0].has_active_boost 
+        ? STATUS_THRESHOLDS[current as keyof typeof STATUS_THRESHOLDS] // Show the threshold points for the boosted tier
         : (walletView.status_pts || 0); // Show actual earned points when not boosted
       
       pointsToNext = nextThreshold ? nextThreshold - effectiveStatusPoints : 0;
       progressPercentage = nextThreshold ? Math.min(100, Math.max(0, ((effectiveStatusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100)) : 100;
     }
 
-    // Use the effective status points calculated above
 
     // Check if there are any available rewards in higher tiers
     // If no rewards available in higher tiers, show "Maximum Status!"
