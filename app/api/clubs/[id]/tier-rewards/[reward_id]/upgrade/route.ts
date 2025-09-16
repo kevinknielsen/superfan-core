@@ -241,11 +241,11 @@ export async function POST(
 
     // Create product name and description
     const productName = upgradeData.purchase_type === 'tier_boost' 
-      ? `${reward.tier.charAt(0).toUpperCase() + reward.tier.slice(1)} Boost (Q${quarter.quarter} ${quarter.year}) - ${reward.title}`
+      ? `${reward.tier.charAt(0).toUpperCase() + reward.tier.slice(1)} Boost (Q${quarter.quarter} ${quarter.year})`
       : `Direct Unlock - ${reward.title}`;
       
     const productDescription = upgradeData.purchase_type === 'tier_boost'
-      ? `Temporary ${reward.tier} access for one free claim this quarter in ${club.name}`
+      ? `Temporary ${reward.tier.charAt(0).toUpperCase() + reward.tier.slice(1)} access for one free claim this quarter`
       : `Unlock "${reward.title}" in ${club.name}`;
 
     // Create Stripe checkout session

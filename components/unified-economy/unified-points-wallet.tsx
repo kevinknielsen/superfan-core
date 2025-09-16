@@ -277,47 +277,80 @@ export default function UnifiedPointsWallet({
 
   const { getStatusInfo } = useStatusInfo();
 
-  // Handle buy points flow
+  // Handle status boost flow - redirect to tier rewards system
   const handleBuyPoints = async () => {
     try {
       if (isPurchasing) return;
       setIsPurchasing(true);
       
-      console.log('Starting buy points flow for club:', clubId);
+      console.log('Starting status boost flow for club:', clubId);
       const token = await getAccessToken();
       if (!token) {
-        toast({ title: 'Sign in required', description: 'Please sign in to purchase points.', variant: 'destructive' });
+        toast({ title: 'Sign in required', description: 'Please sign in to boost your status.', variant: 'destructive' });
         return;
       }
       
-      // For now, redirect to 1000 point bundle (smallest option)
-      const response = await fetch('/api/points/purchase', {
+      // Get available tier rewards to find the cheapest upgrade option
+      const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load tier rewards');
+      }
+
+      const tierRewardsData = await response.json();
+      const availableRewards = tierRewardsData.available_rewards || [];
+      
+      // Find the cheapest reward that requires an upgrade
+      const upgradeableRewards = availableRewards.filter((reward: any) => 
+        !reward.user_can_claim_free && 
+        reward.claim_options && 
+        reward.claim_options.length > 0
+      );
+
+      if (upgradeableRewards.length === 0) {
+        toast({ 
+          title: 'No Upgrades Available', 
+          description: 'There are no tier rewards available for upgrade in this club.', 
+          variant: 'destructive' 
+        });
+        return;
+      }
+
+      // Sort by tier_boost_price_cents and pick the cheapest
+      const cheapestReward = upgradeableRewards.sort((a: any, b: any) => 
+        (a.tier_boost_price_cents || 0) - (b.tier_boost_price_cents || 0)
+      )[0];
+
+      // Redirect to the tier rewards upgrade flow
+      const upgradeResponse = await fetch(`/api/clubs/${clubId}/tier-rewards/${cheapestReward.id}/upgrade`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          communityId: clubId,
-          bundleId: '1000' // Default to 1000 point bundle
-        }),
+          purchase_type: 'tier_boost',
+          success_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?club=${clubId}&boost_success=true`,
+          cancel_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?club=${clubId}&boost_cancelled=true`
+        })
       });
 
-      console.log('Purchase API response status:', response.status);
-
-      if (response.ok) {
-        const data = await response.json() as { url: string };
-        const { url } = data;
-        // Redirect to Stripe checkout
+      if (upgradeResponse.ok) {
+        const result = await upgradeResponse.json();
+        const url = result?.stripe_session_url;
+        if (!url || typeof url !== 'string') {
+          throw new Error('Missing checkout URL');
+        }
         window.location.href = url;
       } else {
-        const error = await response.json().catch(() => ({})) as any;
-        console.error('Purchase API error:', error, 'Status:', response.status);
-        throw new Error(error.error || `HTTP ${response.status}: Failed to create checkout session`);
+        const errorData = await upgradeResponse.json();
+        throw new Error(errorData.error || 'Failed to start boost purchase');
       }
     } catch (error) {
-      console.error('Buy points error:', error);
-      toast({ title: 'Purchase failed', description: error instanceof Error ? error.message : 'Failed to start purchase', variant: 'destructive' });
+      console.error('Status boost error:', error);
+      toast({ title: 'Boost Failed', description: error instanceof Error ? error.message : 'Failed to start boost', variant: 'destructive' });
     } finally {
       setIsPurchasing(false);
     }
@@ -362,6 +395,15 @@ export default function UnifiedPointsWallet({
   const { wallet, status, spending_power } = breakdown;
   const statusInfo = getStatusInfo(status.current);
 
+  // Calculate effective points when user has temporary boost
+  const effectiveTotalBalance = status?.has_active_boost 
+    ? (wallet?.status_points ?? 0) // Use status points when boosted
+    : (wallet?.total_balance ?? 0); // Use actual balance when not boosted
+  
+  const effectiveEarnedPoints = status?.has_active_boost
+    ? (wallet?.status_points ?? 0) // Use status points when boosted
+    : (wallet?.earned_points ?? 0); // Use actual earned points when not boosted
+
   return (
     <Card className={`${className} overflow-hidden`}>
       <CardHeader className="pb-3">
@@ -375,7 +417,7 @@ export default function UnifiedPointsWallet({
         {/* Main Balance Display */}
         <div className="text-center space-y-2">
           <div className="text-3xl font-bold text-foreground">
-            {formatPoints(wallet.total_balance ?? 0)}
+            {formatPoints(effectiveTotalBalance)}
           </div>
           <div className="text-sm text-muted-foreground">Total Points</div>
           
@@ -383,12 +425,14 @@ export default function UnifiedPointsWallet({
           <div className="flex justify-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <TrendingUp className="h-3 w-3" />
-              {formatPoints(wallet.earned_points ?? 0)} earned
+              {formatPoints(effectiveEarnedPoints)} earned
             </span>
-            <span className="flex items-center gap-1">
-              <Wallet className="h-3 w-3" />
-              {formatPoints(wallet.purchased_points ?? 0)} purchased
-            </span>
+            {(wallet.purchased_points ?? 0) > 0 && (
+              <span className="flex items-center gap-1">
+                <Wallet className="h-3 w-3" />
+                {formatPoints(wallet.purchased_points ?? 0)} purchased
+              </span>
+            )}
           </div>
         </div>
 
@@ -401,9 +445,21 @@ export default function UnifiedPointsWallet({
           progressPercentage={status.progress_to_next}
         />
 
+        {/* Tier Boost Info */}
+        {status.has_active_boost && (
+          <div className="text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <div className="text-sm text-blue-400 font-medium mb-1">
+              🚀 Active Tier Boost
+            </div>
+            <div className="text-xs text-blue-300/80">
+              Your status is temporarily boosted - tier boosts don't add points to your wallet
+            </div>
+          </div>
+        )}
+
         {/* Action Button - Full Width */}
         <div className="space-y-3">
-          {showPurchaseOptions && (
+          {showPurchaseOptions && status?.next_status && (
             <Button
               type="button"
               variant="default"
@@ -415,7 +471,7 @@ export default function UnifiedPointsWallet({
               }}
             >
               <Zap className="h-4 w-4 mr-2" />
-              Boost Status
+              {isPurchasing ? 'Loading...' : 'Boost Status'}
             </Button>
           )}
           
@@ -428,7 +484,7 @@ export default function UnifiedPointsWallet({
                 e.stopPropagation();
                 setShowSpendModal(true);
               }}
-              disabled={(wallet.total_balance ?? 0) <= 0}
+              disabled={effectiveTotalBalance <= 0}
             >
               <ArrowUpRight className="h-4 w-4 mr-2" />
               Spend Points

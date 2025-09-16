@@ -169,10 +169,79 @@ export default function Dashboard() {
         });
       }
     }
+    
+    // Handle tier boost redirects
+    if (clubParam && (purchaseParam === 'boost_success' || purchaseParam === 'boost_cancelled')) {
+      const club = allClubs.find(c => c.id === clubParam);
+      if (club) {
+        if (purchaseParam === 'boost_success') {
+          setSelectedClubId(clubParam);
+          setShowPurchaseSuccess(true);
+          
+          // Trigger confetti
+          setTimeout(() => {
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#10b981', '#3b82f6', '#8b5cf6']
+            });
+          }, 500);
+
+          toast({
+            title: "Tier Boost Successful! 🎉",
+            description: `Your tier has been boosted in ${club.name}`,
+          });
+        } else if (purchaseParam === 'boost_cancelled') {
+          setSelectedClubId(clubParam);
+          setShowPurchaseCanceled(true);
+          
+          toast({
+            title: "Tier Boost Canceled",
+            description: "No charges were made to your account",
+            variant: "default",
+          });
+        }
+      }
+    }
+    
+    // Handle upgrade redirects (from root path)
+    if (purchaseParam === 'upgrade_success' || purchaseParam === 'upgrade_cancelled') {
+      if (purchaseParam === 'upgrade_success') {
+        setShowPurchaseSuccess(true);
+        
+        // Trigger confetti
+        setTimeout(() => {
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#10b981', '#3b82f6', '#8b5cf6']
+          });
+        }, 500);
+
+        toast({
+          title: "Upgrade Successful! 🎉",
+          description: "Your upgrade has been processed successfully",
+        });
+      } else if (purchaseParam === 'upgrade_cancelled') {
+        setShowPurchaseCanceled(true);
+        
+        toast({
+          title: "Upgrade Canceled",
+          description: "No charges were made to your account",
+          variant: "default",
+        });
+      }
+    }
       // Clean up URL parameters for purchase flow
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.delete('club');
       newUrl.searchParams.delete('purchase');
+      newUrl.searchParams.delete('boost_success');
+      newUrl.searchParams.delete('boost_cancelled');
+      newUrl.searchParams.delete('upgrade_success');
+      newUrl.searchParams.delete('upgrade_cancelled');
       router.replace(newUrl.pathname + newUrl.search);
     }
   }, [searchParams, allClubs, clubsLoading, router, toast]);

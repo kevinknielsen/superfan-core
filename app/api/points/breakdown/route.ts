@@ -35,8 +35,6 @@ export async function GET(request: NextRequest) {
 
     // If wallet doesn't exist, we need to get user ID separately and check membership
     if (walletError || !walletView || !user) {
-      console.log('Wallet not found, checking if user needs wallet creation:', { error: walletError?.message });
-      
       // Get user ID separately if not available from JOIN
       let userId = user?.id;
       if (!userId) {
@@ -64,13 +62,73 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'User is not a member of this club' }, { status: 404 });
       }
 
-      // Return empty wallet state for new members
-      const current = computeStatus(0);
-      const next = computeNext(current);
-      const currentThreshold = STATUS_THRESHOLDS[current];
-      const nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+      // Get effective tier considering temporary boosts (even for users without wallets)
+      const { data: tierData, error: tierError } = await supabase
+        .rpc('check_tier_qualification', {
+          p_user_id: userId,
+          p_club_id: clubId,
+          p_target_tier: 'superfan', // Check highest tier to get all info
+          p_rolling_window_days: 60
+        });
 
-      return NextResponse.json({
+      let current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage;
+
+      if (tierError || !tierData || tierData.length === 0) {
+        // Fallback to basic status calculation
+        current = computeStatus(0);
+        next = computeNext(current);
+        currentThreshold = STATUS_THRESHOLDS[current];
+        nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+        pointsToNext = nextThreshold ? nextThreshold - 0 : null;
+        progressPercentage = 0;
+      } else {
+        // Use effective tier from database (considers temporary boosts)
+        const tierInfo = tierData[0];
+        current = tierInfo.effective_tier;
+        next = computeNext(current); // Calculate next tier since DB function doesn't provide it
+        currentThreshold = STATUS_THRESHOLDS[current];
+        nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+        
+        // Calculate effective status points and points to next
+        const effectiveStatusPoints = tierInfo.has_active_boost 
+          ? STATUS_THRESHOLDS[current] // Show the threshold points for the boosted tier
+          : 0; // Show 0 when no wallet and no boost
+        
+        pointsToNext = nextThreshold ? nextThreshold - effectiveStatusPoints : null;
+        progressPercentage = nextThreshold ? Math.min(100, Math.max(0, ((effectiveStatusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100)) : 100;
+      }
+
+      // Check if there are any available rewards in higher tiers
+      // If no rewards available in higher tiers, show "Maximum Status!"
+      let hasRewardsInHigherTiers = false;
+      if (next) {
+        const { data: higherTierRewards, error: rewardsError } = await supabase
+          .from('tier_rewards')
+          .select('tier')
+          .eq('club_id', clubId)
+          .eq('is_active', true)
+          .in('tier', ['resident', 'headliner', 'superfan'])
+          .gte('tier', next); // Only check tiers >= next tier
+        
+        if (!rewardsError && higherTierRewards && higherTierRewards.length > 0) {
+          hasRewardsInHigherTiers = true;
+        }
+      }
+
+      // Override next status if no rewards available in higher tiers
+      if (!hasRewardsInHigherTiers) {
+        next = null;
+        nextThreshold = null;
+        pointsToNext = null;
+        progressPercentage = 100;
+      }
+
+      // Calculate effective status points - show the threshold for the current tier when boosted
+      const effectiveStatusPoints = tierData && tierData.length > 0 && tierData[0].has_active_boost 
+        ? STATUS_THRESHOLDS[current] // Show the threshold points for the boosted tier
+        : 0; // Show 0 when no wallet and no boost
+
+      const response = {
         wallet: {
           id: null,
           total_balance: 0,
@@ -78,7 +136,7 @@ export async function GET(request: NextRequest) {
           purchased_points: 0,
           spent_points: 0,
           escrowed_points: 0,
-          status_points: 0,
+          status_points: effectiveStatusPoints,
           last_activity: null,
           created_at: null
         },
@@ -88,7 +146,7 @@ export async function GET(request: NextRequest) {
           next_status: next,
           next_threshold: nextThreshold,
           progress_to_next: nextThreshold ? 0 : 100,
-          points_to_next: nextThreshold ? nextThreshold - 0 : 0
+          points_to_next: pointsToNext
         },
         spending_power: {
           total_spendable: 0,
@@ -103,7 +161,9 @@ export async function GET(request: NextRequest) {
           join_date: membership.join_date,
           total_points_in_club: membership.points || 0
         }
-      });
+      };
+      
+      return NextResponse.json(response);
     }
 
     // Get membership and recent transactions in parallel for better performance
@@ -133,10 +193,70 @@ export async function GET(request: NextRequest) {
       console.error('Error fetching recent transactions:', recentError);
     }
 
-    // Compute status and thresholds from status_pts using shared helpers
-    const statusPoints = walletView.status_pts || 0; // Points that count toward status
-    const { current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage } = 
-      calculateStatusProgress(statusPoints);
+    // Get effective tier considering temporary boosts
+    let current, next, currentThreshold, nextThreshold, pointsToNext, progressPercentage;
+    
+    const { data: tierData, error: tierError } = await supabase
+      .rpc('check_tier_qualification', {
+        p_user_id: user.id,
+        p_club_id: clubId,
+        p_target_tier: 'superfan', // Check highest tier to get all info
+        p_rolling_window_days: 60
+      });
+
+    if (tierError || !tierData || tierData.length === 0) {
+      // Fallback to status_pts calculation
+      const statusPoints = walletView.status_pts || 0;
+      const result = calculateStatusProgress(statusPoints);
+      current = result.current;
+      next = result.next;
+      currentThreshold = result.currentThreshold;
+      nextThreshold = result.nextThreshold;
+      pointsToNext = result.pointsToNext;
+      progressPercentage = result.progressPercentage;
+    } else {
+      // Use effective tier from database (considers temporary boosts)
+      const tierInfo = tierData[0]; // Get first row
+      const effectiveTier = tierInfo.effective_tier;
+      current = effectiveTier;
+      next = computeNext(current);
+      currentThreshold = STATUS_THRESHOLDS[current];
+      nextThreshold = next ? STATUS_THRESHOLDS[next] : null;
+      // Calculate effective status points first
+      const effectiveStatusPoints = tierData && tierData.length > 0 && tierData[0].has_active_boost 
+        ? STATUS_THRESHOLDS[current] // Show the threshold points for the boosted tier
+        : (walletView.status_pts || 0); // Show actual earned points when not boosted
+      
+      pointsToNext = nextThreshold ? nextThreshold - effectiveStatusPoints : 0;
+      progressPercentage = nextThreshold ? Math.min(100, Math.max(0, ((effectiveStatusPoints - currentThreshold) / (nextThreshold - currentThreshold)) * 100)) : 100;
+    }
+
+    // Use the effective status points calculated above
+
+    // Check if there are any available rewards in higher tiers
+    // If no rewards available in higher tiers, show "Maximum Status!"
+    let hasRewardsInHigherTiers = false;
+    if (next) {
+      const { data: higherTierRewards, error: rewardsError } = await supabase
+        .from('tier_rewards')
+        .select('tier')
+        .eq('club_id', clubId)
+        .eq('is_active', true)
+        .in('tier', ['resident', 'headliner', 'superfan'])
+        .gte('tier', next); // Only check tiers >= next tier
+      
+      if (!rewardsError && higherTierRewards && higherTierRewards.length > 0) {
+        hasRewardsInHigherTiers = true;
+      }
+    }
+
+    // Override next status if no rewards available in higher tiers
+    if (!hasRewardsInHigherTiers) {
+      next = null;
+      nextThreshold = null;
+      pointsToNext = null;
+      progressPercentage = 100;
+    }
 
     // Calculate spending power breakdown using shared helper
     const earned = walletView.earned_pts || 0;
@@ -162,7 +282,7 @@ export async function GET(request: NextRequest) {
         purchased_points: walletView.purchased_pts,
         spent_points: walletView.spent_pts,
         escrowed_points: walletView.escrowed_pts || 0,
-        status_points: statusPoints,
+        status_points: effectiveStatusPoints,
         last_activity: walletView.last_activity_at,
         created_at: walletView.created_at
       },
