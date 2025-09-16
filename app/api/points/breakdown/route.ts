@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
-import { STATUS_THRESHOLDS, computeStatus, getNextStatus as computeNext, calculateStatusProgress, calculateSpendingPower } from '@/lib/points';
+import { STATUS_THRESHOLDS, STATUS_ORDER, computeStatus, getNextStatus as computeNext, calculateStatusProgress, calculateSpendingPower } from '@/lib/points';
+
+// Helper function to get tiers that are higher than the given tier
+function getHigherTiers(currentTier: string): string[] {
+  const currentIndex = STATUS_ORDER.indexOf(currentTier as any);
+  if (currentIndex === -1) return [];
+  return STATUS_ORDER.slice(currentIndex + 1);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -104,16 +111,18 @@ export async function GET(request: NextRequest) {
       // If no rewards available in higher tiers, show "Maximum Status!"
       let hasRewardsInHigherTiers = false;
       if (next) {
-        const { data: higherTierRewards, error: rewardsError } = await supabase
-          .from('tier_rewards')
-          .select('tier')
-          .eq('club_id', clubId)
-          .eq('is_active', true)
-          .in('tier', ['resident', 'headliner', 'superfan'])
-          .gte('tier', next); // Only check tiers >= next tier
+        const higherTiers = getHigherTiers(next);
+        if (higherTiers.length > 0) {
+          const { data: higherTierRewards, error: rewardsError } = await supabase
+            .from('tier_rewards')
+            .select('tier')
+            .eq('club_id', clubId)
+            .eq('is_active', true)
+            .in('tier', higherTiers); // Use correct tier hierarchy
         
-        if (!rewardsError && higherTierRewards && higherTierRewards.length > 0) {
-          hasRewardsInHigherTiers = true;
+          if (!rewardsError && higherTierRewards && higherTierRewards.length > 0) {
+            hasRewardsInHigherTiers = true;
+          }
         }
       }
 
@@ -236,16 +245,18 @@ export async function GET(request: NextRequest) {
     // If no rewards available in higher tiers, show "Maximum Status!"
     let hasRewardsInHigherTiers = false;
     if (next) {
-      const { data: higherTierRewards, error: rewardsError } = await supabase
-        .from('tier_rewards')
-        .select('tier')
-        .eq('club_id', clubId)
-        .eq('is_active', true)
-        .in('tier', ['resident', 'headliner', 'superfan'])
-        .gte('tier', next); // Only check tiers >= next tier
-      
-      if (!rewardsError && higherTierRewards && higherTierRewards.length > 0) {
-        hasRewardsInHigherTiers = true;
+      const higherTiers = getHigherTiers(next);
+      if (higherTiers.length > 0) {
+        const { data: higherTierRewards, error: rewardsError } = await supabase
+          .from('tier_rewards')
+          .select('tier')
+          .eq('club_id', clubId)
+          .eq('is_active', true)
+          .in('tier', higherTiers); // Use correct tier hierarchy
+        
+        if (!rewardsError && higherTierRewards && higherTierRewards.length > 0) {
+          hasRewardsInHigherTiers = true;
+        }
       }
     }
 

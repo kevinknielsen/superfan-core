@@ -135,46 +135,59 @@ export default function Dashboard() {
       return;
     }
     
-    // Handle Stripe purchase redirects
-    if (clubParam && purchaseParam) {
-    const club = allClubs.find(c => c.id === clubParam);
-    if (club) {
-      if (purchaseParam === 'success') {
-        // Show success message and confetti
-        setSelectedClubId(clubParam);
-        setShowPurchaseSuccess(true);
-        
-        // Trigger confetti
-        setTimeout(() => {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-            colors: ['#10b981', '#3b82f6', '#8b5cf6']
-          });
-        }, 500);
+    // Handle Stripe purchase redirects - normalize both patterns and wait for clubs to load
+    const isBoostSuccess = purchaseParam === 'boost_success' || searchParams.get('boost_success') === 'true';
+    const isBoostCancelled = purchaseParam === 'boost_cancelled' || searchParams.get('boost_cancelled') === 'true';
+    const isUpgradeSuccess = purchaseParam === 'upgrade_success' || searchParams.get('upgrade_success') === 'true';
+    const isUpgradeCancelled = purchaseParam === 'upgrade_cancelled' || searchParams.get('upgrade_cancelled') === 'true';
+    const isPointsSuccess = purchaseParam === 'success';
+    const isPointsCancelled = purchaseParam === 'canceled';
 
-        toast({
-          title: "Points Purchase Successful! 🎉",
-          description: `Your points have been added to ${club.name}`,
-        });
-      } else if (purchaseParam === 'canceled') {
-        setSelectedClubId(clubParam);
-        setShowPurchaseCanceled(true);
-        
-        toast({
-          title: "Purchase Canceled",
-          description: "No charges were made to your account",
-          variant: "default",
-        });
+    // Wait for clubs to load before processing any redirects that need club data
+    if ((clubParam && (isBoostSuccess || isBoostCancelled || isPointsSuccess || isPointsCancelled)) && clubsLoading) {
+      return;
+    }
+
+    // Handle points purchase redirects (with club)
+    if (clubParam && (isPointsSuccess || isPointsCancelled)) {
+      const club = allClubs.find(c => c.id === clubParam);
+      if (club) {
+        if (isPointsSuccess) {
+          setSelectedClubId(clubParam);
+          setShowPurchaseSuccess(true);
+          
+          // Trigger confetti
+          setTimeout(() => {
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#10b981', '#3b82f6', '#8b5cf6']
+            });
+          }, 500);
+
+          toast({
+            title: "Points Purchase Successful! 🎉",
+            description: `Your points have been added to ${club.name}`,
+          });
+        } else if (isPointsCancelled) {
+          setSelectedClubId(clubParam);
+          setShowPurchaseCanceled(true);
+          
+          toast({
+            title: "Purchase Canceled",
+            description: "No charges were made to your account",
+            variant: "default",
+          });
+        }
       }
     }
     
-    // Handle tier boost redirects
-    if (clubParam && (purchaseParam === 'boost_success' || purchaseParam === 'boost_cancelled')) {
+    // Handle tier boost redirects (with club)
+    if (clubParam && (isBoostSuccess || isBoostCancelled)) {
       const club = allClubs.find(c => c.id === clubParam);
       if (club) {
-        if (purchaseParam === 'boost_success') {
+        if (isBoostSuccess) {
           setSelectedClubId(clubParam);
           setShowPurchaseSuccess(true);
           
@@ -192,7 +205,7 @@ export default function Dashboard() {
             title: "Tier Boost Successful! 🎉",
             description: `Your tier has been boosted in ${club.name}`,
           });
-        } else if (purchaseParam === 'boost_cancelled') {
+        } else if (isBoostCancelled) {
           setSelectedClubId(clubParam);
           setShowPurchaseCanceled(true);
           
@@ -205,9 +218,9 @@ export default function Dashboard() {
       }
     }
     
-    // Handle upgrade redirects (from root path)
-    if (purchaseParam === 'upgrade_success' || purchaseParam === 'upgrade_cancelled') {
-      if (purchaseParam === 'upgrade_success') {
+    // Handle upgrade redirects (from root path - no club needed)
+    if (isUpgradeSuccess || isUpgradeCancelled) {
+      if (isUpgradeSuccess) {
         setShowPurchaseSuccess(true);
         
         // Trigger confetti
@@ -224,7 +237,7 @@ export default function Dashboard() {
           title: "Upgrade Successful! 🎉",
           description: "Your upgrade has been processed successfully",
         });
-      } else if (purchaseParam === 'upgrade_cancelled') {
+      } else if (isUpgradeCancelled) {
         setShowPurchaseCanceled(true);
         
         toast({
@@ -234,7 +247,9 @@ export default function Dashboard() {
         });
       }
     }
-      // Clean up URL parameters for purchase flow
+
+    // Clean up URL parameters for purchase flow (only if we processed a redirect)
+    if (isBoostSuccess || isBoostCancelled || isUpgradeSuccess || isUpgradeCancelled || isPointsSuccess || isPointsCancelled) {
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.delete('club');
       newUrl.searchParams.delete('purchase');
