@@ -1,4 +1,4 @@
-# Campaigns MVP Implementation
+ne for # Campaigns MVP Implementation
 **Ultra-Lean: Instant Discounts for Earned Tiers**
 
 ## Executive Summary
@@ -70,12 +70,19 @@ ADD COLUMN campaign_title TEXT,
 ADD COLUMN campaign_funding_goal_cents INTEGER DEFAULT 0,
 ADD COLUMN campaign_current_funding_cents INTEGER DEFAULT 0,
 ADD COLUMN campaign_deadline TIMESTAMPTZ,
+ADD COLUMN campaign_status TEXT DEFAULT 'single_reward' CHECK (
+  campaign_status IN ('single_reward', 'campaign_active', 'campaign_funded', 'campaign_failed')
+),
 ADD COLUMN is_campaign_tier BOOLEAN DEFAULT FALSE,
 
 -- Percentage-based discounts per tier
 ADD COLUMN resident_discount_percentage DECIMAL(5,2) DEFAULT 10.0, -- 10% off
 ADD COLUMN headliner_discount_percentage DECIMAL(5,2) DEFAULT 15.0, -- 15% off
-ADD COLUMN superfan_discount_percentage DECIMAL(5,2) DEFAULT 25.0; -- 25% off
+ADD COLUMN superfan_discount_percentage DECIMAL(5,2) DEFAULT 25.0, -- 25% off
+
+-- Add constraints and indexes
+ADD CONSTRAINT chk_goal_nonneg CHECK (campaign_funding_goal_cents >= 0),
+ADD CONSTRAINT chk_current_nonneg CHECK (campaign_current_funding_cents >= 0);
 
 -- Add discount tracking to existing reward_claims table
 ALTER TABLE reward_claims
@@ -83,9 +90,34 @@ ADD COLUMN original_price_cents INTEGER DEFAULT 0, -- Full tier price
 ADD COLUMN paid_price_cents INTEGER DEFAULT 0, -- Amount user actually paid
 ADD COLUMN discount_applied_cents INTEGER DEFAULT 0, -- Discount amount
 ADD COLUMN campaign_id UUID, -- Link to campaign
+ADD COLUMN stripe_payment_intent_id TEXT, -- Stripe payment reference (was missing)
 ADD COLUMN refund_status TEXT DEFAULT 'none' CHECK (refund_status IN ('none', 'pending', 'processed', 'failed')),
 ADD COLUMN refunded_at TIMESTAMPTZ,
-ADD COLUMN stripe_refund_id TEXT; -- For tracking refunds
+ADD COLUMN stripe_refund_id TEXT, -- For tracking refunds
+
+-- Add constraints
+ADD CONSTRAINT chk_original_price_nonneg CHECK (original_price_cents >= 0),
+ADD CONSTRAINT chk_paid_price_nonneg CHECK (paid_price_cents >= 0),
+ADD CONSTRAINT chk_discount_nonneg CHECK (discount_applied_cents >= 0);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_tier_rewards_campaign_id ON tier_rewards(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_reward_claims_campaign_refund ON reward_claims(campaign_id, refund_status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reward_claims_stripe_payment ON reward_claims(stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL;
+
+-- Add tier rank function (needed for discount calculations)
+CREATE OR REPLACE FUNCTION get_tier_rank(tier TEXT)
+RETURNS INTEGER AS $$
+BEGIN
+  CASE tier
+    WHEN 'cadet' THEN RETURN 0;
+    WHEN 'resident' THEN RETURN 1;
+    WHEN 'headliner' THEN RETURN 2;
+    WHEN 'superfan' THEN RETURN 3;
+    ELSE RETURN 0;
+  END CASE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
 
 -- Simple function to calculate discount for a user
 CREATE OR REPLACE FUNCTION get_user_discount(
@@ -101,8 +133,12 @@ BEGIN
   -- Get the tier reward
   SELECT * INTO v_tier_reward FROM tier_rewards WHERE id = p_tier_reward_id;
   
+  IF NOT FOUND THEN
+    RETURN 0;
+  END IF;
+  
   -- Only apply discount if user's earned tier matches or exceeds the tier reward tier
-  IF get_tier_rank(p_user_tier) >= get_tier_rank(p_tier_reward_tier) THEN
+  IF get_tier_rank(p_user_tier) >= get_tier_rank(v_tier_reward.tier) THEN
     -- Calculate percentage-based discount
     CASE p_user_tier
       WHEN 'resident' THEN 
@@ -175,15 +211,29 @@ interface EnhancedTierReward {
   };
 }
 
-// Enhanced API logic
+// Enhanced API logic with proper error handling
 export async function GET(request: NextRequest) {
-  // Existing logic...
-  const tierRewards = await supabase.from('tier_rewards').select('*');
+  // Existing authentication and validation...
+  
+  const { data: tierRewards, error } = await supabase
+    .from('tier_rewards')
+    .select('*')
+    .eq('club_id', clubId)
+    .eq('is_active', true);
+    
+  if (error) {
+    console.error('Error fetching tier rewards:', error);
+    return NextResponse.json({ error: 'Failed to fetch tier rewards' }, { status: 500 });
+  }
+  
+  if (!tierRewards || !Array.isArray(tierRewards)) {
+    return NextResponse.json({ available_rewards: [] });
+  }
   
   // Add discount calculations
   const enhancedRewards = tierRewards.map(reward => {
     const userDiscount = calculateUserDiscount(userTier, reward.tier, reward);
-    const finalPrice = reward.upgrade_price_cents - userDiscount;
+    const finalPrice = Math.max(0, reward.upgrade_price_cents - userDiscount);
     
     return {
       ...reward,
@@ -197,12 +247,19 @@ export async function GET(request: NextRequest) {
     };
   });
   
-  return NextResponse.json({ available_rewards: enhancedRewards });
+  return NextResponse.json({ 
+    user_earned_tier: userTier,
+    available_rewards: enhancedRewards 
+  });
 }
 
 function calculateUserDiscount(userTier: string, rewardTier: string, reward: any): number {
   // Percentage-based discount logic for MVP
-  if (getTierRank(userTier) >= getTierRank(rewardTier)) {
+  const userRank = getTierRank(userTier);
+  const rewardRank = getTierRank(rewardTier);
+  
+  // Only discount if user tier >= reward tier
+  if (userRank >= rewardRank) {
     switch (userTier) {
       case 'resident': 
         return Math.round(reward.upgrade_price_cents * (reward.resident_discount_percentage || 10.0) / 100);
@@ -215,27 +272,67 @@ function calculateUserDiscount(userTier: string, rewardTier: string, reward: any
   }
   return 0;
 }
+
+function getTierRank(tier: string): number {
+  switch (tier) {
+    case 'cadet': return 0;
+    case 'resident': return 1;
+    case 'headliner': return 2;
+    case 'superfan': return 3;
+    default: return 0;
+  }
+}
 ```
 
 ### New Minimal Endpoints
 
-#### `/api/campaigns/[id]/participate` - Simple Participation
+#### `/api/tier-rewards/[id]/purchase` - Secure Purchase with Validation
 ```typescript
 export async function POST(request: NextRequest) {
-  const { tier, user_tier } = await request.json();
+  // Get authenticated user (don't trust request body for user_tier)
+  const auth = await verifyUnifiedAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   
-  // Get tier reward
-  const tierReward = await supabase
+  const tierRewardId = params.id;
+  
+  // Get tier reward with error handling
+  const { data: tierReward, error } = await supabase
     .from('tier_rewards')
     .select('*')
-    .eq('id', tier)
+    .eq('id', tierRewardId)
     .single();
     
-  // Calculate discount
-  const discountCents = calculateUserDiscount(user_tier, tierReward.tier, tierReward);
+  if (error || !tierReward) {
+    return NextResponse.json({ error: 'Tier not found' }, { status: 404 });
+  }
+  
+  // Get user's actual earned tier from database (server-side validation)
+  const { data: userTierData } = await supabase
+    .rpc('check_tier_qualification', {
+      p_user_id: auth.userId,
+      p_club_id: tierReward.club_id,
+      p_target_tier: 'superfan',
+      p_rolling_window_days: 60
+    });
+    
+  const userTier = userTierData?.[0]?.earned_tier || 'cadet';
+  
+  // Calculate percentage-based discount
+  const discountPercentage = getDiscountPercentage(userTier, tierReward);
+  const discountCents = Math.round(tierReward.upgrade_price_cents * discountPercentage / 100);
   const finalPriceCents = tierReward.upgrade_price_cents - discountCents;
   
-  // Create Stripe session for discounted amount
+  // Validate final price is positive
+  if (finalPriceCents <= 0) {
+    return NextResponse.json({ error: 'Invalid pricing calculation' }, { status: 400 });
+  }
+  
+  // Generate stable idempotency key
+  const idempotencyKey = `tier_purchase_${tierRewardId}_${auth.userId}`;
+  
+  // Create Stripe session - charge discounted amount immediately
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     line_items: [{
@@ -244,40 +341,61 @@ export async function POST(request: NextRequest) {
         product_data: {
           name: tierReward.title,
           description: discountCents > 0 ? 
-            `Save $${(discountCents/100).toFixed(0)} with your ${user_tier} status` : 
+            `${tierReward.description} (${discountPercentage}% ${userTier} discount)` : 
             tierReward.description
         },
-        unit_amount: finalPriceCents
+        unit_amount: finalPriceCents // Charge discounted amount
       },
       quantity: 1
     }],
+    success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/cancel`,
     metadata: {
       type: 'campaign_tier_purchase',
-      tier_reward_id: tierReward.id,
-      campaign_id: tierReward.campaign_id,
-      user_tier: user_tier,
+      tier_reward_id: tierRewardId,
+      campaign_id: tierReward.campaign_id || '',
+      user_id: auth.userId,
+      user_tier: userTier,
       original_price_cents: tierReward.upgrade_price_cents.toString(),
       discount_cents: discountCents.toString(),
-      campaign_credit_cents: tierReward.upgrade_price_cents.toString()
+      final_price_cents: finalPriceCents.toString(),
+      campaign_credit_cents: tierReward.upgrade_price_cents.toString(), // Campaign gets full value
+      idempotency_key: idempotencyKey
     }
+  }, {
+    idempotencyKey // Pass to Stripe for true idempotency
   });
   
   return NextResponse.json({
     stripe_session_url: session.url,
     final_price_cents: finalPriceCents,
-    discount_applied_cents: discountCents
+    discount_applied_cents: discountCents,
+    discount_percentage: discountPercentage
   });
+}
+
+function getDiscountPercentage(userTier: string, tierReward: any): number {
+  switch (userTier) {
+    case 'resident': return tierReward.resident_discount_percentage || 10.0;
+    case 'headliner': return tierReward.headliner_discount_percentage || 15.0;
+    case 'superfan': return tierReward.superfan_discount_percentage || 25.0;
+    default: return 0;
+  }
 }
 ```
 
 #### `/api/campaigns/[id]/progress` - Basic Progress
 ```typescript
 export async function GET(request: NextRequest) {
-  const { data: progress } = await supabase
+  const { data: progress, error } = await supabase
     .from('v_campaign_progress')
     .select('*')
     .eq('campaign_id', params.id)
     .single();
+    
+  if (error || !progress) {
+    return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+  }
     
   return NextResponse.json(progress);
 }
@@ -624,7 +742,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Create reward claim with refund tracking
-      await supabase.from('reward_claims').insert({
+      const { error: insertError } = await supabase.from('reward_claims').insert({
         user_id: session.metadata.user_id,
         reward_id: session.metadata.tier_reward_id,
         campaign_id: session.metadata.campaign_id || null,
@@ -635,6 +753,11 @@ export async function POST(request: NextRequest) {
         stripe_payment_intent_id: session.payment_intent as string,
         refund_status: 'none' // Will be updated if campaign fails
       });
+      
+      if (insertError) {
+        console.error('Failed to create reward claim:', insertError);
+        return NextResponse.json({ error: 'Failed to process payment' }, { status: 500 });
+      }
       
       // Update campaign progress with FULL tier value (not discounted amount)
       if (session.metadata.campaign_id) {
@@ -863,3 +986,36 @@ describe('Enhanced UnlockRedemption', () => {
 - ✅ **Basic campaign creation** works in admin interface
 
 This MVP gives you the **core campaigns-as-tiers value** in just **1-2 weeks** with minimal risk and maximum component reuse!
+
+---
+
+## Bug Fixes and Improvements Applied
+
+### ✅ **Fixed Database Schema Issues**
+- **Added missing `campaign_status` column** with proper CHECK constraint
+- **Added missing `stripe_payment_intent_id` column** to reward_claims
+- **Added `get_tier_rank` function** required by discount calculations
+- **Added proper indexes** for campaign queries and refund jobs
+- **Added non-negative constraints** on monetary columns
+- **Added unique index** on stripe_payment_intent_id for idempotency
+
+### ✅ **Fixed API Implementation Issues**
+- **Consistent percentage-based discounts** throughout (no more _cents fields)
+- **Proper error handling** for Supabase queries with .data destructuring
+- **Server-side user tier validation** instead of trusting request body
+- **Stable idempotency keys** for Stripe integration
+- **Added required success_url and cancel_url** to Stripe sessions
+- **Positive price validation** to prevent $0 or negative charges
+
+### ✅ **Fixed Function Inconsistencies**
+- **Updated calculateUserDiscount** to use percentage fields consistently
+- **Added getTierRank helper function** for tier comparison logic
+- **Fixed SQL function** to reference correct tier field (v_tier_reward.tier)
+- **Added getDiscountPercentage helper** for consistent percentage handling
+
+### ✅ **Enhanced Security and Reliability**
+- **Idempotent Stripe operations** with proper key generation
+- **Webhook idempotency protection** against duplicate processing
+- **Input validation** for all monetary values
+- **Error handling** for all database operations
+- **Constraint enforcement** at database level

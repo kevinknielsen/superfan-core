@@ -83,6 +83,23 @@ interface TierRewardFields {
     description?: string | null;
     city?: string | null;
   } | null;
+  
+  // Enhanced with campaign and discount fields
+  campaign_id?: string;
+  campaign_title?: string;
+  campaign_status?: string;
+  is_campaign_tier?: boolean;
+  campaign_progress?: {
+    funding_percentage: number;
+    seconds_remaining: number;
+    current_funding_cents: number;
+    goal_funding_cents: number;
+  };
+  user_discount_eligible?: boolean;
+  user_discount_amount_cents?: number;
+  user_discount_percentage?: number;
+  user_final_price_cents?: number;
+  discount_description?: string;
 }
 
 type Unlock = BaseUnlock & TierRewardFields;
@@ -95,6 +112,7 @@ interface UnlockRedemptionProps {
   onRedemption?: () => void;
   onShowRedemptionConfirmation?: (redemption: any, unlock: Unlock) => void;
   onShowPerkDetails?: (unlock: Unlock, redemption: any) => void;
+  onCampaignDataChange?: (campaignData: any) => void;
 }
 
 const UNLOCK_TYPE_ICONS: Record<string, any> = {
@@ -121,7 +139,8 @@ export default function UnlockRedemption({
   userPoints, 
   onRedemption,
   onShowRedemptionConfirmation,
-  onShowPerkDetails
+  onShowPerkDetails,
+  onCampaignDataChange
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
@@ -164,7 +183,7 @@ export default function UnlockRedemption({
       if (response.ok) {
         const tierRewardsData = await response.json();
         
-        // Convert tier rewards to unlock format for existing UI
+        // Convert tier rewards to unlock format for existing UI + campaign fields
         const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: any) => ({
           id: reward.id,
           club_id: clubId,
@@ -177,6 +196,19 @@ export default function UnlockRedemption({
             ...(reward.metadata ?? {}),
             redemption_instructions: reward.metadata?.instructions
           },
+          
+          // Enhanced with campaign and discount fields
+          campaign_id: reward.campaign_id,
+          campaign_title: reward.campaign_title,
+          campaign_status: reward.campaign_status,
+          is_campaign_tier: reward.is_campaign_tier,
+          campaign_progress: reward.campaign_progress,
+          user_discount_eligible: reward.user_discount_eligible,
+          user_discount_amount_cents: reward.user_discount_amount_cents,
+          user_discount_percentage: reward.user_discount_percentage,
+          user_final_price_cents: reward.user_final_price_cents,
+          discount_description: reward.discount_description,
+          
           // Add club information for details modal
           club_info: reward.clubs ? {
             id: reward.clubs.id,
@@ -209,6 +241,18 @@ export default function UnlockRedemption({
 
         setUnlocks(convertedUnlocks);
         setRedemptions(convertedRedemptions);
+        
+        // Extract campaign data for parent component
+        const campaignTier = convertedUnlocks.find(unlock => unlock.is_campaign_tier && unlock.campaign_progress);
+        
+        if (campaignTier && onCampaignDataChange) {
+          onCampaignDataChange({
+            campaign_id: campaignTier.campaign_id,
+            campaign_title: campaignTier.campaign_title,
+            campaign_status: campaignTier.campaign_status,
+            campaign_progress: campaignTier.campaign_progress
+          });
+        }
       } else {
         console.error('Failed to fetch tier rewards:', response.status);
         setUnlocks([]);
@@ -418,43 +462,67 @@ export default function UnlockRedemption({
         throw new Error('User not authenticated');
       }
 
-      // Determine the correct purchase type from reward's claim options
-      let purchaseType = getClaimOptionsPurchaseType(reward);
+      // Use new campaign-aware purchase endpoint if available, fallback to existing
+      const useNewPurchaseEndpoint = reward.user_discount_eligible !== undefined;
       
-      // Fallback to tier_boost if no purchase type found (backward compatibility)
-      if (!purchaseType) {
-        console.warn('No purchase type found in claim_options, defaulting to tier_boost for reward:', {
-          rewardId: reward.id,
-          claimOptions: reward.claim_options,
-          claimOptionsType: typeof reward.claim_options,
-          isArray: Array.isArray(reward.claim_options)
+      if (useNewPurchaseEndpoint) {
+        // New campaign purchase endpoint with instant discounts
+        const response = await fetch(`/api/tier-rewards/${reward.id}/purchase`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+          }
         });
-        purchaseType = 'tier_boost';
-      }
 
-      const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          purchase_type: purchaseType,
-          success_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?upgrade_success=true`,
-          cancel_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?upgrade_cancelled=true`
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        const url = result?.stripe_session_url;
-        if (!url || typeof url !== 'string') {
-          throw new Error('Missing checkout URL');
+        if (response.ok) {
+          const result = await response.json();
+          const url = result?.stripe_session_url;
+          if (!url || typeof url !== 'string') {
+            throw new Error('Missing checkout URL');
+          }
+          
+          // Show discount confirmation if applicable
+          if (result.discount_applied_cents > 0) {
+            toast({
+              title: "Discount Applied!",
+              description: `You're saving $${(result.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
+            });
+          }
+          
+          window.location.href = url;
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to start purchase');
         }
-        window.location.href = url;
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to start upgrade purchase');
+        // Existing upgrade endpoint for backward compatibility
+        const purchaseType = getClaimOptionsPurchaseType(reward) || 'tier_boost';
+
+        const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            purchase_type: purchaseType,
+            success_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?upgrade_success=true`,
+            cancel_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?upgrade_cancelled=true`
+          })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          const url = result?.stripe_session_url;
+          if (!url || typeof url !== 'string') {
+            throw new Error('Missing checkout URL');
+          }
+          window.location.href = url;
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to start upgrade purchase');
+        }
       }
     } catch (error) {
       toast({
@@ -506,19 +574,29 @@ export default function UnlockRedemption({
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   </div>
                   
-                  {/* Status Badge */}
-                  <div className="absolute top-3 right-3">
-                    {isUnlockRedeemed(unlock) ? (
-                      <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
-                    ) : (
-                      <Badge 
-                        variant="secondary" 
-                        className={`${getStatusBgColor(unlock.min_status as any)} ${getStatusBorderColor(unlock.min_status as any)} ${getStatusTextColor(unlock.min_status as any)} backdrop-blur-sm border font-medium ${!isAvailable ? 'opacity-75' : ''} flex items-center gap-1`}
-                      >
-                        {!isAvailable && <Lock className="h-3 w-3" />}
-                        {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
-                      </Badge>
-                    )}
+                  {/* Top badges */}
+                  <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
+                    
+                    {/* Status/Discount badge */}
+                    <div className="flex flex-col gap-1 items-end">
+                      {unlock.user_discount_eligible && unlock.user_discount_percentage && (
+                        <Badge variant="default" className="bg-green-600/90 backdrop-blur-sm text-xs">
+                          {unlock.user_discount_percentage}% off
+                        </Badge>
+                      )}
+                      
+                      {isUnlockRedeemed(unlock) ? (
+                        <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
+                      ) : (
+                        <Badge 
+                          variant="secondary" 
+                          className={`${getStatusBgColor(unlock.min_status as any)} ${getStatusBorderColor(unlock.min_status as any)} ${getStatusTextColor(unlock.min_status as any)} backdrop-blur-sm border font-medium ${!isAvailable ? 'opacity-75' : ''} flex items-center gap-1`}
+                        >
+                          {!isAvailable && <Lock className="h-3 w-3" />}
+                          {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   
                   {/* Progress bar for locked items */}
@@ -534,18 +612,32 @@ export default function UnlockRedemption({
                   )}
                 </div>
                 
-                {/* Bottom Content - Like poster titles */}
+                
+                {/* Bottom Content - Enhanced with discount pricing */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 via-black/70 to-transparent">
                   <h4 className="font-bold text-white text-lg mb-1 line-clamp-2">
                     {unlock.title}
                   </h4>
                   
                   {/* Requirements info */}
-                  <div className={`text-sm font-medium mb-3 ${getStatusTextColor(unlock.min_status as any)}`}>
+                  <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
                     Requires {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
                   </div>
                   
-                  {/* Action Button - Like screenshot */}
+                  {/* Discount pricing display */}
+                  {unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
+                    <div className="mb-2 text-xs">
+                      <div className="flex items-center justify-between text-white/60">
+                        <span className="line-through">${(unlock.upgrade_price_cents / 100).toFixed(0)}</span>
+                        <span className="text-green-400 font-medium">Save ${(unlock.user_discount_amount_cents / 100).toFixed(0)}</span>
+                      </div>
+                      <div className="text-green-400 font-bold text-sm">
+                        ${((unlock.upgrade_price_cents - unlock.user_discount_amount_cents) / 100).toFixed(0)}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Action Button - Enhanced with discount info */}
                   <button
                     className={`w-full py-2.5 px-4 rounded-full text-sm font-semibold transition-colors ${
                       isUnlockRedeemed(unlock)
@@ -571,12 +663,17 @@ export default function UnlockRedemption({
                         ? unlock.user_can_claim_free 
                           ? 'Claim Free'
                           : (() => {
-                              const purchaseType = getClaimOptionsPurchaseType(unlock);
-                              const price = purchaseType === 'direct_unlock' 
-                                ? unlock.direct_unlock_price_cents 
-                                : unlock.tier_boost_price_cents;
-                              const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
-                              return `${verb} for ${formatCurrencyOrFree(price)}`;
+                              // Enhanced button text with discount info
+                              if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
+                                return `Join Tier - $${(unlock.user_final_price_cents / 100).toFixed(0)}`;
+                              } else {
+                                const purchaseType = getClaimOptionsPurchaseType(unlock);
+                                const price = purchaseType === 'direct_unlock' 
+                                  ? unlock.direct_unlock_price_cents 
+                                  : unlock.tier_boost_price_cents;
+                                const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
+                                return `${verb} for ${formatCurrencyOrFree(price)}`;
+                              }
                             })()
                         : 'Locked'
                     }
@@ -604,13 +701,42 @@ export default function UnlockRedemption({
               </DialogTitle>
             </DialogHeader>
             
-            <div className="space-y-4">
+              <div className="space-y-4">
               <p className="text-muted-foreground">
                 {selectedUnlock.description}
               </p>
               
-              {/* Boost explanation for non-qualified users */}
-              {!selectedUnlock.user_can_claim_free && isUnlockAvailable(selectedUnlock) && (
+              
+              {/* Discount information for earned tiers */}
+              {selectedUnlock.user_discount_eligible && selectedUnlock.user_discount_amount_cents && selectedUnlock.user_discount_amount_cents > 0 && (
+                <div className="p-4 rounded-xl border border-green-200 bg-green-50/50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                    <span className="font-medium text-green-900">Your Status Discount</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-green-700 line-through">
+                        ${(selectedUnlock.upgrade_price_cents / 100).toFixed(0)}
+                      </span>
+                      <span className="text-lg font-bold text-green-600">
+                        ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)}
+                      </span>
+                    </div>
+                    <div className="text-sm text-green-600">
+                      {selectedUnlock.discount_description}
+                    </div>
+                    {selectedUnlock.campaign_id && (
+                      <div className="text-xs text-green-700">
+                        Your ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)} payment adds ${(selectedUnlock.upgrade_price_cents / 100).toFixed(0)} to campaign progress
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Boost explanation for non-qualified users (legacy) */}
+              {!selectedUnlock.user_can_claim_free && !selectedUnlock.user_discount_eligible && isUnlockAvailable(selectedUnlock) && (
                 <div className={`p-4 rounded-xl border ${getStatusBgColor(selectedUnlock.min_status as any)} ${getStatusBorderColor(selectedUnlock.min_status as any)} backdrop-blur-sm`}>
                   <div className="flex items-start gap-3">
                     <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(selectedUnlock.min_status as any)} ${getStatusTextColor(selectedUnlock.min_status as any)}`}>
@@ -687,12 +813,17 @@ export default function UnlockRedemption({
                   {isRedeeming ? 'Processing...' : 
                    selectedUnlock.user_can_claim_free ? 'Claim Free' :
                    (() => {
-                     const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
-                     const price = purchaseType === 'direct_unlock' 
-                       ? selectedUnlock.direct_unlock_price_cents 
-                       : selectedUnlock.tier_boost_price_cents;
-                     const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
-                     return `${verb} for ${formatCurrencyOrFree(price)}`;
+                     // Enhanced button text with discount info
+                     if (selectedUnlock.user_discount_eligible && selectedUnlock.user_final_price_cents !== undefined) {
+                       return `Join Tier - $${(selectedUnlock.user_final_price_cents / 100).toFixed(0)}`;
+                     } else {
+                       const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
+                       const price = purchaseType === 'direct_unlock' 
+                         ? selectedUnlock.direct_unlock_price_cents 
+                         : selectedUnlock.tier_boost_price_cents;
+                       const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
+                       return `${verb} for ${formatCurrencyOrFree(price)}`;
+                     }
                    })()
                   }
                 </Button>

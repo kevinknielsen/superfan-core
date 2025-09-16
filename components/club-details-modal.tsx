@@ -77,6 +77,8 @@ export default function ClubDetailsModal({
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
+  const [campaignData, setCampaignData] = useState<any>(null);
+  
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
@@ -409,6 +411,7 @@ export default function ClubDetailsModal({
                 nextStatus={nextStatus}
                 pointsToNext={pointsToNext}
                 statusIcon={StatusIcon}
+                campaignData={campaignData}
               />
             ) : (
               <div className="mb-8">
@@ -432,12 +435,13 @@ export default function ClubDetailsModal({
             {/* Perks and Benefits Section - Grid Layout */}
             {membership && (
               <div className="mb-8" ref={rewardsRef}>
-                <h3 className="mb-4 text-xl font-semibold">Perks and Benefits</h3>
+                <h3 className="mb-4 text-xl font-semibold">Campaign Rewards</h3>
                 <UnlockRedemption
                   clubId={club.id}
                   clubName={club.name}
                   userStatus={currentStatus}
                   userPoints={currentPoints}
+                  onCampaignDataChange={setCampaignData}
                   onRedemption={async () => {
                     await refetch();
                     toast({

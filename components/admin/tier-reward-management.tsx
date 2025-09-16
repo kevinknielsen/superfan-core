@@ -130,7 +130,7 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
   const { data: clubs = [] } = useClubs();
   const activeClubs = clubs.filter(club => club.is_active);
 
-  // Form state
+  // Form state - enhanced with campaign fields
   const [formData, setFormData] = useState({
     club_id: '',
     title: '',
@@ -151,12 +151,69 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
     details: '',
     estimated_shipping: '',
     location: '',
-    requirements: ''
+    requirements: '',
+    
+    // New campaign fields
+    is_campaign_tier: false,
+    campaign_mode: 'new' as 'new' | 'existing', // New field to choose mode
+    existing_campaign_id: '', // Select existing campaign
+    campaign_title: '',
+    campaign_funding_goal_cents: 0,
+    campaign_deadline: '',
+    resident_discount_percentage: 10.0,
+    headliner_discount_percentage: 15.0,
+    superfan_discount_percentage: 25.0
   });
+
+  // State for existing campaigns
+  const [existingCampaigns, setExistingCampaigns] = useState<Array<{
+    campaign_id: string;
+    campaign_title: string;
+    campaign_funding_goal_cents: number;
+    campaign_deadline: string;
+    tier_count: number;
+  }>>([]);
 
   useEffect(() => {
     loadRewards();
+    loadExistingCampaigns();
   }, []);
+
+  const loadExistingCampaigns = async () => {
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) return;
+
+      const response = await fetch('/api/admin/tier-rewards', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json() as TierReward[];
+        
+        // Group by campaign_id to get unique campaigns
+        const campaignMap = new Map();
+        data.forEach(reward => {
+          if (reward.campaign_id && reward.campaign_title) {
+            if (!campaignMap.has(reward.campaign_id)) {
+              campaignMap.set(reward.campaign_id, {
+                campaign_id: reward.campaign_id,
+                campaign_title: reward.campaign_title,
+                campaign_funding_goal_cents: reward.campaign_funding_goal_cents || 0,
+                campaign_deadline: reward.campaign_deadline || '',
+                tier_count: 0
+              });
+            }
+            campaignMap.get(reward.campaign_id).tier_count++;
+          }
+        });
+        
+        setExistingCampaigns(Array.from(campaignMap.values()));
+      }
+    } catch (error) {
+      console.error('Error loading existing campaigns:', error);
+    }
+  };
 
   const loadRewards = async () => {
     try {
@@ -285,6 +342,18 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
         available_end: formData.availability_type !== 'permanent' ? formData.available_end : null,
         inventory_limit: formData.inventory_limit ? parseInt(formData.inventory_limit) : formData.total_inventory,
         rolling_window_days: formData.rolling_window_days,
+        
+        // Campaign fields
+        is_campaign_tier: formData.is_campaign_tier,
+        campaign_id: formData.is_campaign_tier && formData.campaign_mode === 'existing' ? formData.existing_campaign_id : null,
+        campaign_title: formData.is_campaign_tier ? formData.campaign_title : null,
+        campaign_funding_goal_cents: formData.is_campaign_tier ? formData.campaign_funding_goal_cents : 0,
+        campaign_deadline: formData.is_campaign_tier && formData.campaign_deadline ? formData.campaign_deadline : null,
+        campaign_status: formData.is_campaign_tier ? 'campaign_active' : 'single_reward',
+        resident_discount_percentage: formData.resident_discount_percentage,
+        headliner_discount_percentage: formData.headliner_discount_percentage,
+        superfan_discount_percentage: formData.superfan_discount_percentage,
+        
         metadata: {
           instructions: formData.instructions,
           redemption_url: formData.redemption_url || undefined,
@@ -349,7 +418,18 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
       details: '',
       estimated_shipping: '',
       location: '',
-      requirements: ''
+      requirements: '',
+      
+      // Reset campaign fields
+      is_campaign_tier: false,
+      campaign_mode: 'new',
+      existing_campaign_id: '',
+      campaign_title: '',
+      campaign_funding_goal_cents: 0,
+      campaign_deadline: '',
+      resident_discount_percentage: 10.0,
+      headliner_discount_percentage: 15.0,
+      superfan_discount_percentage: 25.0
     });
     setEditingReward(null);
   };
@@ -703,9 +783,10 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
               
               <form onSubmit={handleSubmit} className="space-y-6">
                 <Tabs defaultValue="basic" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
+                  <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="basic">Basic Info</TabsTrigger>
                     <TabsTrigger value="pricing">Pricing</TabsTrigger>
+                    <TabsTrigger value="campaign">Campaign</TabsTrigger>
                     <TabsTrigger value="availability">Availability</TabsTrigger>
                     <TabsTrigger value="instructions">Instructions</TabsTrigger>
                   </TabsList>
@@ -999,6 +1080,237 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                           Days to look back for tier qualification
                         </p>
                       </div>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="campaign" className="space-y-4">
+                    <div className="space-y-4 border rounded-lg p-4">
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          checked={formData.is_campaign_tier}
+                          onCheckedChange={(checked) => 
+                            setFormData({ ...formData, is_campaign_tier: checked })
+                          }
+                        />
+                        <Label htmlFor="is_campaign_tier">Part of Campaign</Label>
+                      </div>
+                      
+                      <p className="text-sm text-muted-foreground">
+                        Campaign tiers allow fans to support collective funding goals with instant discounts for earned status holders.
+                      </p>
+                      
+                      {formData.is_campaign_tier && (
+                        <div className="space-y-4 pt-4 border-t">
+                          {/* Campaign Mode Selection */}
+                          <div className="space-y-3">
+                            <Label>Campaign Setup</Label>
+                            <div className="flex gap-4">
+                              <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="campaign_mode"
+                                  value="new"
+                                  checked={formData.campaign_mode === 'new'}
+                                  onChange={(e) => setFormData({ ...formData, campaign_mode: 'new', existing_campaign_id: '' })}
+                                  className="text-primary"
+                                />
+                                <span>Create New Campaign</span>
+                              </label>
+                              <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="campaign_mode"
+                                  value="existing"
+                                  checked={formData.campaign_mode === 'existing'}
+                                  onChange={(e) => setFormData({ ...formData, campaign_mode: 'existing' })}
+                                  className="text-primary"
+                                />
+                                <span>Add to Existing Campaign</span>
+                              </label>
+                            </div>
+                          </div>
+                          
+                          {formData.campaign_mode === 'existing' ? (
+                            /* Select Existing Campaign */
+                            <div className="space-y-2">
+                              <Label htmlFor="existing_campaign">Select Campaign *</Label>
+                              <Select
+                                value={formData.existing_campaign_id}
+                                onValueChange={(value) => {
+                                  const campaign = existingCampaigns.find(c => c.campaign_id === value);
+                                  setFormData({ 
+                                    ...formData, 
+                                    existing_campaign_id: value,
+                                    campaign_title: campaign?.campaign_title || '',
+                                    campaign_funding_goal_cents: campaign?.campaign_funding_goal_cents || 0,
+                                    campaign_deadline: campaign?.campaign_deadline || ''
+                                  });
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Choose existing campaign" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {existingCampaigns.map((campaign) => (
+                                    <SelectItem key={campaign.campaign_id} value={campaign.campaign_id}>
+                                      <div>
+                                        <div className="font-medium">{campaign.campaign_title}</div>
+                                        <div className="text-xs text-muted-foreground">
+                                          {campaign.tier_count} tiers • Goal: ${(campaign.campaign_funding_goal_cents / 100).toFixed(0)}
+                                        </div>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {existingCampaigns.length === 0 && (
+                                <p className="text-xs text-muted-foreground">
+                                  No existing campaigns found. Create a new campaign instead.
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            /* Create New Campaign */
+                            <div className="space-y-2">
+                              <Label htmlFor="campaign_title">Campaign Title *</Label>
+                              <Input
+                                id="campaign_title"
+                                value={formData.campaign_title}
+                                onChange={(e) => setFormData({ ...formData, campaign_title: e.target.value })}
+                                placeholder="e.g., Spring 2024 Collection"
+                                required={formData.is_campaign_tier && formData.campaign_mode === 'new'}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Name for the overall campaign that groups related tiers
+                              </p>
+                            </div>
+                          )}
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="campaign_funding_goal">Funding Goal (USD)</Label>
+                              <Input
+                                id="campaign_funding_goal"
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={formData.campaign_funding_goal_cents / 100}
+                                onChange={(e) => setFormData({ 
+                                  ...formData, 
+                                  campaign_funding_goal_cents: Math.round(parseFloat(e.target.value || '0') * 100)
+                                })}
+                                placeholder="1000"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Total funding target for the campaign
+                              </p>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label htmlFor="campaign_deadline">Campaign Deadline</Label>
+                              <Input
+                                id="campaign_deadline"
+                                type="datetime-local"
+                                value={formData.campaign_deadline}
+                                onChange={(e) => setFormData({ ...formData, campaign_deadline: e.target.value })}
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                When the campaign ends (automatic refunds if goal not met)
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-4">
+                            <Label>Tier Discount Percentages</Label>
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="resident_discount">Resident Discount (%)</Label>
+                                <Input
+                                  id="resident_discount"
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  step="0.1"
+                                  value={formData.resident_discount_percentage}
+                                  onChange={(e) => setFormData({ 
+                                    ...formData, 
+                                    resident_discount_percentage: parseFloat(e.target.value || '10.0')
+                                  })}
+                                />
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="headliner_discount">Headliner Discount (%)</Label>
+                                <Input
+                                  id="headliner_discount"
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  step="0.1"
+                                  value={formData.headliner_discount_percentage}
+                                  onChange={(e) => setFormData({ 
+                                    ...formData, 
+                                    headliner_discount_percentage: parseFloat(e.target.value || '15.0')
+                                  })}
+                                />
+                              </div>
+                              
+                              <div className="space-y-2">
+                                <Label htmlFor="superfan_discount">Superfan Discount (%)</Label>
+                                <Input
+                                  id="superfan_discount"
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  step="0.1"
+                                  value={formData.superfan_discount_percentage}
+                                  onChange={(e) => setFormData({ 
+                                    ...formData, 
+                                    superfan_discount_percentage: parseFloat(e.target.value || '25.0')
+                                  })}
+                                />
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Instant discounts for earned tier holders. Higher tiers get bigger discounts.
+                            </p>
+                          </div>
+                          
+                          {/* Campaign preview */}
+                          {formData.campaign_funding_goal_cents > 0 && formData.upgrade_price_cents > 0 && (
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                              <h4 className="font-medium text-blue-900 mb-2">Campaign Preview</h4>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-blue-700">Resident pays:</span>
+                                  <span className="font-medium text-blue-600">
+                                    ${((formData.upgrade_price_cents * (100 - formData.resident_discount_percentage)) / 10000).toFixed(0)} 
+                                    (${formData.resident_discount_percentage}% off)
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-blue-700">Headliner pays:</span>
+                                  <span className="font-medium text-blue-600">
+                                    ${((formData.upgrade_price_cents * (100 - formData.headliner_discount_percentage)) / 10000).toFixed(0)} 
+                                    (${formData.headliner_discount_percentage}% off)
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-blue-700">Superfan pays:</span>
+                                  <span className="font-medium text-blue-600">
+                                    ${((formData.upgrade_price_cents * (100 - formData.superfan_discount_percentage)) / 10000).toFixed(0)} 
+                                    (${formData.superfan_discount_percentage}% off)
+                                  </span>
+                                </div>
+                                <div className="pt-2 border-t border-blue-200 flex justify-between">
+                                  <span className="text-blue-700 font-medium">Campaign gets:</span>
+                                  <span className="font-bold text-blue-600">${(formData.upgrade_price_cents / 100).toFixed(0)} (full value)</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </TabsContent>
                   

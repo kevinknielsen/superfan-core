@@ -81,7 +81,7 @@ export async function GET(
 
     const quarter = currentQuarter?.[0] || computeCurrentQuarter();
 
-    // Get all available tier rewards for this club with club info
+    // Get all available tier rewards for this club with club info and campaign data
     const { data: availableRewards, error: rewardsError } = await supabaseAny
       .from('tier_rewards')
       .select(`
@@ -101,6 +101,16 @@ export async function GET(
         metadata,
         is_active,
         created_at,
+        campaign_id,
+        campaign_title,
+        campaign_funding_goal_cents,
+        campaign_current_funding_cents,
+        campaign_deadline,
+        campaign_status,
+        is_campaign_tier,
+        resident_discount_percentage,
+        headliner_discount_percentage,
+        superfan_discount_percentage,
         clubs!inner(
           id,
           name,
@@ -143,6 +153,44 @@ export async function GET(
     const getTierRank = (tier: string): number => {
       const ranks = { cadet: 0, resident: 1, headliner: 2, superfan: 3 };
       return ranks[tier as keyof typeof ranks] || 0;
+    };
+
+    // Helper function to calculate user discount
+    const calculateUserDiscount = (userTier: string, rewardTier: string, reward: any): number => {
+      const userRank = getTierRank(userTier);
+      const rewardRank = getTierRank(rewardTier);
+      
+      // Only discount if user tier >= reward tier
+      if (userRank >= rewardRank) {
+        switch (userTier) {
+          case 'resident': 
+            return Math.round(reward.upgrade_price_cents * (reward.resident_discount_percentage || 10.0) / 100);
+          case 'headliner': 
+            return Math.round(reward.upgrade_price_cents * (reward.headliner_discount_percentage || 15.0) / 100);
+          case 'superfan': 
+            return Math.round(reward.upgrade_price_cents * (reward.superfan_discount_percentage || 25.0) / 100);
+          default: return 0;
+        }
+      }
+      return 0;
+    };
+
+    // Helper function to get campaign progress
+    const getCampaignProgress = (reward: any) => {
+      if (!reward.campaign_id || !reward.campaign_funding_goal_cents) return null;
+      
+      const fundingPercentage = reward.campaign_funding_goal_cents > 0 ? 
+        (reward.campaign_current_funding_cents / reward.campaign_funding_goal_cents * 100) : 0;
+        
+      const secondsRemaining = reward.campaign_deadline ? 
+        Math.max(0, Math.floor((new Date(reward.campaign_deadline).getTime() - Date.now()) / 1000)) : 0;
+        
+      return {
+        funding_percentage: Math.round(fundingPercentage * 100) / 100,
+        seconds_remaining: secondsRemaining,
+        current_funding_cents: reward.campaign_current_funding_cents,
+        funding_goal_cents: reward.campaign_funding_goal_cents
+      };
     };
 
     // Helper function to check reward availability
@@ -225,6 +273,15 @@ export async function GET(
         currentStatus = availability.reason;
       }
 
+      // Calculate discount for this user
+      const userDiscount = calculateUserDiscount(userQualification.earned_tier, reward.tier, reward);
+      const finalPrice = Math.max(0, reward.upgrade_price_cents - userDiscount);
+      const discountPercentage = userDiscount > 0 ? 
+        Math.round((userDiscount / reward.upgrade_price_cents) * 100) : 0;
+      
+      // Get campaign progress if applicable
+      const campaignProgress = getCampaignProgress(reward);
+
       return {
         id: reward.id,
         title: reward.title,
@@ -233,8 +290,26 @@ export async function GET(
         tier: reward.tier,
         user_can_claim_free: canClaimFree,
         claim_options: claimOptions,
-        tier_boost_price_cents: reward.upgrade_price_cents, // Same price for both boost and direct unlock
+        tier_boost_price_cents: reward.upgrade_price_cents, // Keep existing for compatibility
         direct_unlock_price_cents: reward.upgrade_price_cents,
+        
+        // Enhanced with discount information
+        upgrade_price_cents: reward.upgrade_price_cents, // Full price
+        user_discount_eligible: userDiscount > 0,
+        user_discount_amount_cents: userDiscount,
+        user_discount_percentage: discountPercentage,
+        user_final_price_cents: finalPrice,
+        discount_description: userDiscount > 0 ? 
+          `Your ${userQualification.earned_tier} status saves you $${(userDiscount/100).toFixed(0)} (${discountPercentage}%)` : '',
+          
+        // Campaign context
+        campaign_id: reward.campaign_id,
+        campaign_title: reward.campaign_title,
+        campaign_status: reward.campaign_status,
+        is_campaign_tier: reward.is_campaign_tier,
+        campaign_progress: campaignProgress,
+        
+        // Existing fields
         inventory_status: inventoryStatus,
         current_status: currentStatus,
         available_at: availability.available_at,
