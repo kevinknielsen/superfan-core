@@ -176,10 +176,34 @@ export async function POST(
 }
 
 function getDiscountPercentage(userTier: string, tierReward: any): number {
+  // Helper function to get tier rank for comparison
+  const getTierRank = (tier: string): number => {
+    const ranks = { cadet: 0, resident: 1, headliner: 2, superfan: 3 };
+    return ranks[tier as keyof typeof ranks] || 0;
+  };
+
+  const userRank = getTierRank(userTier);
+  const rewardRank = getTierRank(tierReward.tier);
+  
+  // Only apply discount if user tier >= reward tier
+  if (userRank < rewardRank) {
+    return 0;
+  }
+
   switch (userTier) {
-    case 'resident': return tierReward.resident_discount_percentage || 10.0;
-    case 'headliner': return tierReward.headliner_discount_percentage || 15.0;
-    case 'superfan': return tierReward.superfan_discount_percentage || 25.0;
-    default: return 0;
+    case 'resident': 
+      return tierReward.resident_discount_percentage !== null && tierReward.resident_discount_percentage !== undefined 
+        ? Number(tierReward.resident_discount_percentage) 
+        : 10.0;
+    case 'headliner': 
+      return tierReward.headliner_discount_percentage !== null && tierReward.headliner_discount_percentage !== undefined 
+        ? Number(tierReward.headliner_discount_percentage) 
+        : 15.0;
+    case 'superfan': 
+      return tierReward.superfan_discount_percentage !== null && tierReward.superfan_discount_percentage !== undefined 
+        ? Number(tierReward.superfan_discount_percentage) 
+        : 25.0;
+    default: 
+      return 0;
   }
 }

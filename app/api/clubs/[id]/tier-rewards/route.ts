@@ -176,11 +176,17 @@ export async function GET(
         const discountPercentage = (() => {
           switch (userTier) {
             case 'resident': 
-              return Number(reward.resident_discount_percentage) || 10.0;
+              return reward.resident_discount_percentage !== null && reward.resident_discount_percentage !== undefined 
+                ? Number(reward.resident_discount_percentage) 
+                : 10.0;
             case 'headliner': 
-              return Number(reward.headliner_discount_percentage) || 15.0;
+              return reward.headliner_discount_percentage !== null && reward.headliner_discount_percentage !== undefined 
+                ? Number(reward.headliner_discount_percentage) 
+                : 15.0;
             case 'superfan': 
-              return Number(reward.superfan_discount_percentage) || 25.0;
+              return reward.superfan_discount_percentage !== null && reward.superfan_discount_percentage !== undefined 
+                ? Number(reward.superfan_discount_percentage) 
+                : 25.0;
             default: 
               return 0;
           }

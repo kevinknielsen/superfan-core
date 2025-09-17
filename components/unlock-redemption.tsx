@@ -135,22 +135,18 @@ const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<ClubSt
 
 // Helper function to get effective price for sorting
 const getEffectivePrice = (unlock: Unlock): number => {
-  // If user has discount, use final price
-  if (unlock.user_final_price_cents !== undefined) {
-    return unlock.user_final_price_cents;
-  }
-  
-  // Fallback to upgrade price or tier boost price
-  return unlock.upgrade_price_cents || 
-         unlock.tier_boost_price_cents || 
-         unlock.direct_unlock_price_cents || 
-         0;
+  const v =
+    unlock.user_final_price_cents ??
+    unlock.upgrade_price_cents ??
+    unlock.tier_boost_price_cents ??
+    unlock.direct_unlock_price_cents ??
+    0;
+  return Number.isFinite(v) ? v : 0;
 };
 
 // Helper function to sort unlocks by price (cheapest first)
-const sortUnlocksByPrice = (unlocks: Unlock[]): Unlock[] => {
-  return unlocks.sort((a, b) => getEffectivePrice(a) - getEffectivePrice(b));
-};
+const sortUnlocksByPrice = (unlocks: Unlock[]): Unlock[] =>
+  [...unlocks].sort((a, b) => getEffectivePrice(a) - getEffectivePrice(b));
 
 
 export default function UnlockRedemption({ 
@@ -172,7 +168,6 @@ export default function UnlockRedemption({
 
   useEffect(() => {
     let active = true;
-    const controller = new AbortController();
     
     const loadDataWithAbort = async () => {
       await loadData();
@@ -183,7 +178,7 @@ export default function UnlockRedemption({
     
     return () => {
       active = false;
-      controller.abort();
+      // nothing to abort yet
     };
   }, [clubId]);
 
