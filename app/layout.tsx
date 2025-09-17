@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "./providers";
 import { inter } from "./fonts";
 import RouteGuard from "@/components/route-guard";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { headers } from "next/headers";
 
@@ -135,6 +136,7 @@ export default function RootLayout({
               {children}
             </RouteGuard>
           </Providers>
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

@@ -8,25 +8,12 @@ import type { ClubStatus } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from "@/lib/status-colors";
 
-interface CampaignData {
-  campaign_id: string;
-  campaign_title: string;
-  campaign_status: string;
-  campaign_progress: {
-    funding_percentage: number;
-    current_funding_cents: number;
-    funding_goal_cents: number;
-    seconds_remaining: number;
-  };
-}
-
 interface StatusProgressionCardProps {
   currentStatus: ClubStatus;
   currentPoints: number;
   nextStatus: ClubStatus | null;
   pointsToNext: number | null;
   statusIcon: React.ComponentType<any>;
-  campaignData?: CampaignData | null;
 }
 
 // Enhanced status icons mapping
@@ -44,7 +31,6 @@ export function StatusProgressionCard({
   nextStatus,
   pointsToNext,
   statusIcon: StatusIcon,
-  campaignData,
 }: StatusProgressionCardProps) {
   const [animatedProgress, setAnimatedProgress] = useState(0);
   const [showSparkles, setShowSparkles] = useState(false);
@@ -235,13 +221,13 @@ export function StatusProgressionCard({
                 aria-label="Status progress"
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={Math.round(animatedProgress)}
-                aria-valuetext={`${Math.round(animatedProgress)}%`}
+                aria-valuenow={Math.round(Math.max(0, Math.min(100, animatedProgress)))}
+                aria-valuetext={`${Math.round(Math.max(0, Math.min(100, animatedProgress)))}%`}
               >
                 <motion.div
                   className={`h-full bg-gradient-to-r ${getStatusGradientClass(nextStatus)} rounded-full relative`}
                   initial={{ width: 0 }}
-                  animate={{ width: `${animatedProgress}%` }}
+                  animate={{ width: `${Math.max(0, Math.min(100, animatedProgress))}%` }}
                   transition={{ duration: 1.5, ease: "easeOut" }}
                 >
                   {/* Animated shine effect */}
@@ -255,65 +241,6 @@ export function StatusProgressionCard({
             </motion.div>
           )}
 
-          {/* Campaign Progress Section */}
-          {campaignData && (
-            <motion.div 
-              className="mt-6 pt-6 border-t border-gray-700/50 space-y-3"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.7 }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                  <span className="text-gray-300 font-medium">
-                    {campaignData.campaign_title}
-                  </span>
-                </div>
-                <motion.span 
-                  className="font-semibold text-purple-400"
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 1.0, type: "spring", stiffness: 200 }}
-                >
-                  {Math.round(campaignData.campaign_progress.funding_percentage)}%
-                </motion.span>
-              </div>
-
-              <div
-                className="w-full h-3 bg-gray-700/50 rounded-full overflow-hidden"
-                role="progressbar"
-                aria-label="Campaign progress"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(campaignData.campaign_progress.funding_percentage)}
-                aria-valuetext={`${Math.round(campaignData.campaign_progress.funding_percentage)}%`}
-              >
-                <motion.div
-                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full relative"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${campaignData.campaign_progress.funding_percentage}%` }}
-                  transition={{ duration: 1.5, ease: "easeOut", delay: 0.8 }}
-                >
-                  {/* Animated shine effect */}
-                  <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                    animate={{ x: ['-100%', '100%'] }}
-                    transition={{ duration: 2, repeat: Infinity, repeatDelay: 4 }}
-                  />
-                </motion.div>
-              </div>
-
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>
-                  ${(campaignData.campaign_progress.current_funding_cents / 100).toLocaleString()} raised
-                </span>
-                <span>
-                  ${(campaignData.campaign_progress.funding_goal_cents / 100).toLocaleString()} goal
-                </span>
-              </div>
-            </motion.div>
-          )}
         </Card>
       </motion.div>
     </div>

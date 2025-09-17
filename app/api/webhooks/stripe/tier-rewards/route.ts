@@ -187,13 +187,10 @@ async function processCampaignTierPurchase(session: Stripe.CheckoutSession): Pro
     // Update campaign progress with FULL tier value (not discounted amount)
     if (metadata.campaign_id) {
       const { error: campaignError } = await supabaseAny
-        .from('tier_rewards')
-        .update({
-          campaign_current_funding_cents: supabaseAny.sql`
-            campaign_current_funding_cents + ${metadata.campaign_credit_cents}
-          `
-        })
-        .eq('campaign_id', metadata.campaign_id);
+        .rpc('increment_campaign_funding', {
+          p_campaign_id: metadata.campaign_id,
+          p_amount_cents: parseInt(metadata.campaign_credit_cents)
+        });
         
       if (campaignError) {
         console.error('[Tier Rewards Webhook] Failed to update campaign progress:', campaignError);
@@ -261,6 +258,116 @@ async function processPaymentIntentFailed(event: Stripe.Event): Promise<{ succes
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[Tier Rewards Webhook] Error processing payment_intent.payment_failed:', error);
+    return { success: false, error: errMsg };
+  }
+}
+
+// Process campaign failure refunds (new for campaigns MVP)
+async function processCampaignFailureRefunds(campaignId: string): Promise<{ success: boolean; error?: string; refundedCount?: number }> {
+  try {
+    console.log(`[Tier Rewards Webhook] Processing campaign failure refunds for campaign: ${campaignId}`);
+    
+    // Get all paid participants for this campaign that haven't been refunded
+    const { data: participants, error: participantsError } = await supabaseAny
+      .from('reward_claims')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .eq('claim_method', 'upgrade_purchased')
+      .eq('refund_status', 'none');
+      
+    if (participantsError) {
+      console.error('[Tier Rewards Webhook] Error fetching campaign participants:', participantsError);
+      return { success: false, error: `Database error: ${participantsError.message}` };
+    }
+    
+    if (!participants || participants.length === 0) {
+      console.log(`[Tier Rewards Webhook] No participants found for campaign ${campaignId}`);
+      return { success: true, refundedCount: 0 };
+    }
+    
+    const stripe = getStripe();
+    let refundedCount = 0;
+    const errors: string[] = [];
+    
+    // Process refunds for each participant
+    for (const participant of participants) {
+      try {
+        // Create Stripe refund with idempotency
+        const refund = await stripe.refunds.create({
+          payment_intent: participant.stripe_payment_intent_id,
+          amount: participant.paid_price_cents, // Refund what they actually paid
+          reason: 'requested_by_customer',
+          metadata: {
+            type: 'campaign_failure_refund',
+            campaign_id: campaignId,
+            participation_id: participant.id
+          }
+        }, {
+          idempotencyKey: `refund_${participant.id}` // Prevent double refunds
+        });
+        
+        // Update refund status
+        const { error: updateError } = await supabaseAny
+          .from('reward_claims')
+          .update({
+            refund_status: 'processed',
+            refunded_at: new Date().toISOString(),
+            stripe_refund_id: refund.id
+          })
+          .eq('id', participant.id);
+          
+        if (updateError) {
+          console.error(`[Tier Rewards Webhook] Failed to update refund status for participant ${participant.id}:`, updateError);
+          errors.push(`Failed to update refund status for participant ${participant.id}`);
+        } else {
+          refundedCount++;
+          console.log(`[Tier Rewards Webhook] Refunded $${participant.paid_price_cents/100} to user ${participant.user_id}`);
+        }
+        
+      } catch (refundError: unknown) {
+        const errMsg = refundError instanceof Error ? refundError.message : String(refundError);
+        console.error(`[Tier Rewards Webhook] Refund failed for participant ${participant.id}:`, refundError);
+        
+        // Mark refund as failed for manual review
+        await supabaseAny
+          .from('reward_claims')
+          .update({
+            refund_status: 'failed',
+            refunded_at: new Date().toISOString()
+          })
+          .eq('id', participant.id);
+          
+        errors.push(`Refund failed for participant ${participant.id}: ${errMsg}`);
+      }
+    }
+    
+    // Mark campaign as failed
+    const { error: campaignUpdateError } = await supabaseAny
+      .from('tier_rewards')
+      .update({ 
+        campaign_status: 'campaign_failed' 
+      })
+      .eq('campaign_id', campaignId);
+      
+    if (campaignUpdateError) {
+      console.error('[Tier Rewards Webhook] Failed to mark campaign as failed:', campaignUpdateError);
+      errors.push('Failed to mark campaign as failed');
+    }
+    
+    if (errors.length > 0) {
+      return { 
+        success: false, 
+        error: `Some refunds failed: ${errors.join('; ')}`,
+        refundedCount 
+      };
+    }
+    
+    console.log(`[Tier Rewards Webhook] Successfully processed ${refundedCount} refunds for campaign ${campaignId}`);
+    return { success: true, refundedCount };
+    
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Tier Rewards Webhook] Error processing campaign failure refunds:', error);
     return { success: false, error: errMsg };
   }
 }

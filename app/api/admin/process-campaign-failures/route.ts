@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyUnifiedAuth } from "../../auth";
-import { supabase } from "../../supabase";
-import Stripe from 'stripe';
+import { createServiceClient } from "../../../supabase";
+import { verifyUnifiedAuth } from "../../../auth";
+import { isAdmin } from "@/lib/security.server";
+import { processCampaignRefunds } from "@/lib/campaigns/refunds";
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
-});
+export const runtime = 'nodejs';
 
-// Type assertion for enhanced tables
+// Create service client to bypass RLS for admin operations
+const supabase = createServiceClient();
 const supabaseAny = supabase as any;
 
 // Process failed campaigns and issue refunds
@@ -20,180 +19,93 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get the user to check admin status
-    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabaseAny
-      .from('users')
-      .select('id, role')
-      .eq(userColumn, auth.userId)
-      .single();
-
-    if (userError || !user || user.role !== 'admin') {
-      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    // Check if user is admin
+    if (!isAdmin(auth.userId)) {
+      return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    console.log('[Campaign Failures] Starting campaign failure processing...');
-    
+    console.log('[Campaign Failure Processor] Starting campaign failure processing...');
+
     // Get campaigns past deadline that didn't reach goal
     const { data: failedCampaigns, error: campaignsError } = await supabaseAny
       .from('v_campaign_progress')
       .select('*')
       .lt('campaign_deadline', new Date().toISOString())
       .lt('funding_percentage', 100)
-      .in('campaign_status', ['campaign_active']); // Only process active campaigns
+      .eq('computed_status', 'expired');
       
     if (campaignsError) {
-      console.error('[Campaign Failures] Error fetching failed campaigns:', campaignsError);
-      return NextResponse.json({ error: 'Failed to fetch campaigns' }, { status: 500 });
-    }
-    
-    if (!failedCampaigns || failedCampaigns.length === 0) {
-      console.log('[Campaign Failures] No failed campaigns to process');
+      console.error('[Campaign Failure Processor] Error fetching failed campaigns:', campaignsError);
       return NextResponse.json({ 
-        message: 'No failed campaigns found',
-        processed_campaigns: 0 
+        error: 'Failed to fetch campaigns', 
+        details: campaignsError.message 
+      }, { status: 500 });
+    }
+
+    if (!failedCampaigns || failedCampaigns.length === 0) {
+      console.log('[Campaign Failure Processor] No failed campaigns found');
+      return NextResponse.json({ 
+        processed_campaigns: 0,
+        message: 'No failed campaigns found' 
       });
     }
-    
-    console.log(`[Campaign Failures] Found ${failedCampaigns.length} failed campaigns to process`);
-    
-    let processedCount = 0;
-    let errorCount = 0;
-    
+
+    console.log(`[Campaign Failure Processor] Found ${failedCampaigns.length} failed campaigns`);
+
+    const results = [];
+    let totalRefunded = 0;
+    let totalErrors = 0;
+
+    // Process each failed campaign
     for (const campaign of failedCampaigns) {
-      try {
-        const result = await processCampaignFailure(campaign.campaign_id);
-        if (result.success) {
-          processedCount++;
-        } else {
-          errorCount++;
-          console.error(`[Campaign Failures] Failed to process campaign ${campaign.campaign_id}:`, result.error);
-        }
-      } catch (error) {
-        errorCount++;
-        console.error(`[Campaign Failures] Unexpected error processing campaign ${campaign.campaign_id}:`, error);
-      }
-    }
-    
-    console.log(`[Campaign Failures] Processing complete. Success: ${processedCount}, Errors: ${errorCount}`);
-    
-    return NextResponse.json({ 
-      processed_campaigns: processedCount,
-      failed_campaigns: errorCount,
-      total_campaigns: failedCampaigns.length
-    });
-
-  } catch (error) {
-    console.error('[Campaign Failures] Unexpected error:', error);
-    return NextResponse.json({ error: 'Failed to process campaign failures' }, { status: 500 });
-  }
-}
-
-async function processCampaignFailure(campaignId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    console.log(`[Campaign Failures] Processing failure for campaign ${campaignId}`);
-    
-    // Get all paid participants for this campaign
-    const { data: participants, error: participantsError } = await supabaseAny
-      .from('reward_claims')
-      .select('*')
-      .eq('campaign_id', campaignId)
-      .eq('claim_method', 'upgrade_purchased')
-      .eq('refund_status', 'none');
+      console.log(`[Campaign Failure Processor] Processing campaign: ${campaign.campaign_title} (${campaign.campaign_id})`);
       
-    if (participantsError) {
-      console.error(`[Campaign Failures] Error fetching participants for campaign ${campaignId}:`, participantsError);
-      return { success: false, error: `Failed to fetch participants: ${participantsError.message}` };
-    }
-    
-    if (!participants || participants.length === 0) {
-      console.log(`[Campaign Failures] No participants to refund for campaign ${campaignId}`);
-      
-      // Still mark campaign as failed
-      await supabaseAny
-        .from('tier_rewards')
-        .update({ campaign_status: 'campaign_failed' })
-        .eq('campaign_id', campaignId);
-        
-      return { success: true };
-    }
-    
-    console.log(`[Campaign Failures] Processing refunds for ${participants.length} participants`);
-    
-    let refundedCount = 0;
-    let refundErrorCount = 0;
-    
-    for (const participant of participants) {
       try {
-        // Create Stripe refund with idempotency
-        const refund = await stripe.refunds.create({
-          payment_intent: participant.stripe_payment_intent_id,
-          amount: participant.paid_price_cents, // Refund what they actually paid
-          reason: 'requested_by_customer',
-          metadata: {
-            type: 'campaign_failure_refund',
-            campaign_id: campaignId,
-            participation_id: participant.id,
-            user_id: participant.user_id
-          }
-        }, {
-          idempotencyKey: `refund_${participant.id}` // Prevent double refunds
+        const result = await processCampaignRefunds(campaign.campaign_id);
+        results.push({
+          campaign_id: campaign.campaign_id,
+          campaign_title: campaign.campaign_title,
+          success: result.success,
+          refunded_count: result.refundedCount || 0,
+          error: result.error
         });
         
-        // Update refund status
-        const { error: updateError } = await supabaseAny
-          .from('reward_claims')
-          .update({
-            refund_status: 'processed',
-            refunded_at: new Date().toISOString(),
-            stripe_refund_id: refund.id
-          })
-          .eq('id', participant.id);
-          
-        if (updateError) {
-          console.error(`[Campaign Failures] Failed to update refund status for participant ${participant.id}:`, updateError);
-          refundErrorCount++;
+        if (result.success) {
+          totalRefunded += result.refundedCount || 0;
         } else {
-          console.log(`[Campaign Failures] Refunded $${participant.paid_price_cents/100} to user ${participant.user_id}`);
-          refundedCount++;
+          totalErrors++;
         }
         
-      } catch (error: any) {
-        console.error(`[Campaign Failures] Refund failed for participant ${participant.id}:`, error);
+      } catch (error: unknown) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[Campaign Failure Processor] Error processing campaign ${campaign.campaign_id}:`, error);
         
-        // Mark refund as failed for manual review
-        await supabaseAny
-          .from('reward_claims')
-          .update({
-            refund_status: 'failed',
-            refunded_at: new Date().toISOString()
-          })
-          .eq('id', participant.id);
-          
-        refundErrorCount++;
+        results.push({
+          campaign_id: campaign.campaign_id,
+          campaign_title: campaign.campaign_title,
+          success: false,
+          refunded_count: 0,
+          error: errMsg
+        });
+        totalErrors++;
       }
     }
-    
-    // Mark campaign as failed
-    const { error: statusError } = await supabaseAny
-      .from('tier_rewards')
-      .update({ campaign_status: 'campaign_failed' })
-      .eq('campaign_id', campaignId);
-      
-    if (statusError) {
-      console.error(`[Campaign Failures] Failed to update campaign status for ${campaignId}:`, statusError);
-    }
-    
-    console.log(`[Campaign Failures] Campaign ${campaignId} processing complete. Refunded: ${refundedCount}, Errors: ${refundErrorCount}`);
-    
-    return { 
-      success: refundErrorCount === 0,
-      error: refundErrorCount > 0 ? `${refundErrorCount} refunds failed` : undefined
-    };
-    
+
+    console.log(`[Campaign Failure Processor] Completed processing. Refunded ${totalRefunded} participants across ${results.length} campaigns`);
+
+    return NextResponse.json({
+      processed_campaigns: results.length,
+      total_refunded: totalRefunded,
+      total_errors: totalErrors,
+      results
+    });
+
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    console.error(`[Campaign Failures] Unexpected error processing campaign ${campaignId}:`, error);
-    return { success: false, error: errMsg };
+    console.error('[Campaign Failure Processor] Unexpected error:', error);
+    return NextResponse.json({ 
+      error: 'Campaign failure processing failed',
+      details: errMsg 
+    }, { status: 500 });
   }
 }

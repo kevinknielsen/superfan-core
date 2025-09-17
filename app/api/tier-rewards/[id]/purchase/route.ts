@@ -3,6 +3,11 @@ import { verifyUnifiedAuth } from "../../../auth";
 import { supabase } from "../../../supabase";
 import Stripe from 'stripe';
 
+// Validate required environment variables
+if (!process.env.NEXT_PUBLIC_BASE_URL) {
+  throw new Error('NEXT_PUBLIC_BASE_URL environment variable is not set');
+}
+
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-06-20',
@@ -91,14 +96,20 @@ export async function POST(
       return NextResponse.json({ error: 'You have already claimed this tier' }, { status: 400 });
     }
 
+    // Validate upgrade_price_cents is valid
+    const upgradePriceCents = Number(tierReward.upgrade_price_cents);
+    if (!upgradePriceCents || upgradePriceCents <= 0 || !isFinite(upgradePriceCents)) {
+      return NextResponse.json({ error: 'Invalid tier pricing - upgrade price not set' }, { status: 400 });
+    }
+
     // Calculate percentage-based discount
     const discountPercentage = getDiscountPercentage(userTier, tierReward);
-    const discountCents = Math.round(tierReward.upgrade_price_cents * discountPercentage / 100);
-    const finalPriceCents = tierReward.upgrade_price_cents - discountCents;
+    const discountCents = Math.round(upgradePriceCents * discountPercentage / 100);
+    const finalPriceCents = Math.max(0, upgradePriceCents - discountCents);
     
-    // Validate final price is positive
-    if (finalPriceCents <= 0) {
-      return NextResponse.json({ error: 'Invalid pricing calculation' }, { status: 400 });
+    // Validate final price meets Stripe minimum (50 cents)
+    if (finalPriceCents < 50) {
+      return NextResponse.json({ error: 'Final price too low - minimum $0.50 required' }, { status: 400 });
     }
     
     // Generate stable idempotency key
@@ -120,8 +131,8 @@ export async function POST(
         },
         quantity: 1
       }],
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/cancel`,
+      success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000'}/cancel`,
       metadata: {
         type: 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,

@@ -29,6 +29,7 @@ import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
 import { formatDate } from "@/lib/utils";
 import { StatusProgressionCard } from "./status-progression-card";
+import { CampaignProgressCard } from "./campaign-progress-card";
 
 // Use compatible types with existing components
 type RedemptionData = any; // Keep flexible for now since it comes from API
@@ -77,7 +78,20 @@ export default function ClubDetailsModal({
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
-  const [campaignData, setCampaignData] = useState<any>(null);
+  
+  // Type the campaign data and clear it on club change to avoid stale UI
+  interface CampaignData {
+    campaign_id: string;
+    campaign_title: string;
+    campaign_status: string;
+    campaign_progress: {
+      funding_percentage: number;
+      current_funding_cents: number;
+      funding_goal_cents: number;
+      seconds_remaining: number;
+    };
+  }
+  const [campaignData, setCampaignData] = useState<CampaignData | null>(null);
   
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
@@ -106,6 +120,11 @@ export default function ClubDetailsModal({
   // Get unified points data - only when authenticated and has membership
   const enabled = Boolean(club.id && membership && isAuthenticated);
   const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
+
+  // Clear campaign data when switching clubs
+  useEffect(() => { 
+    setCampaignData(null); 
+  }, [club.id]);
 
   // Status calculations - use unified points data if available (now includes temporary boosts)
   const currentStatus = breakdown?.status.current || membership?.current_status || 'cadet';
@@ -403,39 +422,16 @@ export default function ClubDetailsModal({
             </div>
 
 
-            {/* Enhanced Membership Status Section - Moved to Top for Prominence */}
-            {membership != null ? (
-              <StatusProgressionCard 
-                currentStatus={currentStatus}
-                currentPoints={currentPoints}
-                nextStatus={nextStatus}
-                pointsToNext={pointsToNext}
-                statusIcon={StatusIcon}
-                campaignData={campaignData}
-              />
-            ) : (
-              <div className="mb-8">
-                <h3 className="mb-4 text-xl font-semibold">Join Club</h3>
-                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
-                  <h4 className="font-semibold text-white mb-2">Add Membership</h4>
-                  <p className="text-gray-400">
-                    Join this club to start earning points and unlocking exclusive perks
-                  </p>
-                  <button
-                    onClick={handleJoinClub}
-                    disabled={joinClubMutation.isPending}
-                    className="mt-4 w-full rounded-lg bg-primary px-4 py-3 font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {joinClubMutation.isPending ? "Joining..." : "Join Club"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Perks and Benefits Section - Grid Layout */}
+            {/* Campaign Rewards Section - Moved to Top */}
             {membership && (
               <div className="mb-8" ref={rewardsRef}>
                 <h3 className="mb-4 text-xl font-semibold">Campaign Rewards</h3>
+                
+                {/* Campaign Progress Card - Below Campaign Rewards Header */}
+                {campaignData && (
+                  <CampaignProgressCard campaignData={campaignData} />
+                )}
+                
                 <UnlockRedemption
                   clubId={club.id}
                   clubName={club.name}
@@ -456,6 +452,34 @@ export default function ClubDetailsModal({
                     setPerkDetails({ isOpen: true, unlock, redemption });
                   }}
                 />
+              </div>
+            )}
+
+            {/* Your Status Section - Moved Below Campaign Rewards */}
+            {membership != null ? (
+              <StatusProgressionCard 
+                currentStatus={currentStatus}
+                currentPoints={currentPoints}
+                nextStatus={nextStatus}
+                pointsToNext={pointsToNext}
+                statusIcon={StatusIcon}
+              />
+            ) : (
+              <div className="mb-8">
+                <h3 className="mb-4 text-xl font-semibold">Join Club</h3>
+                <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+                  <h4 className="font-semibold text-white mb-2">Add Membership</h4>
+                  <p className="text-gray-400">
+                    Join this club to start earning points and unlocking exclusive perks
+                  </p>
+                  <button
+                    onClick={handleJoinClub}
+                    disabled={joinClubMutation.isPending}
+                    className="mt-4 w-full rounded-lg bg-primary px-4 py-3 font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {joinClubMutation.isPending ? "Joining..." : "Join Club"}
+                  </button>
+                </div>
               </div>
             )}
 

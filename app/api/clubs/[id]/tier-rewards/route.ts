@@ -160,17 +160,28 @@ export async function GET(
       const userRank = getTierRank(userTier);
       const rewardRank = getTierRank(rewardTier);
       
+      // Guard against null/undefined/invalid upgrade_price_cents
+      const upgradePriceCents = Number(reward.upgrade_price_cents);
+      if (!upgradePriceCents || upgradePriceCents <= 0 || !isFinite(upgradePriceCents)) {
+        return 0;
+      }
+      
       // Only discount if user tier >= reward tier
       if (userRank >= rewardRank) {
-        switch (userTier) {
-          case 'resident': 
-            return Math.round(reward.upgrade_price_cents * (reward.resident_discount_percentage || 10.0) / 100);
-          case 'headliner': 
-            return Math.round(reward.upgrade_price_cents * (reward.headliner_discount_percentage || 15.0) / 100);
-          case 'superfan': 
-            return Math.round(reward.upgrade_price_cents * (reward.superfan_discount_percentage || 25.0) / 100);
-          default: return 0;
-        }
+        const discountPercentage = (() => {
+          switch (userTier) {
+            case 'resident': 
+              return Number(reward.resident_discount_percentage) || 10.0;
+            case 'headliner': 
+              return Number(reward.headliner_discount_percentage) || 15.0;
+            case 'superfan': 
+              return Number(reward.superfan_discount_percentage) || 25.0;
+            default: 
+              return 0;
+          }
+        })();
+        
+        return Math.round(upgradePriceCents * discountPercentage / 100);
       }
       return 0;
     };

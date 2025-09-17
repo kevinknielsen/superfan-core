@@ -75,6 +75,7 @@ interface TierRewardFields {
   claim_options?: ClaimOption[];
   tier_boost_price_cents?: number;
   direct_unlock_price_cents?: number;
+  upgrade_price_cents?: number;
   inventory_status?: string;
   metadata?: Record<string, any>;
   club_info?: {
@@ -628,11 +629,11 @@ export default function UnlockRedemption({
                   {unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
                     <div className="mb-2 text-xs">
                       <div className="flex items-center justify-between text-white/60">
-                        <span className="line-through">${(unlock.upgrade_price_cents / 100).toFixed(0)}</span>
+                        <span className="line-through">${((unlock.upgrade_price_cents || 0) / 100).toFixed(0)}</span>
                         <span className="text-green-400 font-medium">Save ${(unlock.user_discount_amount_cents / 100).toFixed(0)}</span>
                       </div>
                       <div className="text-green-400 font-bold text-sm">
-                        ${((unlock.upgrade_price_cents - unlock.user_discount_amount_cents) / 100).toFixed(0)}
+                        ${(((unlock.upgrade_price_cents || 0) - unlock.user_discount_amount_cents) / 100).toFixed(0)}
                       </div>
                     </div>
                   )}
@@ -717,7 +718,7 @@ export default function UnlockRedemption({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-green-700 line-through">
-                        ${(selectedUnlock.upgrade_price_cents / 100).toFixed(0)}
+                        ${((selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)}
                       </span>
                       <span className="text-lg font-bold text-green-600">
                         ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)}
@@ -728,7 +729,7 @@ export default function UnlockRedemption({
                     </div>
                     {selectedUnlock.campaign_id && (
                       <div className="text-xs text-green-700">
-                        Your ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)} payment adds ${(selectedUnlock.upgrade_price_cents / 100).toFixed(0)} to campaign progress
+                        Your ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)} payment adds ${((selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} to campaign progress
                       </div>
                     )}
                   </div>

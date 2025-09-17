@@ -93,6 +93,17 @@ interface TierReward {
   total_upgrade_revenue_cents?: number;
   current_status?: string;
   inventory_status?: string;
+  // Campaign fields
+  campaign_id?: string;
+  campaign_title?: string;
+  campaign_funding_goal_cents?: number;
+  campaign_current_funding_cents?: number;
+  campaign_deadline?: string;
+  campaign_status?: 'single_reward' | 'campaign_active' | 'campaign_funded' | 'campaign_failed';
+  is_campaign_tier?: boolean;
+  resident_discount_percentage?: number;
+  headliner_discount_percentage?: number;
+  superfan_discount_percentage?: number;
 }
 
 const REWARD_TYPES = [
@@ -212,6 +223,11 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
       }
     } catch (error) {
       console.error('Error loading existing campaigns:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load existing campaigns",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1277,34 +1293,34 @@ export default function TierRewardManagement({ onStatsUpdate }: TierRewardManage
                           </div>
                           
                           {/* Campaign preview */}
-                          {formData.campaign_funding_goal_cents > 0 && formData.upgrade_price_cents > 0 && (
+                          {formData.campaign_funding_goal_cents > 0 && formData.artist_cost_estimate_cents > 0 && (
                             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                               <h4 className="font-medium text-blue-900 mb-2">Campaign Preview</h4>
                               <div className="space-y-2 text-sm">
                                 <div className="flex justify-between">
                                   <span className="text-blue-700">Resident pays:</span>
                                   <span className="font-medium text-blue-600">
-                                    ${((formData.upgrade_price_cents * (100 - formData.resident_discount_percentage)) / 10000).toFixed(0)} 
+                                    ${((formData.artist_cost_estimate_cents * (100 - formData.resident_discount_percentage)) / 10000).toFixed(0)} 
                                     (${formData.resident_discount_percentage}% off)
                                   </span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-blue-700">Headliner pays:</span>
                                   <span className="font-medium text-blue-600">
-                                    ${((formData.upgrade_price_cents * (100 - formData.headliner_discount_percentage)) / 10000).toFixed(0)} 
+                                    ${((formData.artist_cost_estimate_cents * (100 - formData.headliner_discount_percentage)) / 10000).toFixed(0)} 
                                     (${formData.headliner_discount_percentage}% off)
                                   </span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-blue-700">Superfan pays:</span>
                                   <span className="font-medium text-blue-600">
-                                    ${((formData.upgrade_price_cents * (100 - formData.superfan_discount_percentage)) / 10000).toFixed(0)} 
+                                    ${((formData.artist_cost_estimate_cents * (100 - formData.superfan_discount_percentage)) / 10000).toFixed(0)} 
                                     (${formData.superfan_discount_percentage}% off)
                                   </span>
                                 </div>
                                 <div className="pt-2 border-t border-blue-200 flex justify-between">
                                   <span className="text-blue-700 font-medium">Campaign gets:</span>
-                                  <span className="font-bold text-blue-600">${(formData.upgrade_price_cents / 100).toFixed(0)} (full value)</span>
+                                  <span className="font-bold text-blue-600">${(formData.artist_cost_estimate_cents / 100).toFixed(0)} (full value)</span>
                                 </div>
                               </div>
                             </div>
