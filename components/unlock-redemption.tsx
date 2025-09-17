@@ -182,7 +182,7 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        const tierRewardsData = await response.json();
+        const tierRewardsData = await response.json() as any;
         
         // Convert tier rewards to unlock format for existing UI + campaign fields
         const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: any) => ({
@@ -240,11 +240,30 @@ export default function UnlockRedemption({
           redeemed_at: claim.claimed_at
         }));
 
-        setUnlocks(convertedUnlocks);
+        // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
+        const sortedUnlocks = convertedUnlocks.sort((a: Unlock, b: Unlock) => {
+          // Helper function to get the effective price for sorting
+          const getEffectivePrice = (unlock: Unlock) => {
+            // If user has discount, use final price
+            if (unlock.user_final_price_cents !== undefined) {
+              return unlock.user_final_price_cents;
+            }
+            
+            // Fallback to upgrade price or tier boost price
+            return unlock.upgrade_price_cents || unlock.tier_boost_price_cents || unlock.direct_unlock_price_cents || 0;
+          };
+          
+          const priceA = getEffectivePrice(a);
+          const priceB = getEffectivePrice(b);
+          
+          return priceA - priceB;
+        });
+
+        setUnlocks(sortedUnlocks);
         setRedemptions(convertedRedemptions);
         
         // Extract campaign data for parent component
-        const campaignTier = convertedUnlocks.find(unlock => unlock.is_campaign_tier && unlock.campaign_progress);
+        const campaignTier = convertedUnlocks.find((unlock: Unlock) => unlock.is_campaign_tier && unlock.campaign_progress);
         
         if (campaignTier && onCampaignDataChange) {
           onCampaignDataChange({
@@ -269,11 +288,12 @@ export default function UnlockRedemption({
   };
 
   const isUnlockAvailable = (unlock: Unlock) => {
-    // For tier rewards, check if user can claim free or has upgrade options
+    // Campaign MVP: Check if user has upgrade options (no free claims)
     if (unlock.user_can_claim_free !== undefined) {
       const notSoldOut = unlock.inventory_status !== 'sold_out' && unlock.inventory_status !== 'unavailable';
       const isActive = unlock.is_active !== false;
-      return isActive && notSoldOut && (unlock.user_can_claim_free || hasClaimOptions(unlock));
+      // Only available if has claim options (discounted pricing)
+      return isActive && notSoldOut && hasClaimOptions(unlock);
     }
     
     // Fallback to original logic for backward compatibility
@@ -340,8 +360,8 @@ export default function UnlockRedemption({
 
 
   const handleRedeem = async (unlock: Unlock) => {
-    // Check if this is a tier reward with upgrade options
-    if (!unlock.user_can_claim_free && hasClaimOptions(unlock)) {
+    // Campaign MVP: Always handle as upgrade purchase (no free claims)
+    if (hasClaimOptions(unlock)) {
       // Handle upgrade purchase flow
       handleUpgradePurchase(unlock);
       return;
@@ -477,7 +497,7 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
-          const result = await response.json();
+          const result = await response.json() as any;
           const url = result?.stripe_session_url;
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
@@ -493,7 +513,7 @@ export default function UnlockRedemption({
           
           window.location.href = url;
         } else {
-          const errorData = await response.json();
+          const errorData = await response.json() as any;
           throw new Error(errorData.error || 'Failed to start purchase');
         }
       } else {
@@ -514,14 +534,14 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
-          const result = await response.json();
+          const result = await response.json() as any;
           const url = result?.stripe_session_url;
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
           }
           window.location.href = url;
         } else {
-          const errorData = await response.json();
+          const errorData = await response.json() as any;
           throw new Error(errorData.error || 'Failed to start upgrade purchase');
         }
       }
@@ -620,9 +640,13 @@ export default function UnlockRedemption({
                     {unlock.title}
                   </h4>
                   
-                  {/* Requirements info */}
+                  {/* Discount info - Campaign MVP */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
-                    Requires {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
+                    {unlock.user_discount_eligible && unlock.user_discount_percentage ? (
+                      `${unlock.user_discount_percentage}% ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)} Discount`
+                    ) : (
+                      `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
+                    )}
                   </div>
                   
                   {/* Discount pricing display */}
@@ -661,21 +685,20 @@ export default function UnlockRedemption({
                     {isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
                       : isAvailable 
-                        ? unlock.user_can_claim_free 
-                          ? 'Claim Free'
-                          : (() => {
-                              // Enhanced button text with discount info
-                              if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
-                                return `Join Tier - $${(unlock.user_final_price_cents / 100).toFixed(0)}`;
-                              } else {
-                                const purchaseType = getClaimOptionsPurchaseType(unlock);
-                                const price = purchaseType === 'direct_unlock' 
-                                  ? unlock.direct_unlock_price_cents 
-                                  : unlock.tier_boost_price_cents;
-                                const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
-                                return `${verb} for ${formatCurrencyOrFree(price)}`;
-                              }
-                            })()
+                        ? (() => {
+                            // Campaign MVP: Always show discounted pricing, no free claims
+                            if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
+                              return `Commit - $${(unlock.user_final_price_cents / 100).toFixed(0)}`;
+                            } else {
+                              // Fallback to upgrade pricing if no discount available
+                              const purchaseType = getClaimOptionsPurchaseType(unlock);
+                              const price = purchaseType === 'direct_unlock' 
+                                ? unlock.direct_unlock_price_cents 
+                                : unlock.tier_boost_price_cents;
+                              const verb = purchaseType === 'direct_unlock' ? 'Commit' : 'Commit';
+                              return `${verb} ${formatCurrencyOrFree(price)}`;
+                            }
+                          })()
                         : 'Locked'
                     }
                   </button>
@@ -812,18 +835,18 @@ export default function UnlockRedemption({
                   disabled={!isUnlockAvailable(selectedUnlock) || isRedeeming}
                 >
                   {isRedeeming ? 'Processing...' : 
-                   selectedUnlock.user_can_claim_free ? 'Claim Free' :
                    (() => {
-                     // Enhanced button text with discount info
+                     // Campaign MVP: Always show discounted pricing, no free claims
                      if (selectedUnlock.user_discount_eligible && selectedUnlock.user_final_price_cents !== undefined) {
-                       return `Join Tier - $${(selectedUnlock.user_final_price_cents / 100).toFixed(0)}`;
+                       return `Commit - $${(selectedUnlock.user_final_price_cents / 100).toFixed(0)}`;
                      } else {
+                       // Fallback to upgrade pricing if no discount available
                        const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
                        const price = purchaseType === 'direct_unlock' 
                          ? selectedUnlock.direct_unlock_price_cents 
                          : selectedUnlock.tier_boost_price_cents;
-                       const verb = purchaseType === 'direct_unlock' ? 'Buy' : 'Boost';
-                       return `${verb} for ${formatCurrencyOrFree(price)}`;
+                       const verb = purchaseType === 'direct_unlock' ? 'Commit' : 'Commit';
+                       return `${verb} ${formatCurrencyOrFree(price)}`;
                      }
                    })()
                   }
