@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
+import type { CampaignData } from "@/types/campaign.types";
 import { getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
@@ -79,18 +80,7 @@ export default function ClubDetailsModal({
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
   
-  // Type the campaign data and clear it on club change to avoid stale UI
-  interface CampaignData {
-    campaign_id: string;
-    campaign_title: string;
-    campaign_status: string;
-    campaign_progress: {
-      funding_percentage: number;
-      current_funding_cents: number;
-      goal_funding_cents: number;
-      seconds_remaining: number;
-    };
-  }
+  // Clear campaign data on club change to avoid stale UI
   const [campaignData, setCampaignData] = useState<CampaignData | null>(null);
   
   const modalRef = useRef<HTMLDivElement>(null);

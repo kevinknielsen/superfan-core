@@ -3,18 +3,7 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Play, CheckCircle, ArrowRight } from "lucide-react";
-
-interface CampaignData {
-  campaign_id: string;
-  campaign_title: string;
-  campaign_status: string;
-  campaign_progress: {
-    funding_percentage: number;
-    current_funding_cents: number;
-    goal_funding_cents: number;
-    seconds_remaining: number;
-  };
-}
+import type { CampaignData } from "@/types/campaign.types";
 
 interface CampaignProgressCardProps {
   campaignData: CampaignData;
@@ -30,15 +19,13 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
   const remainingCents = Math.max(0, goalCents - currentCents);
   const remainingAmount = usd0.format(remainingCents / 100);
   
-  // Debug logging for goal data
-  console.log('[Campaign Progress Debug]', {
-    campaign_title: campaignData.campaign_title,
-    goal_funding_cents: campaignData.campaign_progress.goal_funding_cents,
-    current_funding_cents: campaignData.campaign_progress.current_funding_cents,
-    funding_percentage: campaignData.campaign_progress.funding_percentage,
-    goalCents,
-    currentCents
-  });
+  // Debug logging for goal data (development only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Campaign Progress Debug]', {
+      campaign_title: campaignData.campaign_title,
+      funding_percentage: campaignData.campaign_progress.funding_percentage
+    });
+  }
 
   return (
     <motion.div 

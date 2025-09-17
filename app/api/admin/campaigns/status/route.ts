@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
           });
         }
         
-        const stats = refundStatsByCampaign.get(claim.campaign_id)!;
+        const stats = refundStatsByCampaign.get(claim.campaign_id);
+        if (!stats) continue; // Type guard for safety
         stats.total_participants++;
         
         switch (claim.refund_status) {

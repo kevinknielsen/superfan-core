@@ -60,6 +60,11 @@ export async function GET(
       has_active_boost: false,
       quarterly_free_used: false
     };
+    
+    // Debug logging for user qualification (development only)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[User Qualification Debug] User: ${actualUserId}, Club: ${clubId}, Earned Tier: ${userQualification.earned_tier}, Effective Tier: ${userQualification.effective_tier}, Points: ${userQualification.current_points}`);
+    }
 
     // Get current quarter info
     const { data: currentQuarter, error: quarterError } = await supabaseAny
@@ -200,7 +205,7 @@ export async function GET(
         funding_percentage: Math.round(fundingPercentage * 100) / 100,
         seconds_remaining: secondsRemaining,
         current_funding_cents: reward.campaign_current_funding_cents,
-        funding_goal_cents: reward.campaign_funding_goal_cents
+        goal_funding_cents: reward.campaign_funding_goal_cents
       };
     };
 
@@ -241,18 +246,11 @@ export async function GET(
       const alreadyClaimed = userClaims?.some(claim => claim.reward_id === reward.id);
       const availability = checkRewardAvailability(reward);
       
-      // Determine if user can claim for free
-      const canClaimFree = !alreadyClaimed && 
-                          userTierRank >= rewardTierRank && 
-                          !userQualification.quarterly_free_used &&
-                          availability.available;
-
-      // Determine available claim options
-      const claimOptions = [];
+      // TODO: Re-enable free claims post-MVP based on quarterly allowance
+      const canClaimFree = false; // Disabled for Campaign MVP
       
-      if (canClaimFree) {
-        claimOptions.push('free_claim');
-      }
+      // Determine available claim options - only purchase options
+      const claimOptions = [];
       
       if (!alreadyClaimed && availability.available) {
         // Can purchase tier boost if not already at required tier through earned points
@@ -260,7 +258,7 @@ export async function GET(
           claimOptions.push('tier_boost');
         }
         
-        // Can always purchase direct unlock
+        // Can always purchase direct unlock (with discount if eligible)
         if (reward.upgrade_price_cents && reward.upgrade_price_cents > 0) {
           claimOptions.push('direct_unlock');
         }
@@ -284,11 +282,16 @@ export async function GET(
         currentStatus = availability.reason;
       }
 
-      // Calculate discount for this user
-      const userDiscount = calculateUserDiscount(userQualification.earned_tier, reward.tier, reward);
+      // Calculate discount for this user - use effective_tier for discounts
+      const userDiscount = calculateUserDiscount(userQualification.effective_tier, reward.tier, reward);
       const finalPrice = Math.max(0, reward.upgrade_price_cents - userDiscount);
       const discountPercentage = userDiscount > 0 ? 
         Math.round((userDiscount / reward.upgrade_price_cents) * 100) : 0;
+      
+      // Debug logging for discount calculation (development only)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Discount Debug] Reward: ${reward.title}, Earned Tier: ${userQualification.earned_tier}, Effective Tier: ${userQualification.effective_tier}, Reward Tier: ${reward.tier}, Discount: ${userDiscount}, Percentage: ${discountPercentage}`);
+      }
       
       // Get campaign progress if applicable
       const campaignProgress = getCampaignProgress(reward);

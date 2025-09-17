@@ -34,6 +34,7 @@ import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
+import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
 
 // Helper to get current quarter end date in UTC
 const getQuarterEndDate = () => {
@@ -132,6 +133,25 @@ import type { ClubStatus } from "@/types/club.types";
 // Prevent mutation and improve inference
 const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<ClubStatus, number>>;
 
+// Helper function to get effective price for sorting
+const getEffectivePrice = (unlock: Unlock): number => {
+  // If user has discount, use final price
+  if (unlock.user_final_price_cents !== undefined) {
+    return unlock.user_final_price_cents;
+  }
+  
+  // Fallback to upgrade price or tier boost price
+  return unlock.upgrade_price_cents || 
+         unlock.tier_boost_price_cents || 
+         unlock.direct_unlock_price_cents || 
+         0;
+};
+
+// Helper function to sort unlocks by price (cheapest first)
+const sortUnlocksByPrice = (unlocks: Unlock[]): Unlock[] => {
+  return unlocks.sort((a, b) => getEffectivePrice(a) - getEffectivePrice(b));
+};
+
 
 export default function UnlockRedemption({ 
   clubId, 
@@ -182,10 +202,10 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        const tierRewardsData = await response.json() as any;
+        const tierRewardsData = await response.json() as TierRewardsResponse;
         
         // Convert tier rewards to unlock format for existing UI + campaign fields
-        const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: any) => ({
+        const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: TierReward) => ({
           id: reward.id,
           club_id: clubId,
           title: reward.title,
@@ -226,7 +246,7 @@ export default function UnlockRedemption({
         }));
         
         // Convert claimed rewards to redemption format
-        const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: any) => ({
+        const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: ClaimedReward) => ({
           id: claim.id,
           unlock_id: claim.reward_id,
           user_id: 'current_user',
@@ -241,23 +261,7 @@ export default function UnlockRedemption({
         }));
 
         // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
-        const sortedUnlocks = convertedUnlocks.sort((a: Unlock, b: Unlock) => {
-          // Helper function to get the effective price for sorting
-          const getEffectivePrice = (unlock: Unlock) => {
-            // If user has discount, use final price
-            if (unlock.user_final_price_cents !== undefined) {
-              return unlock.user_final_price_cents;
-            }
-            
-            // Fallback to upgrade price or tier boost price
-            return unlock.upgrade_price_cents || unlock.tier_boost_price_cents || unlock.direct_unlock_price_cents || 0;
-          };
-          
-          const priceA = getEffectivePrice(a);
-          const priceB = getEffectivePrice(b);
-          
-          return priceA - priceB;
-        });
+        const sortedUnlocks = sortUnlocksByPrice(convertedUnlocks);
 
         setUnlocks(sortedUnlocks);
         setRedemptions(convertedRedemptions);
@@ -497,7 +501,7 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
-          const result = await response.json() as any;
+          const result = await response.json() as PurchaseResponse;
           const url = result?.stripe_session_url;
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
@@ -513,7 +517,7 @@ export default function UnlockRedemption({
           
           window.location.href = url;
         } else {
-          const errorData = await response.json() as any;
+          const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start purchase');
         }
       } else {
@@ -534,14 +538,14 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
-          const result = await response.json() as any;
+          const result = await response.json() as { stripe_session_url?: string };
           const url = result?.stripe_session_url;
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
           }
           window.location.href = url;
         } else {
-          const errorData = await response.json() as any;
+          const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start upgrade purchase');
         }
       }
@@ -598,14 +602,8 @@ export default function UnlockRedemption({
                   {/* Top badges */}
                   <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
                     
-                    {/* Status/Discount badge */}
+                    {/* Status badge */}
                     <div className="flex flex-col gap-1 items-end">
-                      {unlock.user_discount_eligible && unlock.user_discount_percentage && (
-                        <Badge variant="default" className="bg-green-600/90 backdrop-blur-sm text-xs">
-                          {unlock.user_discount_percentage}% off
-                        </Badge>
-                      )}
-                      
                       {isUnlockRedeemed(unlock) ? (
                         <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
                       ) : (
@@ -643,7 +641,7 @@ export default function UnlockRedemption({
                   {/* Discount info - Campaign MVP */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
                     {unlock.user_discount_eligible && unlock.user_discount_percentage ? (
-                      `${unlock.user_discount_percentage}% ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)} Discount`
+                      `${unlock.user_discount_percentage}% Discount`
                     ) : (
                       `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
                     )}
@@ -688,7 +686,7 @@ export default function UnlockRedemption({
                         ? (() => {
                             // Campaign MVP: Always show discounted pricing, no free claims
                             if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
-                              return `Commit - $${(unlock.user_final_price_cents / 100).toFixed(0)}`;
+                              return `Commit $${(unlock.user_final_price_cents / 100).toFixed(0)}`;
                             } else {
                               // Fallback to upgrade pricing if no discount available
                               const purchaseType = getClaimOptionsPurchaseType(unlock);
@@ -739,13 +737,8 @@ export default function UnlockRedemption({
                     <span className="font-medium text-green-900">Your Status Discount</span>
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-green-700 line-through">
-                        ${((selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)}
-                      </span>
-                      <span className="text-lg font-bold text-green-600">
-                        ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)}
-                      </span>
+                    <div className="text-lg font-bold text-green-600">
+                      ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)}
                     </div>
                     <div className="text-sm text-green-600">
                       {selectedUnlock.discount_description}
@@ -838,7 +831,7 @@ export default function UnlockRedemption({
                    (() => {
                      // Campaign MVP: Always show discounted pricing, no free claims
                      if (selectedUnlock.user_discount_eligible && selectedUnlock.user_final_price_cents !== undefined) {
-                       return `Commit - $${(selectedUnlock.user_final_price_cents / 100).toFixed(0)}`;
+                       return `Commit $${(selectedUnlock.user_final_price_cents / 100).toFixed(0)}`;
                      } else {
                        // Fallback to upgrade pricing if no discount available
                        const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
