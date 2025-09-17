@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "../../../supabase";
-import { verifyUnifiedAuth } from "../../../auth";
+import { createServiceClient } from "../../supabase";
+import { verifyUnifiedAuth } from "../../auth";
 import { isAdmin } from "@/lib/security.server";
 import { processCampaignRefunds } from "@/lib/campaigns/refunds";
 
