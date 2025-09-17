@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       failed_refunds: number;
     }>();
     if (refundStats) {
-      refundStats.forEach((claim: any) => {
+      for (const claim of refundStats) {
         if (!refundStatsByCampaign.has(claim.campaign_id)) {
           refundStatsByCampaign.set(claim.campaign_id, {
             total_participants: 0,
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
             stats.failed_refunds++;
             break;
         }
-      });
+      }
     }
 
     // Categorize campaigns
