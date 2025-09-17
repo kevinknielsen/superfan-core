@@ -3,15 +3,24 @@ import { verifyUnifiedAuth } from "../../../auth";
 import { supabase } from "../../../supabase";
 import Stripe from 'stripe';
 
-// Validate required environment variables
-if (!process.env.NEXT_PUBLIC_BASE_URL) {
-  throw new Error('NEXT_PUBLIC_BASE_URL environment variable is not set');
-}
-
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-06-20',
 });
+
+// Resilient base URL resolution
+function resolveBaseUrl() {
+  // Prefer non-public server var
+  const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
+  if (explicit) return explicit;
+
+  // Vercel sets VERCEL_URL without protocol
+  const vercelHost = process.env.VERCEL_URL;
+  if (vercelHost) return `https://${vercelHost}`;
+
+  // Local dev fallback
+  return 'http://localhost:3000';
+}
 
 // Type assertion for enhanced tier rewards
 const supabaseAny = supabase as any;
@@ -22,6 +31,12 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   const tierRewardId = params.id;
+
+  // Resolve base URL safely
+  const baseUrl = resolveBaseUrl();
+  if (!baseUrl) {
+    return NextResponse.json({ error: 'BASE_URL is not configured' }, { status: 500 });
+  }
 
   try {
     // Get authenticated user (don't trust request body for user_tier)
@@ -131,8 +146,8 @@ export async function POST(
         },
         quantity: 1
       }],
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000'}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000'}/cancel`,
+      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/cancel`,
       metadata: {
         type: 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,
