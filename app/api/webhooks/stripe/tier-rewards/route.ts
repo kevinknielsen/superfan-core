@@ -142,7 +142,7 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
 }
 
 // Process campaign tier purchases (new for campaigns MVP)
-async function processCampaignTierPurchase(session: Stripe.CheckoutSession): Promise<{ success: boolean; error?: string }> {
+async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Promise<{ success: boolean; error?: string }> {
   try {
     console.log(`[Tier Rewards Webhook] Processing campaign tier purchase: ${session.id}`);
     
@@ -375,7 +375,7 @@ async function processCampaignFailureRefunds(campaignId: string): Promise<{ succ
 // Process checkout.session.completed events (enhanced for campaigns)
 async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ success: boolean; error?: string }> {
   try {
-    const session = event.data.object as Stripe.CheckoutSession;
+    const session = event.data.object as Stripe.Checkout.Session;
     
     console.log(`[Tier Rewards Webhook] Processing checkout.session.completed: ${session.id}`);
     

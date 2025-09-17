@@ -94,7 +94,7 @@ interface TierRewardFields {
     funding_percentage: number;
     seconds_remaining: number;
     current_funding_cents: number;
-    goal_funding_cents: number;
+    funding_goal_cents: number;
   };
   user_discount_eligible?: boolean;
   user_discount_amount_cents?: number;

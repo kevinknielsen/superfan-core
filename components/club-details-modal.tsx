@@ -87,7 +87,7 @@ export default function ClubDetailsModal({
     campaign_progress: {
       funding_percentage: number;
       current_funding_cents: number;
-      funding_goal_cents: number;
+      goal_funding_cents: number;
       seconds_remaining: number;
     };
   }

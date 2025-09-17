@@ -10,7 +10,7 @@ interface CampaignData {
   campaign_progress: {
     funding_percentage: number;
     current_funding_cents: number;
-    funding_goal_cents: number;
+    goal_funding_cents: number;
     seconds_remaining: number;
   };
 }
@@ -20,6 +20,9 @@ interface CampaignProgressCardProps {
 }
 
 export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps) {
+  const pct = Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)));
+  const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  
   return (
     <motion.div 
       className="mb-6"
@@ -47,7 +50,7 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
               animate={{ scale: 1 }}
               transition={{ delay: 0.3, type: "spring", stiffness: 200 }}
             >
-              {Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)))}%
+              {pct}%
             </motion.span>
           </div>
 
@@ -57,13 +60,13 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
             aria-label="Campaign progress"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)))}
-            aria-valuetext={`${Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)))}%`}
+            aria-valuenow={pct}
+            aria-valuetext={`${pct}%`}
           >
             <motion.div
               className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full relative"
               initial={{ width: 0 }}
-              animate={{ width: `${Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage))}%` }}
+              animate={{ width: `${pct}%` }}
               transition={{ duration: 1.5, ease: "easeOut", delay: 0.5 }}
             >
               {/* Animated shine effect */}
@@ -77,18 +80,10 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
 
           <div className="flex justify-between text-xs text-gray-400">
             <span>
-              {new Intl.NumberFormat('en-US', { 
-                style: 'currency', 
-                currency: 'USD', 
-                maximumFractionDigits: 0 
-              }).format(campaignData.campaign_progress.current_funding_cents / 100)} raised
+              {usd0.format(campaignData.campaign_progress.current_funding_cents / 100)} raised
             </span>
             <span>
-              {new Intl.NumberFormat('en-US', { 
-                style: 'currency', 
-                currency: 'USD', 
-                maximumFractionDigits: 0 
-              }).format(campaignData.campaign_progress.funding_goal_cents / 100)} goal
+              {usd0.format(campaignData.campaign_progress.goal_funding_cents / 100)} goal
             </span>
           </div>
         </div>

@@ -45,7 +45,7 @@ export async function POST(
     }
 
     // Check if campaign is actually failed
-    if (campaign.computed_status !== 'expired' && campaign.funding_percentage >= 100) {
+    if (campaign.computed_status !== 'expired' || campaign.funding_percentage >= 100) {
       return NextResponse.json({ 
         error: 'Campaign is not eligible for refunds',
         details: `Campaign status: ${campaign.computed_status}, Funding: ${campaign.funding_percentage}%`

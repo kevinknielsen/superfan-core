@@ -1,3 +1,5 @@
+"use server";
+
 import { createServiceClient } from "../../app/api/supabase";
 import { stripe } from "@/lib/stripe";
 
@@ -48,6 +50,28 @@ export async function processCampaignRefunds(
     // Process refunds for each participant
     for (const participant of participants) {
       try {
+        // Guard against missing payment intent
+        if (!participant.stripe_payment_intent_id) {
+          console.warn(`[Campaign Refunds] Skipping participant ${participant.id} - missing payment intent ID`);
+          
+          // Mark as refund failed with reason
+          await supabaseClient
+            .from('reward_claims')
+            .update({
+              refund_status: 'failed',
+              refunded_at: new Date().toISOString(),
+              metadata: {
+                refund_failure_reason: 'missing_payment_intent_id',
+                campaign_id: campaignId,
+                participant_id: participant.id
+              }
+            })
+            .eq('id', participant.id);
+            
+          errors.push(`Skipped participant ${participant.id}: missing payment intent ID`);
+          continue;
+        }
+
         // Create Stripe refund with idempotency
         const refund = await stripeClient.refunds.create({
           payment_intent: participant.stripe_payment_intent_id,
@@ -89,7 +113,12 @@ export async function processCampaignRefunds(
           .from('reward_claims')
           .update({
             refund_status: 'failed',
-            refunded_at: new Date().toISOString()
+            refunded_at: new Date().toISOString(),
+            metadata: {
+              refund_failure_reason: errMsg,
+              campaign_id: campaignId,
+              participant_id: participant.id
+            }
           })
           .eq('id', participant.id);
           

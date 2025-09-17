@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
     const { data: refundStats, error: refundError } = await supabaseAny
       .from('reward_claims')
       .select('refund_status, campaign_id')
-      .not('campaign_id', 'is', null);
+      .not('campaign_id', 'is', null)
+      .eq('claim_method', 'upgrade_purchased');
       
     if (refundError) {
       console.error('[Campaign Status] Error fetching refund stats:', refundError);
@@ -119,7 +120,7 @@ export async function GET(request: NextRequest) {
         total_current_funding_cents: totalCurrentFunding,
         total_participants: totalParticipants,
         total_refunded: totalRefunded,
-        overall_success_rate: totalCampaigns > 0 ? ((fundedCampaigns.length / totalCampaigns) * 100).toFixed(1) : 0
+        overall_success_rate: totalCampaigns > 0 ? Number(((fundedCampaigns.length / totalCampaigns) * 100).toFixed(1)) : 0
       },
       campaigns: campaignsWithRefundStats,
       categories: {

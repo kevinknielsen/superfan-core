@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../auth";
 import { supabase } from "../../../supabase";
-import Stripe from 'stripe';
-
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-06-20',
-});
+import { stripe } from "@/lib/stripe";
 
 // Resilient base URL resolution
 function resolveBaseUrl() {
