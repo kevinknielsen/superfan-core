@@ -425,9 +425,12 @@ export default function ClubDetailsModal({
             {/* Campaign Rewards Section - Moved to Top */}
             {membership && (
               <div className="mb-8" ref={rewardsRef}>
-                <h3 className="mb-4 text-xl font-semibold">Campaign Rewards</h3>
+                {/* Campaign Title as Header */}
+                {campaignData && (
+                  <h3 className="mb-4 text-xl font-semibold">{campaignData.campaign_title}</h3>
+                )}
                 
-                {/* Campaign Progress Card - Below Campaign Rewards Header */}
+                {/* Campaign Progress Card - Below Campaign Title */}
                 {campaignData && (
                   <CampaignProgressCard campaignData={campaignData} />
                 )}

@@ -24,9 +24,21 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
   const pct = Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)));
   const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   
-  // Calculate remaining amount needed
-  const remainingCents = Math.max(0, campaignData.campaign_progress.goal_funding_cents - campaignData.campaign_progress.current_funding_cents);
+  // Calculate remaining amount needed - handle null/undefined goal
+  const goalCents = campaignData.campaign_progress.goal_funding_cents || 0;
+  const currentCents = campaignData.campaign_progress.current_funding_cents || 0;
+  const remainingCents = Math.max(0, goalCents - currentCents);
   const remainingAmount = usd0.format(remainingCents / 100);
+  
+  // Debug logging for goal data
+  console.log('[Campaign Progress Debug]', {
+    campaign_title: campaignData.campaign_title,
+    goal_funding_cents: campaignData.campaign_progress.goal_funding_cents,
+    current_funding_cents: campaignData.campaign_progress.current_funding_cents,
+    funding_percentage: campaignData.campaign_progress.funding_percentage,
+    goalCents,
+    currentCents
+  });
 
   return (
     <motion.div 
@@ -36,11 +48,6 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
       transition={{ duration: 0.5 }}
     >
       <Card className="relative bg-gray-900/80 border-gray-700/50 p-6 overflow-hidden">
-        {/* Campaign Title */}
-        <h3 className="text-xl font-semibold text-white mb-6">
-          {campaignData.campaign_title}
-        </h3>
-
         {/* Side-by-side tier comparison */}
         <div className="flex items-center justify-between mb-6">
           {/* Current Tier - Live */}
@@ -85,7 +92,9 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
             </motion.div>
             <div>
               <h4 className="text-lg font-semibold text-white">Completed</h4>
-              <p className="text-sm text-green-400">{usd0.format(campaignData.campaign_progress.goal_funding_cents / 100)} goal</p>
+              <p className="text-sm text-green-400">
+                {goalCents > 0 ? usd0.format(goalCents / 100) + ' goal' : 'No goal set'}
+              </p>
             </div>
           </motion.div>
         </div>
@@ -99,10 +108,10 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
         >
           <div className="flex items-center justify-between">
             <span className="text-gray-300 font-medium">
-              {remainingAmount} to go
+              {goalCents > 0 ? `${remainingAmount} to go` : 'No goal set'}
             </span>
             <motion.span 
-              className="font-semibold text-green-400"
+              className="font-semibold text-blue-400"
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.8, type: "spring", stiffness: 200 }}
@@ -138,13 +147,12 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
 
         {/* Status Description - moved below progress bar */}
         <motion.div 
-          className="flex items-center gap-2 text-gray-300 mt-4"
+          className="text-gray-300 mt-4"
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.7 }}
         >
-          <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
-          <span className="text-sm">Items will become redeemable when the goal is reached.</span>
+          <span className="text-sm">Items can be redeemed once the goal is reached. Commitments will be refunded otherwise.</span>
         </motion.div>
       </Card>
     </motion.div>

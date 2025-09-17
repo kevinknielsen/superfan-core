@@ -27,3 +27,5 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 .DS_Store
+docs/CAMPAIGNS_MVP_IMPLEMENTATION.md
+docs/CAMPAIGNS_TRANSITION_REVISED_PLAN.md
