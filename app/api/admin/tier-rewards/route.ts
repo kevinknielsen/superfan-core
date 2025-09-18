@@ -7,7 +7,7 @@ import { type } from "arktype";
 // Type assertion for new tier rewards tables
 const supabaseAny = supabase as any;
 
-// Validation schemas based on TIER_REWARDS_IMPLEMENTATION.md
+// Validation schemas based on TIER_REWARDS_IMPLEMENTATION.md + Campaigns MVP
 const createTierRewardSchema = type({
   club_id: "string",
   title: "string",
@@ -23,6 +23,18 @@ const createTierRewardSchema = type({
   available_end: "string|null?", // ISO date or null
   inventory_limit: "number|null?", // Legacy field for backward compatibility
   rolling_window_days: "number?", // Defaults to 60
+  
+  // Campaign fields (MVP)
+  is_campaign_tier: "boolean?",
+  campaign_id: "string?", // For existing campaigns
+  campaign_title: "string?",
+  campaign_funding_goal_cents: "number?",
+  campaign_deadline: "string?",
+  campaign_status: "string?",
+  resident_discount_percentage: "number?",
+  headliner_discount_percentage: "number?",
+  superfan_discount_percentage: "number?",
+  
   metadata: {
     instructions: "string",
     redemption_url: "string?",
@@ -237,6 +249,18 @@ export async function POST(request: NextRequest) {
       rolling_window_days: tierRewardData.rolling_window_days ?? 60,
       availability_type: tierRewardData.availability_type ?? 'permanent'
     };
+
+    // Handle campaign_id generation for new campaigns
+    if (finalData.is_campaign_tier && !finalData.campaign_id && finalData.campaign_title) {
+      // Generate new campaign_id for new campaigns
+      const { data: newCampaignId } = await supabaseAny
+        .rpc('gen_random_uuid');
+      
+      if (newCampaignId) {
+        finalData.campaign_id = newCampaignId;
+        console.log(`[Admin Tier Rewards API] Generated new campaign_id: ${newCampaignId} for campaign: ${finalData.campaign_title}`);
+      }
+    }
 
     // Validate availability dates if required
     if (finalData.availability_type !== 'permanent') {

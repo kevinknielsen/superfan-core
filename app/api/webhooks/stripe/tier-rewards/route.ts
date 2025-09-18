@@ -141,6 +141,92 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
   }
 }
 
+// Process campaign tier purchases (new for campaigns MVP)
+async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log(`[Tier Rewards Webhook] Processing campaign tier purchase: ${session.id}`);
+    
+    const metadata = session.metadata!;
+    const idempotencyKey = metadata.idempotency_key;
+    
+    // Check if already processed (idempotency protection)
+    const { data: existingClaim } = await supabaseAny
+      .from('reward_claims')
+      .select('id')
+      .eq('stripe_payment_intent_id', session.payment_intent as string)
+      .single();
+      
+    if (existingClaim) {
+      console.log(`[Tier Rewards Webhook] Campaign purchase already processed, skipping: ${session.payment_intent}`);
+      return { success: true };
+    }
+    
+    // Create reward claim with campaign and discount tracking
+    const { error: insertError } = await supabaseAny.from('reward_claims').insert({
+      user_id: metadata.user_id,
+      reward_id: metadata.tier_reward_id,
+      campaign_id: metadata.campaign_id || null,
+      claim_method: 'upgrade_purchased',
+      user_tier_at_claim: metadata.user_tier,
+      user_points_at_claim: 0, // TODO: Get actual points if needed
+      original_price_cents: parseInt(metadata.original_price_cents),
+      paid_price_cents: parseInt(metadata.final_price_cents),
+      discount_applied_cents: parseInt(metadata.discount_cents),
+      stripe_payment_intent_id: session.payment_intent as string,
+      refund_status: 'none',
+      access_status: 'granted',
+      access_code: 'AC' + Math.random().toString(36).substring(2, 10).toUpperCase(),
+      claimed_at: new Date().toISOString()
+    });
+    
+    if (insertError) {
+      console.error('[Tier Rewards Webhook] Failed to create reward claim:', insertError);
+      return { success: false, error: `Failed to create reward claim: ${insertError.message}` };
+    }
+    
+    // Update campaign progress with FULL tier value (not discounted amount)
+    if (metadata.campaign_id) {
+      const { error: campaignError } = await supabaseAny
+        .rpc('increment_campaign_funding', {
+          p_campaign_id: metadata.campaign_id,
+          p_amount_cents: parseInt(metadata.campaign_credit_cents)
+        });
+        
+      if (campaignError) {
+        console.error('[Tier Rewards Webhook] Failed to update campaign progress:', campaignError);
+        // Don't fail the whole operation, just log the error
+      } else {
+        console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${parseInt(metadata.campaign_credit_cents)/100}`);
+        
+        // Check if campaign goal reached
+        const { data: campaign } = await supabaseAny
+          .from('tier_rewards')
+          .select('campaign_funding_goal_cents, campaign_current_funding_cents, campaign_title')
+          .eq('campaign_id', metadata.campaign_id)
+          .single();
+          
+        if (campaign && campaign.campaign_current_funding_cents >= campaign.campaign_funding_goal_cents) {
+          console.log(`[Tier Rewards Webhook] 🎉 Campaign "${campaign.campaign_title}" reached funding goal!`);
+          
+          // Mark campaign as funded
+          await supabaseAny
+            .from('tier_rewards')
+            .update({ campaign_status: 'campaign_funded' })
+            .eq('campaign_id', metadata.campaign_id);
+        }
+      }
+    }
+    
+    console.log(`[Tier Rewards Webhook] Successfully processed campaign tier purchase for user ${metadata.user_id}`);
+    return { success: true };
+    
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Tier Rewards Webhook] Error processing campaign tier purchase:', error);
+    return { success: false, error: errMsg };
+  }
+}
+
 // Process payment_intent.payment_failed events
 async function processPaymentIntentFailed(event: Stripe.Event): Promise<{ success: boolean; error?: string }> {
   try {
@@ -176,13 +262,129 @@ async function processPaymentIntentFailed(event: Stripe.Event): Promise<{ succes
   }
 }
 
-// Process checkout.session.completed events
+// Process campaign failure refunds (new for campaigns MVP)
+async function processCampaignFailureRefunds(campaignId: string): Promise<{ success: boolean; error?: string; refundedCount?: number }> {
+  try {
+    console.log(`[Tier Rewards Webhook] Processing campaign failure refunds for campaign: ${campaignId}`);
+    
+    // Get all paid participants for this campaign that haven't been refunded
+    const { data: participants, error: participantsError } = await supabaseAny
+      .from('reward_claims')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .eq('claim_method', 'upgrade_purchased')
+      .eq('refund_status', 'none');
+      
+    if (participantsError) {
+      console.error('[Tier Rewards Webhook] Error fetching campaign participants:', participantsError);
+      return { success: false, error: `Database error: ${participantsError.message}` };
+    }
+    
+    if (!participants || participants.length === 0) {
+      console.log(`[Tier Rewards Webhook] No participants found for campaign ${campaignId}`);
+      return { success: true, refundedCount: 0 };
+    }
+    
+    const stripe = getStripe();
+    let refundedCount = 0;
+    const errors: string[] = [];
+    
+    // Process refunds for each participant
+    for (const participant of participants) {
+      try {
+        // Create Stripe refund with idempotency
+        const refund = await stripe.refunds.create({
+          payment_intent: participant.stripe_payment_intent_id,
+          amount: participant.paid_price_cents, // Refund what they actually paid
+          reason: 'requested_by_customer',
+          metadata: {
+            type: 'campaign_failure_refund',
+            campaign_id: campaignId,
+            participation_id: participant.id
+          }
+        }, {
+          idempotencyKey: `refund_${participant.id}` // Prevent double refunds
+        });
+        
+        // Update refund status
+        const { error: updateError } = await supabaseAny
+          .from('reward_claims')
+          .update({
+            refund_status: 'processed',
+            refunded_at: new Date().toISOString(),
+            stripe_refund_id: refund.id
+          })
+          .eq('id', participant.id);
+          
+        if (updateError) {
+          console.error(`[Tier Rewards Webhook] Failed to update refund status for participant ${participant.id}:`, updateError);
+          errors.push(`Failed to update refund status for participant ${participant.id}`);
+        } else {
+          refundedCount++;
+          console.log(`[Tier Rewards Webhook] Refunded $${participant.paid_price_cents/100} to user ${participant.user_id}`);
+        }
+        
+      } catch (refundError: unknown) {
+        const errMsg = refundError instanceof Error ? refundError.message : String(refundError);
+        console.error(`[Tier Rewards Webhook] Refund failed for participant ${participant.id}:`, refundError);
+        
+        // Mark refund as failed for manual review
+        await supabaseAny
+          .from('reward_claims')
+          .update({
+            refund_status: 'failed',
+            refunded_at: new Date().toISOString()
+          })
+          .eq('id', participant.id);
+          
+        errors.push(`Refund failed for participant ${participant.id}: ${errMsg}`);
+      }
+    }
+    
+    // Mark campaign as failed
+    const { error: campaignUpdateError } = await supabaseAny
+      .from('tier_rewards')
+      .update({ 
+        campaign_status: 'campaign_failed' 
+      })
+      .eq('campaign_id', campaignId);
+      
+    if (campaignUpdateError) {
+      console.error('[Tier Rewards Webhook] Failed to mark campaign as failed:', campaignUpdateError);
+      errors.push('Failed to mark campaign as failed');
+    }
+    
+    if (errors.length > 0) {
+      return { 
+        success: false, 
+        error: `Some refunds failed: ${errors.join('; ')}`,
+        refundedCount 
+      };
+    }
+    
+    console.log(`[Tier Rewards Webhook] Successfully processed ${refundedCount} refunds for campaign ${campaignId}`);
+    return { success: true, refundedCount };
+    
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Tier Rewards Webhook] Error processing campaign failure refunds:', error);
+    return { success: false, error: errMsg };
+  }
+}
+
+// Process checkout.session.completed events (enhanced for campaigns)
 async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ success: boolean; error?: string }> {
   try {
-    const session = event.data.object as Stripe.CheckoutSession;
+    const session = event.data.object as Stripe.Checkout.Session;
     
     console.log(`[Tier Rewards Webhook] Processing checkout.session.completed: ${session.id}`);
     
+    // Check if this is a campaign tier purchase
+    if (session.metadata?.type === 'campaign_tier_purchase') {
+      return await processCampaignTierPurchase(session);
+    }
+    
+    // Existing tier reward processing logic
     // Get the payment intent from the session
     let paymentIntentId = session.payment_intent as string;
     

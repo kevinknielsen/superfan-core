@@ -24,7 +24,7 @@ export async function PUT(
       );
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
     const body = await request.json();
     const { sellCents, settleCents } = PricingUpdateSchema.parse(body);
 
@@ -134,7 +134,7 @@ export async function GET(
       );
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
 
     // Get club pricing details
     const { data: club, error: clubError } = await supabase

@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
+import type { CampaignData } from "@/types/campaign.types";
 import { getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
@@ -29,6 +30,7 @@ import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
 import { formatDate } from "@/lib/utils";
 import { StatusProgressionCard } from "./status-progression-card";
+import { CampaignProgressCard } from "./campaign-progress-card";
 
 // Use compatible types with existing components
 type RedemptionData = any; // Keep flexible for now since it comes from API
@@ -77,6 +79,10 @@ export default function ClubDetailsModal({
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
+  
+  // Clear campaign data on club change to avoid stale UI
+  const [campaignData, setCampaignData] = useState<CampaignData | null>(null);
+  
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
@@ -104,6 +110,11 @@ export default function ClubDetailsModal({
   // Get unified points data - only when authenticated and has membership
   const enabled = Boolean(club.id && membership && isAuthenticated);
   const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
+
+  // Clear campaign data when switching clubs
+  useEffect(() => { 
+    setCampaignData(null); 
+  }, [club.id]);
 
   // Status calculations - use unified points data if available (now includes temporary boosts)
   const currentStatus = breakdown?.status.current || membership?.current_status || 'cadet';
@@ -371,9 +382,9 @@ export default function ClubDetailsModal({
             {/* Latest Section - Club Media */}
             <div className="mb-8">
               <h3 className="mb-4 text-xl font-semibold">Latest</h3>
-              {/* Container with responsive sizing */}
-              <div className="flex justify-center">
-                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl">
+              {/* Container with responsive sizing - Desktop: video left, Mobile: centered */}
+              <div className="flex justify-center md:justify-start">
+                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl md:max-w-lg">
                   <div className="relative aspect-video md:aspect-[4/3]">
                     <ClubMediaDisplay
                       clubId={club.id}
@@ -388,7 +399,7 @@ export default function ClubDetailsModal({
                 
                 {/* Enhanced content section */}
                 <div className="p-5 bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-sm">
-                  <h4 className="font-bold text-white text-lg mb-3">Behind-the-Scenes from {club.name}</h4>
+                  <h4 className="font-bold text-white text-lg mb-3">Recent Updates from {club.name}</h4>
                   
                   {/* Cool accent line */}
                   <div className="w-12 h-0.5 bg-gradient-to-r from-primary to-purple-400 rounded-full"></div>
@@ -401,7 +412,43 @@ export default function ClubDetailsModal({
             </div>
 
 
-            {/* Enhanced Membership Status Section - Moved to Top for Prominence */}
+            {/* Campaign Rewards Section - Moved to Top */}
+            {membership && (
+              <div className="mb-8" ref={rewardsRef}>
+                {/* Campaign Title as Header */}
+                {campaignData && (
+                  <h3 className="mb-4 text-xl font-semibold">{campaignData.campaign_title}</h3>
+                )}
+                
+                {/* Campaign Progress Card - Below Campaign Title */}
+                {campaignData && (
+                  <CampaignProgressCard campaignData={campaignData} />
+                )}
+                
+                <UnlockRedemption
+                  clubId={club.id}
+                  clubName={club.name}
+                  userStatus={currentStatus}
+                  userPoints={currentPoints}
+                  onCampaignDataChange={setCampaignData}
+                  onRedemption={async () => {
+                    await refetch();
+                    toast({
+                      title: "Perk Redeemed!",
+                      description: "Wallet and status updated",
+                    });
+                  }}
+                  onShowRedemptionConfirmation={(redemption, unlock) => {
+                    setRedemptionConfirmation({ redemption, unlock });
+                  }}
+                  onShowPerkDetails={(unlock, redemption) => {
+                    setPerkDetails({ isOpen: true, unlock, redemption });
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Your Status Section - Moved Below Campaign Rewards */}
             {membership != null ? (
               <StatusProgressionCard 
                 currentStatus={currentStatus}
@@ -426,32 +473,6 @@ export default function ClubDetailsModal({
                     {joinClubMutation.isPending ? "Joining..." : "Join Club"}
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Perks and Benefits Section - Grid Layout */}
-            {membership && (
-              <div className="mb-8" ref={rewardsRef}>
-                <h3 className="mb-4 text-xl font-semibold">Perks and Benefits</h3>
-                <UnlockRedemption
-                  clubId={club.id}
-                  clubName={club.name}
-                  userStatus={currentStatus}
-                  userPoints={currentPoints}
-                  onRedemption={async () => {
-                    await refetch();
-                    toast({
-                      title: "Perk Redeemed!",
-                      description: "Wallet and status updated",
-                    });
-                  }}
-                  onShowRedemptionConfirmation={(redemption, unlock) => {
-                    setRedemptionConfirmation({ redemption, unlock });
-                  }}
-                  onShowPerkDetails={(unlock, redemption) => {
-                    setPerkDetails({ isOpen: true, unlock, redemption });
-                  }}
-                />
               </div>
             )}
 

@@ -30,7 +30,7 @@ export async function PUT(
       );
     }
 
-    const rewardId = params.id;
+    const { id: rewardId } = await params;
     const body = await request.json();
     const updateData = RewardUpdateSchema.parse(body);
 
@@ -139,7 +139,7 @@ export async function DELETE(
       );
     }
 
-    const rewardId = params.id;
+    const { id: rewardId } = await params;
 
     // Get reward details
     const { data: reward, error: rewardError } = await supabase

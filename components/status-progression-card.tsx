@@ -36,6 +36,7 @@ export function StatusProgressionCard({
   const [showSparkles, setShowSparkles] = useState(false);
   const sparkleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+
   // Calculate progress percentage and next tier points
   const currentThreshold = STATUS_THRESHOLDS[currentStatus] || 0;
   const nextThreshold = nextStatus ? STATUS_THRESHOLDS[nextStatus] : null;
@@ -220,13 +221,13 @@ export function StatusProgressionCard({
                 aria-label="Status progress"
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={Math.round(animatedProgress)}
-                aria-valuetext={`${Math.round(animatedProgress)}%`}
+                aria-valuenow={Math.round(Math.max(0, Math.min(100, animatedProgress)))}
+                aria-valuetext={`${Math.round(Math.max(0, Math.min(100, animatedProgress)))}%`}
               >
                 <motion.div
                   className={`h-full bg-gradient-to-r ${getStatusGradientClass(nextStatus)} rounded-full relative`}
                   initial={{ width: 0 }}
-                  animate={{ width: `${animatedProgress}%` }}
+                  animate={{ width: `${Math.max(0, Math.min(100, animatedProgress))}%` }}
                   transition={{ duration: 1.5, ease: "easeOut" }}
                 >
                   {/* Animated shine effect */}
@@ -239,6 +240,7 @@ export function StatusProgressionCard({
               </div>
             </motion.div>
           )}
+
         </Card>
       </motion.div>
     </div>

@@ -4,15 +4,29 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "./providers";
 import { inter } from "./fonts";
 import RouteGuard from "@/components/route-guard";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { headers } from "next/headers";
 
 // Dynamic metadata that uses the current request URL
 export async function generateMetadata(): Promise<Metadata> {
+  const siteDescription =
+    "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier";
   const headersList = await headers();
-  const host = headersList.get('host');
-  const protocol = headersList.get('x-forwarded-proto') || 'https';
-  const baseUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
+  const forwardedHost = headersList.get('x-forwarded-host');
+  const host = forwardedHost || headersList.get('host');
+  const forwardedProto = headersList.get('x-forwarded-proto');
+  const protocol = forwardedProto || (host && (host.includes('localhost') || host.includes('127.0.0.1') || host.includes('.local')) ? 'http' : 'https');
+  const computedBaseUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
+  
+  // Check if this is real production (not preview)
+  const isRealProduction = (process.env.NODE_ENV === 'production' && 
+    (process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_ENV) !== 'preview') ||
+    (process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_ENV) === 'production';
+  
+  const baseUrl = isRealProduction 
+    ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
+    : computedBaseUrl;
   
   // Mini App embed configuration
   const miniAppEmbed = {
@@ -44,9 +58,9 @@ export async function generateMetadata(): Promise<Metadata> {
   
   return {
     title: "Superfan",
-    description: "Connect with artists and support music projects on the futuristic music release platform",
+    description: siteDescription,
     generator: "v0.dev",
-    keywords: ["music", "artists", "presale", "funding", "music platform", "superfan"],
+    keywords: ["music", "artists", "campaigns", "fan tiers", "exclusive perks", "music platform", "superfan", "discounts", "rewards"],
     authors: [{ name: "Superfan" }],
     creator: "Superfan",
     publisher: "Superfan",
@@ -57,7 +71,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     openGraph: {
       title: "Superfan",
-      description: "Connect with artists and support music projects on the futuristic music release platform",
+      description: siteDescription,
       url: baseUrl,
       siteName: "Superfan",
       locale: "en_US",
@@ -67,7 +81,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${baseUrl}/og-image.png`,
           width: 1200,
           height: 630,
-          alt: "Superfan - Connect with artists and support music projects",
+          alt: "Superfan - Support artists through campaigns and unlock exclusive perks",
           type: "image/png",
         },
       ],
@@ -77,10 +91,10 @@ export async function generateMetadata(): Promise<Metadata> {
       site: "@superfan",
       creator: "@superfan",
       title: "Superfan",
-      description: "Connect with artists and support music projects on the futuristic music release platform",
+      description: siteDescription,
       images: {
         url: `${baseUrl}/og-image.png`,
-        alt: "Superfan - Connect with artists and support music projects",
+        alt: "Superfan - Support artists through campaigns and unlock exclusive perks",
       },
     },
     robots: {
@@ -100,10 +114,9 @@ export async function generateMetadata(): Promise<Metadata> {
       // For backward compatibility
       'fc:frame': JSON.stringify(frameEmbed),
       
-      // Theme color for mobile browsers
-      'theme-color': '#8B5CF6',
       'msapplication-TileColor': '#8B5CF6',
     },
+    themeColor: '#8B5CF6',
   };
 }
 
@@ -135,6 +148,7 @@ export default function RootLayout({
               {children}
             </RouteGuard>
           </Providers>
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>
