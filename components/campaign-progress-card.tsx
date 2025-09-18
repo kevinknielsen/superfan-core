@@ -117,7 +117,7 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
             aria-valuetext={`${pct}%`}
           >
             <motion.div
-              className="h-full bg-gradient-to-r from-blue-500 to-green-500 rounded-full relative"
+              className="h-full bg-blue-500 rounded-full relative"
               initial={{ width: 0 }}
               animate={{ width: `${pct}%` }}
               transition={{ duration: 1.5, ease: "easeOut" }}

@@ -45,9 +45,9 @@ export async function generateMetadata(): Promise<Metadata> {
   
   return {
     title: "Superfan",
-    description: "Connect with artists and support music projects on the futuristic music release platform",
+    description: "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier",
     generator: "v0.dev",
-    keywords: ["music", "artists", "presale", "funding", "music platform", "superfan"],
+    keywords: ["music", "artists", "campaigns", "fan tiers", "exclusive perks", "music platform", "superfan", "discounts", "rewards"],
     authors: [{ name: "Superfan" }],
     creator: "Superfan",
     publisher: "Superfan",
@@ -58,7 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     openGraph: {
       title: "Superfan",
-      description: "Connect with artists and support music projects on the futuristic music release platform",
+      description: "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier",
       url: baseUrl,
       siteName: "Superfan",
       locale: "en_US",
@@ -68,7 +68,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${baseUrl}/og-image.png`,
           width: 1200,
           height: 630,
-          alt: "Superfan - Connect with artists and support music projects",
+          alt: "Superfan - Support artists through campaigns and unlock exclusive perks",
           type: "image/png",
         },
       ],
@@ -78,10 +78,10 @@ export async function generateMetadata(): Promise<Metadata> {
       site: "@superfan",
       creator: "@superfan",
       title: "Superfan",
-      description: "Connect with artists and support music projects on the futuristic music release platform",
+      description: "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier",
       images: {
         url: `${baseUrl}/og-image.png`,
-        alt: "Superfan - Connect with artists and support music projects",
+        alt: "Superfan - Support artists through campaigns and unlock exclusive perks",
       },
     },
     robots: {

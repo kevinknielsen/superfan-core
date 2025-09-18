@@ -103,11 +103,23 @@ BEGIN
     -- Calculate percentage-based discount
     CASE p_user_tier
       WHEN 'resident' THEN 
-        v_discount := ROUND(v_tier_reward.upgrade_price_cents * COALESCE(v_tier_reward.resident_discount_percentage, 10.0) / 100);
+        v_discount := ROUND(v_tier_reward.upgrade_price_cents * CASE 
+          WHEN v_tier_reward.resident_discount_percentage IS NOT NULL 
+          THEN v_tier_reward.resident_discount_percentage 
+          ELSE 10.0 
+        END / 100);
       WHEN 'headliner' THEN 
-        v_discount := ROUND(v_tier_reward.upgrade_price_cents * COALESCE(v_tier_reward.headliner_discount_percentage, 15.0) / 100);
+        v_discount := ROUND(v_tier_reward.upgrade_price_cents * CASE 
+          WHEN v_tier_reward.headliner_discount_percentage IS NOT NULL 
+          THEN v_tier_reward.headliner_discount_percentage 
+          ELSE 15.0 
+        END / 100);
       WHEN 'superfan' THEN 
-        v_discount := ROUND(v_tier_reward.upgrade_price_cents * COALESCE(v_tier_reward.superfan_discount_percentage, 25.0) / 100);
+        v_discount := ROUND(v_tier_reward.upgrade_price_cents * CASE 
+          WHEN v_tier_reward.superfan_discount_percentage IS NOT NULL 
+          THEN v_tier_reward.superfan_discount_percentage 
+          ELSE 25.0 
+        END / 100);
       ELSE v_discount := 0;
     END CASE;
   END IF;
