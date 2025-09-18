@@ -92,7 +92,7 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to validate user tier' }, { status: 500 });
     }
     
-    const userTier = userTierData?.[0]?.earned_tier || 'cadet';
+    const userTier = userTierData?.[0]?.effective_tier || userTierData?.[0]?.earned_tier || 'cadet';
 
     // Check if user already claimed this reward
     const { data: existingClaim } = await supabaseAny

@@ -10,7 +10,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id: clubId } = await params;
+  const { id: clubId } = params;
 
   const auth = await verifyUnifiedAuth(request);
   if (!auth) {
@@ -201,17 +201,23 @@ export async function GET(
     const getCampaignProgress = (reward: any) => {
       if (!reward.campaign_id || !reward.campaign_funding_goal_cents) return null;
       
-      const fundingPercentage = reward.campaign_funding_goal_cents > 0 ? 
-        (reward.campaign_current_funding_cents / reward.campaign_funding_goal_cents * 100) : 0;
+      // Coerce numeric inputs to numbers, defaulting to 0 for null/undefined
+      const currentFundingCents = Number(reward.campaign_current_funding_cents) || 0;
+      const goalFundingCents = Number(reward.campaign_funding_goal_cents) || 0;
+      
+      // Guard the percentage calculation - only divide when goal > 0
+      const fundingPercentage = goalFundingCents > 0 ? 
+        (currentFundingCents / goalFundingCents * 100) : 0;
         
+      // Only compute seconds_remaining if campaign_deadline exists
       const secondsRemaining = reward.campaign_deadline ? 
         Math.max(0, Math.floor((new Date(reward.campaign_deadline).getTime() - Date.now()) / 1000)) : 0;
         
       return {
         funding_percentage: Math.round(fundingPercentage * 100) / 100,
         seconds_remaining: secondsRemaining,
-        current_funding_cents: reward.campaign_current_funding_cents,
-        goal_funding_cents: reward.campaign_funding_goal_cents
+        current_funding_cents: currentFundingCents,
+        funding_goal_cents: goalFundingCents
       };
     };
 
@@ -256,17 +262,17 @@ export async function GET(
       const canClaimFree = false; // Disabled for Campaign MVP
       
       // Determine available claim options - only purchase options
-      const claimOptions = [];
+      const claimOptions: { upgrade: { purchase_type: 'tier_boost' | 'direct_unlock'; price_cents?: number } }[] = [];
       
       if (!alreadyClaimed && availability.available) {
         // Can purchase tier boost if not already at required tier through earned points
         if (getTierRank(userQualification.earned_tier) < rewardTierRank) {
-          claimOptions.push('tier_boost');
+          claimOptions.push({ upgrade: { purchase_type: 'tier_boost', price_cents: reward.upgrade_price_cents } });
         }
         
         // Can always purchase direct unlock (with discount if eligible)
         if (reward.upgrade_price_cents && reward.upgrade_price_cents > 0) {
-          claimOptions.push('direct_unlock');
+          claimOptions.push({ upgrade: { purchase_type: 'direct_unlock', price_cents: reward.upgrade_price_cents } });
         }
       }
 
@@ -320,7 +326,7 @@ export async function GET(
         user_discount_percentage: discountPercentage,
         user_final_price_cents: finalPrice,
         discount_description: userDiscount > 0 ? 
-          `Your ${userQualification.earned_tier} status saves you $${(userDiscount/100).toFixed(0)} (${discountPercentage}%)` : '',
+          `Your ${userQualification.effective_tier} status saves you $${(userDiscount/100).toFixed(0)} (${discountPercentage}%)` : '',
           
         // Campaign context
         campaign_id: reward.campaign_id,

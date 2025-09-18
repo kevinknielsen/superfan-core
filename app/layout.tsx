@@ -10,10 +10,16 @@ import { headers } from "next/headers";
 
 // Dynamic metadata that uses the current request URL
 export async function generateMetadata(): Promise<Metadata> {
+  const siteDescription =
+    "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier";
   const headersList = await headers();
   const host = headersList.get('host');
   const protocol = headersList.get('x-forwarded-proto') || 'https';
-  const baseUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
+  const computedBaseUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
+  const baseUrl =
+    process.env.NODE_ENV === 'production'
+      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
+      : computedBaseUrl;
   
   // Mini App embed configuration
   const miniAppEmbed = {
@@ -45,7 +51,7 @@ export async function generateMetadata(): Promise<Metadata> {
   
   return {
     title: "Superfan",
-    description: "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier",
+    description: siteDescription,
     generator: "v0.dev",
     keywords: ["music", "artists", "campaigns", "fan tiers", "exclusive perks", "music platform", "superfan", "discounts", "rewards"],
     authors: [{ name: "Superfan" }],
@@ -58,7 +64,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     openGraph: {
       title: "Superfan",
-      description: "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier",
+      description: siteDescription,
       url: baseUrl,
       siteName: "Superfan",
       locale: "en_US",
@@ -78,7 +84,7 @@ export async function generateMetadata(): Promise<Metadata> {
       site: "@superfan",
       creator: "@superfan",
       title: "Superfan",
-      description: "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier",
+      description: siteDescription,
       images: {
         url: `${baseUrl}/og-image.png`,
         alt: "Superfan - Support artists through campaigns and unlock exclusive perks",
@@ -101,10 +107,9 @@ export async function generateMetadata(): Promise<Metadata> {
       // For backward compatibility
       'fc:frame': JSON.stringify(frameEmbed),
       
-      // Theme color for mobile browsers
-      'theme-color': '#8B5CF6',
       'msapplication-TileColor': '#8B5CF6',
     },
+    themeColor: '#8B5CF6',
   };
 }
 

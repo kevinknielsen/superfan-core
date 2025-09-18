@@ -635,11 +635,10 @@ export default function UnlockRedemption({
                   
                   {/* Discount info - Campaign MVP */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
-                    {unlock.user_discount_eligible && unlock.user_discount_percentage ? (
-                      `${unlock.user_discount_percentage}% Discount`
-                    ) : (
-                      `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
-                    )}
+                    {unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
+                      ? `${unlock.user_discount_percentage}% Discount`
+                      : `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
+                    }
                   </div>
                   
                   {/* Discount pricing display */}
@@ -681,7 +680,7 @@ export default function UnlockRedemption({
                         ? (() => {
                             // Campaign MVP: Always show discounted pricing, no free claims
                             if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
-                              return `Commit $${(unlock.user_final_price_cents / 100).toFixed(0)}`;
+                              return `Commit ${formatCurrency(unlock.user_final_price_cents)}`;
                             } else {
                               // Fallback to upgrade pricing if no discount available
                               const purchaseType = getClaimOptionsPurchaseType(unlock);
@@ -826,7 +825,7 @@ export default function UnlockRedemption({
                    (() => {
                      // Campaign MVP: Always show discounted pricing, no free claims
                      if (selectedUnlock.user_discount_eligible && selectedUnlock.user_final_price_cents !== undefined) {
-                       return `Commit $${(selectedUnlock.user_final_price_cents / 100).toFixed(0)}`;
+                       return `Commit ${formatCurrency(selectedUnlock.user_final_price_cents)}`;
                      } else {
                        // Fallback to upgrade pricing if no discount available
                        const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
