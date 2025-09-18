@@ -1,0 +1,84 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServiceClient } from "@/app/api/supabase";
+import { verifyUnifiedAuth } from "@/app/api/auth";
+
+export async function POST(request: NextRequest) {
+  const auth = await verifyUnifiedAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const supabase = createServiceClient();
+    
+    // Get the user from our database
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('privy_id', auth.userId)
+      .single();
+
+    if (userError) {
+      console.error("[Notifications Opt-in API] User not found:", userError);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Update the user's notifications opt-in status
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({ 
+        notifications_opt_in: true,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', user.id)
+      .select('notifications_opt_in')
+      .single();
+
+    if (updateError) {
+      console.error("[Notifications Opt-in API] Error updating user:", updateError);
+      return NextResponse.json({ error: "Failed to update notifications preference" }, { status: 500 });
+    }
+
+    console.log(`[Notifications Opt-in API] User ${auth.userId} opted into notifications`);
+
+    return NextResponse.json({ 
+      success: true, 
+      notifications_opt_in: updatedUser.notifications_opt_in 
+    });
+
+  } catch (error) {
+    console.error("[Notifications Opt-in API] Unexpected error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await verifyUnifiedAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const supabase = createServiceClient();
+    
+    // Get the user's current notifications opt-in status
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('notifications_opt_in')
+      .eq('privy_id', auth.userId)
+      .single();
+
+    if (userError) {
+      console.error("[Notifications Opt-in API] User not found:", userError);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ 
+      notifications_opt_in: user.notifications_opt_in 
+    });
+
+  } catch (error) {
+    console.error("[Notifications Opt-in API] Unexpected error:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}

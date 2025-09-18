@@ -3,7 +3,7 @@
 import React, { useEffect, Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
+import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode, Bell } from "lucide-react";
 import Header from "@/components/header";
 import ClubDetailsModal from "@/components/club-details-modal";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
@@ -13,6 +13,9 @@ import { TAP_IN_POINT_VALUES } from "@/lib/points";
 import { useTapQRParams } from "@/hooks/use-tap-qr-params";
 import { useTapAuthentication } from "@/hooks/use-tap-authentication";
 import { useTapProcessing } from "@/hooks/use-tap-processing";
+import { StatusProgressionCard } from "@/components/status-progression-card";
+import { getNextStatus, getPointsToNext } from "@/types/club.types";
+import { useToast } from "@/hooks/use-toast";
 
 interface TapInResponse {
   success: boolean;
@@ -123,6 +126,9 @@ function TapPageContent() {
   const router = useRouter();
   const [showClubDetails, setShowClubDetails] = useState(false);
   const [scrollToRewards, setScrollToRewards] = useState(false);
+  const [isOptingIn, setIsOptingIn] = useState(false);
+  const [hasOptedIn, setHasOptedIn] = useState(false);
+  const { toast } = useToast();
   
   // Extract QR parameters and load club info
   const { 
@@ -169,6 +175,46 @@ function TapPageContent() {
   // Manual authentication handler
   const handleAuthAndTapIn = () => {
     triggerAuth();
+  };
+
+  // Handle notifications opt-in
+  const handleNotificationsOptIn = async () => {
+    if (isOptingIn) return;
+    
+    setIsOptingIn(true);
+    
+    try {
+      // Get authentication headers
+      const authHeaders = await getAuthHeaders();
+      
+      const response = await fetch('/api/users/notifications-opt-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+      });
+
+      if (response.ok) {
+        setHasOptedIn(true);
+        toast({
+          title: "Campaign Launch Alert Enabled! 🚀",
+          description: "You'll be notified when campaigns launch.",
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(errorData.error || 'Failed to opt in to notifications');
+      }
+    } catch (error) {
+      console.error('Error opting in to notifications:', error);
+      toast({
+        title: "Error",
+        description: "Failed to enable launch alerts. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsOptingIn(false);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -451,10 +497,10 @@ function TapPageContent() {
             {/* Header */}
             <div className="text-center mb-8">
               <h1 className="text-2xl font-bold text-foreground mb-2">
-                ADD {clubInfo.name}
+                Join {clubInfo.name}
               </h1>
               <p className="text-muted-foreground">
-                Join the Club and Earn Points
+                Earn {getPointValue(source || undefined, data || undefined)} points now. Increase your status.
               </p>
             </div>
 
@@ -486,12 +532,19 @@ function TapPageContent() {
               </button>
             </motion.div>
 
-            {/* Footer */}
-            <div className="mt-8 text-center">
+            {/* Micro-teaser */}
+            <motion.div
+              className="text-center mt-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8 }}
+            >
               <p className="text-xs text-muted-foreground">
-                Secure authentication powered by Privy
+                Campaigns launch soon.<br />
+                Higher status result in bigger discounts.
               </p>
-            </div>
+            </motion.div>
+
           </motion.div>
         </div>
       </div>
@@ -615,71 +668,20 @@ function TapPageContent() {
                   </div>
                 </motion.div>
 
-                {/* Status Display */}
+                {/* Status Progress Card */}
                 <motion.div
                   className="mb-8"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 1.0 }}
                 >
-                  {tapResult.status_changed ? (
-                    <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl p-6 border border-purple-500/30">
-                      <motion.div
-                        className="flex items-center justify-center mb-4"
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ delay: 1.2, type: "spring", stiffness: 200 }}
-                      >
-                        <Sparkles className="h-6 w-6 text-purple-400 mr-2" />
-                        <span className="text-lg font-bold">Status Upgraded!</span>
-                        <Sparkles className="h-6 w-6 text-purple-400 ml-2" />
-                      </motion.div>
-                      
-                      <div className="flex items-center justify-center space-x-4">
-                        <div className="text-center">
-                          <div className={`${getStatusColor(tapResult.previous_status)} mb-1`}>
-                            {React.createElement(getStatusIcon(tapResult.previous_status), { className: "h-6 w-6 mx-auto" })}
-                          </div>
-                          <span className="text-xs text-muted-foreground capitalize">
-                            {tapResult.previous_status}
-                          </span>
-                        </div>
-                        
-                        <motion.div
-                          initial={{ x: -10, opacity: 0 }}
-                          animate={{ x: 0, opacity: 1 }}
-                          transition={{ delay: 1.4 }}
-                        >
-                          →
-                        </motion.div>
-                        
-                        <div className="text-center">
-                          <motion.div
-                            className={`${getStatusColor(tapResult.current_status)} mb-1`}
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ delay: 1.5, type: "spring" }}
-                          >
-                            {React.createElement(getStatusIcon(tapResult.current_status), { className: "h-6 w-6 mx-auto" })}
-                          </motion.div>
-                          <span className="text-xs font-medium capitalize">
-                            {tapResult.current_status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-[#0F141E] rounded-xl p-4 border border-[#1E1E32]/20">
-                      <div className="flex items-center justify-center">
-                        <div className={`${getStatusColor(tapResult.current_status)} mr-2`}>
-                          {React.createElement(getStatusIcon(tapResult.current_status), { className: "h-5 w-5" })}
-                        </div>
-                        <span className="font-medium capitalize">
-                          {tapResult.current_status} Status
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                  <StatusProgressionCard
+                    currentStatus={tapResult.current_status as any}
+                    currentPoints={tapResult.total_points}
+                    nextStatus={getNextStatus(tapResult.current_status as any)}
+                    pointsToNext={getPointsToNext(tapResult.total_points, tapResult.current_status as any)}
+                    statusIcon={getStatusIcon(tapResult.current_status)}
+                  />
                 </motion.div>
 
                 {/* Actions */}
@@ -690,16 +692,23 @@ function TapPageContent() {
                   transition={{ delay: 1.6 }}
                 >
                   <button
-                    onClick={() => {
-                      setScrollToRewards(true);
-                      if (process.env.NODE_ENV !== 'production') {
-                        console.log('View Available Rewards clicked:', { clubInfo });
-                      }
-                      setShowClubDetails(true);
-                    }}
-                    className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                    onClick={handleNotificationsOptIn}
+                    disabled={isOptingIn || hasOptedIn}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      hasOptedIn
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-70 shadow-none'
+                        : isOptingIn
+                        ? 'bg-primary text-white opacity-50 cursor-not-allowed'
+                        : 'bg-primary text-white hover:bg-primary/90 cursor-pointer'
+                    }`}
                   >
-                    View Available Rewards
+                    {!hasOptedIn && !isOptingIn && <Bell className="w-4 h-4" />}
+                    {hasOptedIn 
+                      ? 'Campaign Launch Alert Enabled ✓' 
+                      : isOptingIn 
+                      ? 'Enabling...' 
+                      : 'Get Campaign Launch Alert'
+                    }
                   </button>
                   
                   <button

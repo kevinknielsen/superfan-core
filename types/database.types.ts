@@ -363,6 +363,7 @@ export type Database = {
           email: string | null
           id: string
           name: string | null
+          notifications_opt_in: boolean
           privy_id: string
           updated_at: string
         }
@@ -371,6 +372,7 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string | null
+          notifications_opt_in?: boolean
           privy_id: string
           updated_at?: string
         }
@@ -379,6 +381,7 @@ export type Database = {
           email?: string | null
           id?: string
           name?: string | null
+          notifications_opt_in?: boolean
           privy_id?: string
           updated_at?: string
         }

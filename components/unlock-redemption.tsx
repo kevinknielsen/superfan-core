@@ -465,10 +465,10 @@ export default function UnlockRedemption({
     return (
       <Card>
         <CardContent className="p-8 text-center">
-          <Gift className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">No Unlocks Available</h3>
+          <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Campaigns Coming Soon</h3>
           <p className="text-muted-foreground">
-            This club doesn't have any unlocks configured yet. Check back later!
+            Your status sets your discount. Earn points now and get ready.
           </p>
         </CardContent>
       </Card>
