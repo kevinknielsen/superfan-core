@@ -16,7 +16,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const campaignId = params.id;
+    const { id: campaignId } = await params;
     
     // Verify admin authentication
     const auth = await verifyUnifiedAuth(request);

@@ -10,7 +10,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id: clubId } = params;
+  const { id: clubId } = await params;
 
   const auth = await verifyUnifiedAuth(request);
   if (!auth) {

@@ -79,7 +79,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
     const user = await getUserId(auth);
     
     if (!user) {
@@ -185,7 +185,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
     const user = await getUserId(auth);
     
     if (!user) {
@@ -268,7 +268,7 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const clubId = params.id;
+    const { id: clubId } = await params;
     const user = await getUserId(auth);
     
     if (!user) {

@@ -13,13 +13,20 @@ export async function generateMetadata(): Promise<Metadata> {
   const siteDescription =
     "Support artists through campaigns and unlock exclusive perks with instant discounts based on your fan tier";
   const headersList = await headers();
-  const host = headersList.get('host');
-  const protocol = headersList.get('x-forwarded-proto') || 'https';
+  const forwardedHost = headersList.get('x-forwarded-host');
+  const host = forwardedHost || headersList.get('host');
+  const forwardedProto = headersList.get('x-forwarded-proto');
+  const protocol = forwardedProto || (host && (host.includes('localhost') || host.includes('127.0.0.1') || host.includes('.local')) ? 'http' : 'https');
   const computedBaseUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one');
-  const baseUrl =
-    process.env.NODE_ENV === 'production'
-      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
-      : computedBaseUrl;
+  
+  // Check if this is real production (not preview)
+  const isRealProduction = (process.env.NODE_ENV === 'production' && 
+    (process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_ENV) !== 'preview') ||
+    (process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_ENV) === 'production';
+  
+  const baseUrl = isRealProduction 
+    ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
+    : computedBaseUrl;
   
   // Mini App embed configuration
   const miniAppEmbed = {

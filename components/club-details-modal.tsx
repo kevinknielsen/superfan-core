@@ -382,9 +382,9 @@ export default function ClubDetailsModal({
             {/* Latest Section - Club Media */}
             <div className="mb-8">
               <h3 className="mb-4 text-xl font-semibold">Latest</h3>
-              {/* Container with responsive sizing */}
-              <div className="flex justify-center">
-                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl">
+              {/* Container with responsive sizing - Desktop: video left, Mobile: centered */}
+              <div className="flex justify-center md:justify-start">
+                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl md:max-w-lg">
                   <div className="relative aspect-video md:aspect-[4/3]">
                     <ClubMediaDisplay
                       clubId={club.id}
@@ -399,7 +399,7 @@ export default function ClubDetailsModal({
                 
                 {/* Enhanced content section */}
                 <div className="p-5 bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-sm">
-                  <h4 className="font-bold text-white text-lg mb-3">Behind-the-Scenes from {club.name}</h4>
+                  <h4 className="font-bold text-white text-lg mb-3">Recent Updates from {club.name}</h4>
                   
                   {/* Cool accent line */}
                   <div className="w-12 h-0.5 bg-gradient-to-r from-primary to-purple-400 rounded-full"></div>

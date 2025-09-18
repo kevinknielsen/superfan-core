@@ -26,7 +26,7 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden - Admin access required" }, { status: 403 });
   }
 
-  const unlockId = params.id;
+  const { id: unlockId } = await params;
 
   try {
     // Get current unlock status

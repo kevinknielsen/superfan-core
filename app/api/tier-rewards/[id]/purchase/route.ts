@@ -25,7 +25,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const tierRewardId = params.id;
+  const { id: tierRewardId } = await params;
 
   // Resolve base URL safely
   const baseUrl = resolveBaseUrl();

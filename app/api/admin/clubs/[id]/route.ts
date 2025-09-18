@@ -16,7 +16,8 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  if (!/^[0-9a-fA-F-]{36}$/.test(params.id)) {
+  const { id: clubId } = await params;
+  if (!/^[0-9a-fA-F-]{36}$/.test(clubId)) {
     return NextResponse.json({ error: "Invalid club id" }, { status: 400 });
   }
 
@@ -40,7 +41,7 @@ export async function GET(
         unlocks(count),
         tap_ins(count)
       `)
-      .eq('id', params.id)
+      .eq('id', clubId)
       .single();
 
     if (error) {
@@ -93,7 +94,7 @@ export async function PATCH(
     const { data: currentClub, error: fetchError } = await supabaseAny
       .from('clubs')
       .select('is_active')
-      .eq('id', params.id)
+      .eq('id', clubId)
       .single();
 
     if (fetchError) {
@@ -113,7 +114,7 @@ export async function PATCH(
         is_active: newActiveState,
         updated_at: new Date().toISOString()
       })
-      .eq('id', params.id)
+      .eq('id', clubId)
       .select()
       .single();
 
@@ -122,7 +123,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Failed to update club" }, { status: 500 });
     }
 
-    console.log(`[Admin Club Toggle API] Club ${params.id} active status changed to: ${newActiveState}`);
+    console.log(`[Admin Club Toggle API] Club ${clubId} active status changed to: ${newActiveState}`);
 
     return NextResponse.json({
       ...updatedClub,
@@ -164,7 +165,7 @@ export async function DELETE(
     const { count: memberCount, error: countError } = await supabaseAny
       .from('club_memberships')
       .select('*', { count: 'exact', head: true })
-      .eq('club_id', params.id)
+      .eq('club_id', clubId)
       .eq('status', 'active');
 
     if (countError) {
@@ -185,7 +186,7 @@ export async function DELETE(
         is_active: false,
         updated_at: new Date().toISOString()
       })
-      .eq('id', params.id)
+      .eq('id', clubId)
       .select()
       .single();
 
@@ -196,7 +197,7 @@ export async function DELETE(
       throw deleteError;
     }
 
-    console.log(`[Admin Club Delete API] Soft deleted club: ${params.id}`);
+    console.log(`[Admin Club Delete API] Soft deleted club: ${clubId}`);
 
     return NextResponse.json({ 
       success: true, 
