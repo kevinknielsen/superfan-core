@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, Suspense, useState } from "react";
+import React, { useEffect, Suspense, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode, Bell } from "lucide-react";
@@ -138,6 +138,12 @@ function TapPageContent() {
     hasValidQRParams, 
     paramError 
   } = useTapQRParams();
+  
+  // Cache point value calculation to avoid recomputation
+  const pointsPreview = useMemo(
+    () => getPointValue(source || undefined, data || undefined),
+    [source, data]
+  );
 
   // Handle authentication flow
   const {
@@ -500,7 +506,7 @@ function TapPageContent() {
                 Join {clubInfo.name}
               </h1>
               <p className="text-muted-foreground">
-                Earn {getPointValue(source || undefined, data || undefined)} points now. Increase your status.
+                Earn {pointsPreview} points now. Increase your status.
               </p>
             </div>
 
@@ -513,7 +519,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{getPointValue(source || undefined, data || undefined)} points
+                  +{pointsPreview} points
                 </span>
               </div>
             </motion.div>
@@ -541,7 +547,7 @@ function TapPageContent() {
             >
               <p className="text-xs text-muted-foreground">
                 Campaigns launch soon.<br />
-                Higher status result in bigger discounts.
+                Higher status results in bigger discounts.
               </p>
             </motion.div>
 

@@ -21,21 +21,37 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Calculate member count for each club
-    const clubsWithMemberCount = await Promise.all(
-      clubs.map(async (club) => {
-        const { count: memberCount, error: countError } = await supabase
-          .from('club_memberships')
-          .select('*', { count: 'exact', head: true })
-          .eq('club_id', club.id)
-          .eq('status', 'active');
+    // Calculate member count for all clubs in a single query
+    const clubIds = clubs.map(club => club.id);
+    
+    let memberCountMap: Record<string, number> = {};
+    
+    if (clubIds.length > 0) {
+      const { data: memberCounts, error: countError } = await supabase
+        .from('club_memberships')
+        .select('club_id')
+        .eq('status', 'active')
+        .in('club_id', clubIds);
 
-        return {
-          ...club,
-          member_count: countError ? 0 : (memberCount || 0)
-        };
-      })
-    );
+      if (countError) {
+        console.error('Error counting members:', countError);
+        // Fallback to 0 for all clubs if count query fails
+        memberCountMap = {};
+      } else {
+        // Group by club_id and count occurrences
+        memberCountMap = (memberCounts || []).reduce((acc, membership) => {
+          const clubId = membership.club_id;
+          acc[clubId] = (acc[clubId] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+      }
+    }
+
+    // Map clubs to include member_count
+    const clubsWithMemberCount = clubs.map(club => ({
+      ...club,
+      member_count: memberCountMap[club.id] || 0
+    }));
 
     return NextResponse.json({ clubs: clubsWithMemberCount });
   } catch (error) {

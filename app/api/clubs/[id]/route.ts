@@ -36,19 +36,18 @@ export async function GET(
       );
     }
 
-    // Calculate member count
-    const { count: memberCount, error: countError } = await supabase
+    // Calculate member count using a more efficient query
+    const { data: memberships, error: countError } = await supabase
       .from('club_memberships')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
       .eq('club_id', id)
       .eq('status', 'active');
 
     if (countError) {
       console.error('Error counting members:', countError);
-      // Don't fail the request, just set member count to 0
       club.member_count = 0;
     } else {
-      club.member_count = memberCount || 0;
+      club.member_count = memberships?.length || 0;
     }
 
     return NextResponse.json(club);

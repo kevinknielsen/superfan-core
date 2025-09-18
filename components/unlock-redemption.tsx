@@ -167,22 +167,12 @@ export default function UnlockRedemption({
   const [isRedeeming, setIsRedeeming] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    
-    const loadDataWithAbort = async () => {
-      await loadData();
-      // Note: loadData should ideally accept signal parameter for full abort support
-    };
-    
-    loadDataWithAbort();
-    
-    return () => {
-      active = false;
-      // nothing to abort yet
-    };
+    const ac = new AbortController();
+    loadData(ac.signal).catch(() => {});
+    return () => ac.abort();
   }, [clubId]);
 
-  const loadData = async () => {
+  const loadData = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
       // Get auth token
@@ -193,7 +183,8 @@ export default function UnlockRedemption({
 
       // Load tier rewards data using new API
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+        signal
       });
 
       if (response.ok) {
@@ -503,7 +494,7 @@ export default function UnlockRedemption({
           }
           
           // Show discount confirmation if applicable
-          if (result.discount_applied_cents > 0) {
+          if ((result?.discount_applied_cents ?? 0) > 0) {
             toast({
               title: "Discount Applied!",
               description: `You're saving $${(result.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
@@ -512,7 +503,7 @@ export default function UnlockRedemption({
           
           window.location.href = url;
         } else {
-          const errorData = await response.json() as { error?: string };
+          const errorData = await response.json().catch(() => ({})) as { error?: string };
           throw new Error(errorData.error || 'Failed to start purchase');
         }
       } else {
@@ -540,7 +531,7 @@ export default function UnlockRedemption({
           }
           window.location.href = url;
         } else {
-          const errorData = await response.json() as { error?: string };
+          const errorData = await response.json().catch(() => ({})) as { error?: string };
           throw new Error(errorData.error || 'Failed to start upgrade purchase');
         }
       }
