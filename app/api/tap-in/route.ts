@@ -39,9 +39,15 @@ export async function POST(request: NextRequest) {
 
   console.log(`[Tap-in API] Authenticated user: ${auth.userId} (${auth.type})`);
 
-  const body = await request.json();
-  const tapInData = tapInSchema(body);
-
+  // Parse and validate JSON inside try/catch to handle malformed JSON gracefully
+  let tapInData: any;
+  try {
+    const body = await request.json();
+    tapInData = tapInSchema(body);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  
   if (tapInData instanceof type.errors) {
     console.error("[Tap-in API] Invalid request body:", tapInData);
     return NextResponse.json(
@@ -109,6 +115,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if QR code has reached its usage limit
+      // NOTE: usage_count may be stale under high contention. Consider using COUNT(*) from qr_code_usage
+      // within the same transaction that awards points for better consistency
       const { data: qrCode, error: qrError } = await supabase
         .from('qr_codes' as any)
         .select('usage_count, max_usage_limit, is_active')
@@ -259,6 +267,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // TODO: Define proper type for tap_ins table to avoid any cast
     const { data: tapIns, error } = await supabase
       .from('tap_ins' as any)
       .select('*')

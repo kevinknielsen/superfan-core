@@ -144,7 +144,10 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
       };
 
       // Generate idempotency key for double-submit protection
-      const idempotencyKey = `tap-in-${clubId}-${source}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Use stable key when qrId is present to ensure proper duplicate prevention
+      const idempotencyKey = qrId
+        ? `tap-in:${clubId}:${source}:${qrId}`
+        : `tap-in:${clubId}:${source}:${Date.now()}:${Math.random().toString(36).slice(2, 11)}`;
 
       // Get authentication headers
       const authHeaders = await getAuthHeaders();

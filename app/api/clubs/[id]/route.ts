@@ -36,10 +36,10 @@ export async function GET(
       );
     }
 
-    // Calculate member count using a more efficient query
-    const { data: memberships, error: countError } = await supabase
+    // Calculate member count using efficient count query
+    const { count, error: countError } = await supabase
       .from('club_memberships')
-      .select('id')
+      .select('id', { count: 'exact', head: true })
       .eq('club_id', id)
       .eq('status', 'active');
 
@@ -47,7 +47,7 @@ export async function GET(
       console.error('Error counting members:', countError);
       club.member_count = 0;
     } else {
-      club.member_count = memberships?.length || 0;
+      club.member_count = Number(count) || 0;
     }
 
     return NextResponse.json(club);

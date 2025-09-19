@@ -169,10 +169,7 @@ export default function UnlockRedemption({
   useEffect(() => {
     const ac = new AbortController();
     loadData(ac.signal).catch((error) => {
-      // Only log non-AbortError errors
-      if (!(error instanceof Error && error.name === 'AbortError')) {
-        console.error('Failed to load unlock data:', error);
-      }
+      console.error('Failed to load unlock data:', error);
     });
     return () => ac.abort();
   }, [clubId]);
@@ -274,12 +271,6 @@ export default function UnlockRedemption({
         setRedemptions([]);
       }
     } catch (error) {
-      // Don't log AbortError as it's expected when component unmounts
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Silently handle AbortError - this is expected when component unmounts
-        return;
-      }
-      
       console.error('Error loading data:', error);
       setUnlocks([]);
       setRedemptions([]);
@@ -514,7 +505,7 @@ export default function UnlockRedemption({
           
           window.location.href = url;
         } else {
-          const errorData = await response.json().catch(() => ({})) as { error?: string };
+          const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start purchase');
         }
       } else {
@@ -542,7 +533,7 @@ export default function UnlockRedemption({
           }
           window.location.href = url;
         } else {
-          const errorData = await response.json().catch(() => ({})) as { error?: string };
+          const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start upgrade purchase');
         }
       }
