@@ -563,8 +563,7 @@ function TapPageContent() {
   // Handle different error scenarios
   const isAlreadyScanned = error?.includes('ERROR_CODE:QR_ALREADY_SCANNED');
   const isQRInactive = error?.includes('ERROR_CODE:QR_INACTIVE');
-  const isQRLimitReached = error?.includes('ERROR_CODE:QR_LIMIT_REACHED');
-  const isQRRelatedError = isAlreadyScanned || isQRInactive || isQRLimitReached;
+  const isQRRelatedError = isAlreadyScanned || isQRInactive;
 
   // Extract clean error message (remove error code)
   const cleanErrorMessage = error?.split('|ERROR_CODE:')[0] || error;
@@ -643,14 +642,10 @@ function TapPageContent() {
                   <div className={`h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
                     isAlreadyScanned 
                       ? 'bg-blue-500/20' 
-                      : isQRLimitReached 
-                      ? 'bg-orange-500/20' 
                       : 'bg-gray-500/20'
                   }`}>
                     {isAlreadyScanned ? (
                       <CheckCircle className="h-10 w-10 text-blue-500" />
-                    ) : isQRLimitReached ? (
-                      <Users className="h-10 w-10 text-orange-500" />
                     ) : (
                       <X className="h-10 w-10 text-gray-500" />
                     )}
@@ -664,8 +659,6 @@ function TapPageContent() {
                   >
                     {isAlreadyScanned 
                       ? "Already a Member! ✅" 
-                      : isQRLimitReached 
-                      ? "QR Code Full! 📱" 
                       : "QR Code Inactive ❌"
                     }
                   </motion.h1>
@@ -696,8 +689,6 @@ function TapPageContent() {
                         <p className="text-sm text-muted-foreground">
                           {isAlreadyScanned 
                             ? "You're already a member" 
-                            : isQRLimitReached 
-                            ? "Maximum scans reached" 
                             : "This QR code is no longer active"
                           }
                         </p>

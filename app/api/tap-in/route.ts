@@ -114,12 +114,10 @@ export async function POST(request: NextRequest) {
         }, { status: 409 });
       }
 
-      // Check if QR code has reached its usage limit
-      // NOTE: usage_count may be stale under high contention. Consider using COUNT(*) from qr_code_usage
-      // within the same transaction that awards points for better consistency
+      // Check if QR code is still active (no global usage limits - unlimited total scans)
       const { data: qrCode, error: qrError } = await supabase
         .from('qr_codes' as any)
-        .select('usage_count, max_usage_limit, is_active')
+        .select('is_active')
         .eq('qr_id', qrId)
         .single();
 
@@ -133,14 +131,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ 
           error: "This QR code is no longer active",
           error_code: "QR_INACTIVE"
-        }, { status: 410 });
-      }
-
-      if ((qrCode as any).max_usage_limit && (qrCode as any).usage_count >= (qrCode as any).max_usage_limit) {
-        console.log(`[Tap-in API] QR code ${qrId} has reached usage limit: ${(qrCode as any).usage_count}/${(qrCode as any).max_usage_limit}`);
-        return NextResponse.json({ 
-          error: "This QR code has reached its usage limit",
-          error_code: "QR_LIMIT_REACHED"
         }, { status: 410 });
       }
     }
