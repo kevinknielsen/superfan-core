@@ -3,7 +3,7 @@
 import React, { useEffect, Suspense, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode, Bell } from "lucide-react";
+import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode, Bell, X } from "lucide-react";
 import Header from "@/components/header";
 import ClubDetailsModal from "@/components/club-details-modal";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
@@ -560,7 +560,17 @@ function TapPageContent() {
   // Authentication loading is now handled within the useTapAuthentication hook
   // No separate loading state needed here
 
-  if (error) {
+  // Handle different error scenarios
+  const isAlreadyScanned = error?.includes('ERROR_CODE:QR_ALREADY_SCANNED');
+  const isQRInactive = error?.includes('ERROR_CODE:QR_INACTIVE');
+  const isQRLimitReached = error?.includes('ERROR_CODE:QR_LIMIT_REACHED');
+  const isQRRelatedError = isAlreadyScanned || isQRInactive || isQRLimitReached;
+
+  // Extract clean error message (remove error code)
+  const cleanErrorMessage = error?.split('|ERROR_CODE:')[0] || error;
+
+  if (error && !isQRRelatedError) {
+    // Show error page for non-QR related errors
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -571,7 +581,7 @@ function TapPageContent() {
                 <Zap className="h-8 w-8 text-red-500" />
               </div>
               <h1 className="text-2xl font-bold mb-2">Tap-in Failed</h1>
-              <p className="text-muted-foreground">{error}</p>
+              <p className="text-muted-foreground">{cleanErrorMessage}</p>
             </div>
             <button
               onClick={() => router.push('/dashboard')}
@@ -612,6 +622,144 @@ function TapPageContent() {
                 <p className="text-muted-foreground">Earning your points</p>
               </div>
             </motion.div>
+          )}
+
+          {/* QR Already Scanned State */}
+          {isQRRelatedError && clubInfo && (
+            <AnimatePresence>
+              <motion.div
+                className="text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+              >
+                {/* Already Scanned Icon */}
+                <motion.div
+                  className="mb-6"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                >
+                  <div className={`h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                    isAlreadyScanned 
+                      ? 'bg-blue-500/20' 
+                      : isQRLimitReached 
+                      ? 'bg-orange-500/20' 
+                      : 'bg-gray-500/20'
+                  }`}>
+                    {isAlreadyScanned ? (
+                      <CheckCircle className="h-10 w-10 text-blue-500" />
+                    ) : isQRLimitReached ? (
+                      <Users className="h-10 w-10 text-orange-500" />
+                    ) : (
+                      <X className="h-10 w-10 text-gray-500" />
+                    )}
+                  </div>
+                  
+                  <motion.h1
+                    className="text-3xl font-bold mb-2"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    {isAlreadyScanned 
+                      ? "Already a Member! ✅" 
+                      : isQRLimitReached 
+                      ? "QR Code Full! 📱" 
+                      : "QR Code Inactive ❌"
+                    }
+                  </motion.h1>
+                </motion.div>
+
+                {/* Club Info Card */}
+                <motion.div
+                  className="mb-8"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.6 }}
+                >
+                  <div className="bg-[#0F141E] rounded-xl p-6 border border-primary/20">
+                    <div className="flex items-center gap-3 mb-4">
+                      {clubInfo.image_url ? (
+                        <img
+                          src={clubInfo.image_url}
+                          alt={clubInfo.name}
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center">
+                          <Users className="w-6 h-6 text-primary" />
+                        </div>
+                      )}
+                      <div className="text-left">
+                        <h3 className="font-semibold text-white">{clubInfo.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {isAlreadyScanned 
+                            ? "You're already a member" 
+                            : isQRLimitReached 
+                            ? "Maximum scans reached" 
+                            : "This QR code is no longer active"
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="text-sm text-muted-foreground">
+                      {cleanErrorMessage}
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Actions */}
+                <motion.div
+                  className="space-y-3"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.0 }}
+                >
+                  <button
+                    onClick={handleNotificationsOptIn}
+                    disabled={isOptingIn || hasOptedIn}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      hasOptedIn
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-70 shadow-none'
+                        : isOptingIn
+                        ? 'bg-primary text-white opacity-50 cursor-not-allowed'
+                        : 'bg-primary text-white hover:bg-primary/90 cursor-pointer'
+                    }`}
+                  >
+                    {!hasOptedIn && !isOptingIn && <Bell className="w-4 h-4" />}
+                    {hasOptedIn 
+                      ? 'Campaign Launch Alert Enabled ✓' 
+                      : isOptingIn 
+                      ? 'Enabling...' 
+                      : 'Get Campaign Launch Alert'
+                    }
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setScrollToRewards(false);
+                      setShowClubDetails(true);
+                    }}
+                    className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
+                  >
+                    View Club Details
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      console.log('Go to Dashboard clicked in Already Scanned State');
+                      router.push('/dashboard');
+                    }}
+                    className="w-full px-6 py-3 bg-transparent text-muted-foreground rounded-lg hover:bg-white/5 transition-colors border border-[#1E1E32]/20"
+                  >
+                    Go to Dashboard
+                  </button>
+                </motion.div>
+
+              </motion.div>
+            </AnimatePresence>
           )}
 
           {/* Success State */}
@@ -728,6 +876,16 @@ function TapPageContent() {
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      console.log('Go to Dashboard clicked in Success State');
+                      router.push('/dashboard');
+                    }}
+                    className="w-full px-6 py-3 bg-transparent text-muted-foreground rounded-lg hover:bg-white/5 transition-colors border border-[#1E1E32]/20"
+                  >
+                    Go to Dashboard
                   </button>
                 </motion.div>
 

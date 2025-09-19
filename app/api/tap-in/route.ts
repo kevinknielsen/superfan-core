@@ -73,6 +73,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
 
+    // Check for QR code duplicate scans (for any source that has a qr_id in metadata)
+    let qrId: string | null = null;
+    const metadata = tapInData.metadata as any;
+    qrId = metadata?.qr_id;
+    
+    if (qrId) {
+      console.log(`[Tap-in API] Checking QR code usage for qr_id: ${qrId}, user_id: ${user.id}`);
+
+      // Check if user already scanned this QR code
+      const { data: existingScan, error: scanError } = await supabase
+        .from('qr_code_usage')
+        .select('id')
+        .eq('qr_id', qrId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (scanError && scanError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error("[Tap-in API] Error checking QR usage:", scanError);
+        return NextResponse.json({ error: "Failed to verify QR code" }, { status: 500 });
+      }
+
+      if (existingScan) {
+        console.log(`[Tap-in API] User ${user.id} already scanned QR ${qrId}`);
+        return NextResponse.json({ 
+          error: "You've already scanned this QR code",
+          error_code: "QR_ALREADY_SCANNED"
+        }, { status: 409 });
+      }
+
+      // Check if QR code has reached its usage limit
+      const { data: qrCode, error: qrError } = await supabase
+        .from('qr_codes')
+        .select('usage_count, max_usage_limit, is_active')
+        .eq('qr_id', qrId)
+        .single();
+
+      if (qrError) {
+        console.error("[Tap-in API] Error fetching QR code:", qrError);
+        return NextResponse.json({ error: "QR code not found" }, { status: 404 });
+      }
+
+      if (!qrCode.is_active) {
+        console.log(`[Tap-in API] QR code ${qrId} is inactive`);
+        return NextResponse.json({ 
+          error: "This QR code is no longer active",
+          error_code: "QR_INACTIVE"
+        }, { status: 410 });
+      }
+
+      if (qrCode.max_usage_limit && qrCode.usage_count >= qrCode.max_usage_limit) {
+        console.log(`[Tap-in API] QR code ${qrId} has reached usage limit: ${qrCode.usage_count}/${qrCode.max_usage_limit}`);
+        return NextResponse.json({ 
+          error: "This QR code has reached its usage limit",
+          error_code: "QR_LIMIT_REACHED"
+        }, { status: 410 });
+      }
+    }
+
     // Determine points to award
     const pointsToAward = tapInData.points_earned || 
       (tapInData.source in POINT_VALUES ? POINT_VALUES[tapInData.source as keyof typeof POINT_VALUES] : POINT_VALUES.default);
@@ -113,6 +171,30 @@ export async function POST(request: NextRequest) {
         error: tapInResult?.error || 'Tap-in processing failed',
         details: tapInResult
       }, { status: 500 });
+    }
+
+    // Record QR code usage if this was a QR scan
+    if (qrId && tapInResult?.success) {
+      try {
+        const { error: usageError } = await supabase
+          .from('qr_code_usage')
+          .insert({
+            qr_id: qrId,
+            user_id: user.id,
+            points_awarded: tapInResult.points_earned,
+            tap_in_id: tapInResult.tap_in?.id
+          });
+
+        if (usageError) {
+          // Log the error but don't fail the tap-in since points were already awarded
+          console.error("[Tap-in API] Failed to record QR usage (non-fatal):", usageError);
+        } else {
+          console.log(`[Tap-in API] Recorded QR usage for qr_id: ${qrId}, user_id: ${user.id}`);
+        }
+      } catch (error) {
+        // Log the error but don't fail the tap-in since points were already awarded
+        console.error("[Tap-in API] Exception recording QR usage (non-fatal):", error);
+      }
     }
 
     // Build response with all the data from the unified function

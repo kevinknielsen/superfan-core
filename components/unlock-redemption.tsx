@@ -168,7 +168,12 @@ export default function UnlockRedemption({
 
   useEffect(() => {
     const ac = new AbortController();
-    loadData(ac.signal).catch(() => {});
+    loadData(ac.signal).catch((error) => {
+      // Only log non-AbortError errors
+      if (!(error instanceof Error && error.name === 'AbortError')) {
+        console.error('Failed to load unlock data:', error);
+      }
+    });
     return () => ac.abort();
   }, [clubId]);
 
@@ -269,6 +274,12 @@ export default function UnlockRedemption({
         setRedemptions([]);
       }
     } catch (error) {
+      // Don't log AbortError as it's expected when component unmounts
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Silently handle AbortError - this is expected when component unmounts
+        return;
+      }
+      
       console.error('Error loading data:', error);
       setUnlocks([]);
       setRedemptions([]);

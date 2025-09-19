@@ -168,10 +168,20 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         
         try {
           // First try to parse as JSON
-          const errorData = await response.json() as { error?: string; message?: string; detail?: string };
+          const errorData = await response.json() as { 
+            error?: string; 
+            message?: string; 
+            detail?: string; 
+            error_code?: string;
+          };
           
           // Check common error fields in order of preference
           errorMessage = errorData.error || errorData.message || errorData.detail || errorMessage;
+          
+          // Include error code in the error message for special handling
+          if (errorData.error_code) {
+            errorMessage = `${errorMessage}|ERROR_CODE:${errorData.error_code}`;
+          }
         } catch (jsonError) {
           try {
             // If JSON parsing fails, try to get text content
