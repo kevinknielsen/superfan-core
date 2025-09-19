@@ -62,12 +62,11 @@ export async function generateMetadata(): Promise<Metadata> {
     generator: "v0.dev",
     icons: {
       icon: [
-        { url: "/favicon.svg?v=2", type: "image/svg+xml" },
-        { url: "/favicon.ico?v=2", sizes: "32x32" },
-        { url: "/placeholder-logo.svg", type: "image/svg+xml", sizes: "any" }
+        { url: "/favicon.png?v=4", type: "image/png", sizes: "32x32" },
+        { url: "/favicon.svg?v=4", type: "image/svg+xml", sizes: "any" }
       ],
-      shortcut: "/favicon.ico?v=2",
-      apple: "/favicon.svg?v=2",
+      shortcut: "/favicon.png?v=4",
+      apple: "/favicon.png?v=4",
     },
     keywords: ["music", "artists", "campaigns", "fan tiers", "exclusive perks", "music platform", "superfan", "discounts", "rewards"],
     authors: [{ name: "Superfan" }],
@@ -143,9 +142,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
-        <link rel="icon" href="/favicon.ico?v=2" type="image/x-icon" />
-        <link rel="shortcut icon" href="/favicon.ico?v=2" />
+        <link rel="icon" href="/favicon.png?v=4" type="image/png" sizes="32x32" />
+        <link rel="icon" href="/favicon.svg?v=4" type="image/svg+xml" />
       </head>
       <body
         className={`${inter.variable} antialiased bg-[#0E0E14] text-[#F0F0F0]`}
