@@ -144,7 +144,10 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
       };
 
       // Generate idempotency key for double-submit protection
-      const idempotencyKey = `tap-in-${clubId}-${source}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Use stable key when qrId is present to ensure proper duplicate prevention
+      const idempotencyKey = qrId
+        ? `tap-in:${clubId}:${source}:${qrId}`
+        : `tap-in:${clubId}:${source}:${Date.now()}:${Math.random().toString(36).slice(2, 11)}`;
 
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
@@ -168,10 +171,20 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         
         try {
           // First try to parse as JSON
-          const errorData = await response.json() as { error?: string; message?: string; detail?: string };
+          const errorData = await response.json() as { 
+            error?: string; 
+            message?: string; 
+            detail?: string; 
+            error_code?: string;
+          };
           
           // Check common error fields in order of preference
           errorMessage = errorData.error || errorData.message || errorData.detail || errorMessage;
+          
+          // Include error code in the error message for special handling
+          if (errorData.error_code) {
+            errorMessage = `${errorMessage}|ERROR_CODE:${errorData.error_code}`;
+          }
         } catch (jsonError) {
           try {
             // If JSON parsing fails, try to get text content

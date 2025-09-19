@@ -167,22 +167,14 @@ export default function UnlockRedemption({
   const [isRedeeming, setIsRedeeming] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    
-    const loadDataWithAbort = async () => {
-      await loadData();
-      // Note: loadData should ideally accept signal parameter for full abort support
-    };
-    
-    loadDataWithAbort();
-    
-    return () => {
-      active = false;
-      // nothing to abort yet
-    };
+    const ac = new AbortController();
+    loadData(ac.signal).catch((error) => {
+      console.error('Failed to load unlock data:', error);
+    });
+    return () => ac.abort();
   }, [clubId]);
 
-  const loadData = async () => {
+  const loadData = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
       // Get auth token
@@ -193,7 +185,8 @@ export default function UnlockRedemption({
 
       // Load tier rewards data using new API
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+        signal
       });
 
       if (response.ok) {
@@ -465,10 +458,10 @@ export default function UnlockRedemption({
     return (
       <Card>
         <CardContent className="p-8 text-center">
-          <Gift className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">No Unlocks Available</h3>
+          <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Campaigns Coming Soon</h3>
           <p className="text-muted-foreground">
-            This club doesn't have any unlocks configured yet. Check back later!
+            Your status sets your discount. Earn points now and get ready.
           </p>
         </CardContent>
       </Card>
@@ -503,7 +496,7 @@ export default function UnlockRedemption({
           }
           
           // Show discount confirmation if applicable
-          if (result.discount_applied_cents > 0) {
+          if ((result?.discount_applied_cents ?? 0) > 0) {
             toast({
               title: "Discount Applied!",
               description: `You're saving $${(result.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,

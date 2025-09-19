@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, Suspense, useState } from "react";
+import React, { useEffect, Suspense, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode } from "lucide-react";
+import { CheckCircle, Crown, Users, Zap, Sparkles, MapPin, QrCode, Bell, X } from "lucide-react";
 import Header from "@/components/header";
 import ClubDetailsModal from "@/components/club-details-modal";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
@@ -13,6 +13,9 @@ import { TAP_IN_POINT_VALUES } from "@/lib/points";
 import { useTapQRParams } from "@/hooks/use-tap-qr-params";
 import { useTapAuthentication } from "@/hooks/use-tap-authentication";
 import { useTapProcessing } from "@/hooks/use-tap-processing";
+import { StatusProgressionCard } from "@/components/status-progression-card";
+import { getNextStatus, getPointsToNext } from "@/types/club.types";
+import { useToast } from "@/hooks/use-toast";
 
 interface TapInResponse {
   success: boolean;
@@ -123,6 +126,9 @@ function TapPageContent() {
   const router = useRouter();
   const [showClubDetails, setShowClubDetails] = useState(false);
   const [scrollToRewards, setScrollToRewards] = useState(false);
+  const [isOptingIn, setIsOptingIn] = useState(false);
+  const [hasOptedIn, setHasOptedIn] = useState(false);
+  const { toast } = useToast();
   
   // Extract QR parameters and load club info
   const { 
@@ -132,6 +138,12 @@ function TapPageContent() {
     hasValidQRParams, 
     paramError 
   } = useTapQRParams();
+  
+  // Cache point value calculation to avoid recomputation
+  const pointsPreview = useMemo(
+    () => getPointValue(source || undefined, data || undefined),
+    [source, data]
+  );
 
   // Handle authentication flow
   const {
@@ -169,6 +181,46 @@ function TapPageContent() {
   // Manual authentication handler
   const handleAuthAndTapIn = () => {
     triggerAuth();
+  };
+
+  // Handle notifications opt-in
+  const handleNotificationsOptIn = async () => {
+    if (isOptingIn) return;
+    
+    setIsOptingIn(true);
+    
+    try {
+      // Get authentication headers
+      const authHeaders = await getAuthHeaders();
+      
+      const response = await fetch('/api/users/notifications-opt-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+      });
+
+      if (response.ok) {
+        setHasOptedIn(true);
+        toast({
+          title: "Campaign Launch Alert Enabled! 🚀",
+          description: "You'll be notified when campaigns launch.",
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(errorData.error || 'Failed to opt in to notifications');
+      }
+    } catch (error) {
+      console.error('Error opting in to notifications:', error);
+      toast({
+        title: "Error",
+        description: "Failed to enable launch alerts. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsOptingIn(false);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -451,10 +503,10 @@ function TapPageContent() {
             {/* Header */}
             <div className="text-center mb-8">
               <h1 className="text-2xl font-bold text-foreground mb-2">
-                ADD {clubInfo.name}
+                Join {clubInfo.name}
               </h1>
               <p className="text-muted-foreground">
-                Join the Club and Earn Points
+                Earn {pointsPreview} points now. Increase your status.
               </p>
             </div>
 
@@ -467,7 +519,7 @@ function TapPageContent() {
             >
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 rounded-full">
                 <span className="text-green-400 font-medium">
-                  +{getPointValue(source || undefined, data || undefined)} points
+                  +{pointsPreview} points
                 </span>
               </div>
             </motion.div>
@@ -486,12 +538,19 @@ function TapPageContent() {
               </button>
             </motion.div>
 
-            {/* Footer */}
-            <div className="mt-8 text-center">
+            {/* Micro-teaser */}
+            <motion.div
+              className="text-center mt-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8 }}
+            >
               <p className="text-xs text-muted-foreground">
-                Secure authentication powered by Privy
+                Campaigns launch soon.<br />
+                Higher status results in bigger discounts.
               </p>
-            </div>
+            </motion.div>
+
           </motion.div>
         </div>
       </div>
@@ -501,7 +560,17 @@ function TapPageContent() {
   // Authentication loading is now handled within the useTapAuthentication hook
   // No separate loading state needed here
 
-  if (error) {
+  // Handle different error scenarios
+  const isAlreadyScanned = error?.includes('ERROR_CODE:QR_ALREADY_SCANNED');
+  const isQRInactive = error?.includes('ERROR_CODE:QR_INACTIVE');
+  const isQRLimitReached = error?.includes('ERROR_CODE:QR_LIMIT_REACHED');
+  const isQRRelatedError = isAlreadyScanned || isQRInactive || isQRLimitReached;
+
+  // Extract clean error message (remove error code)
+  const cleanErrorMessage = error?.split('|ERROR_CODE:')[0] || error;
+
+  if (error && !isQRRelatedError) {
+    // Show error page for non-QR related errors
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -512,7 +581,7 @@ function TapPageContent() {
                 <Zap className="h-8 w-8 text-red-500" />
               </div>
               <h1 className="text-2xl font-bold mb-2">Tap-in Failed</h1>
-              <p className="text-muted-foreground">{error}</p>
+              <p className="text-muted-foreground">{cleanErrorMessage}</p>
             </div>
             <button
               onClick={() => router.push('/dashboard')}
@@ -553,6 +622,144 @@ function TapPageContent() {
                 <p className="text-muted-foreground">Earning your points</p>
               </div>
             </motion.div>
+          )}
+
+          {/* QR Already Scanned State */}
+          {isQRRelatedError && clubInfo && (
+            <AnimatePresence>
+              <motion.div
+                className="text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+              >
+                {/* Already Scanned Icon */}
+                <motion.div
+                  className="mb-6"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                >
+                  <div className={`h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                    isAlreadyScanned 
+                      ? 'bg-blue-500/20' 
+                      : isQRLimitReached 
+                      ? 'bg-orange-500/20' 
+                      : 'bg-gray-500/20'
+                  }`}>
+                    {isAlreadyScanned ? (
+                      <CheckCircle className="h-10 w-10 text-blue-500" />
+                    ) : isQRLimitReached ? (
+                      <Users className="h-10 w-10 text-orange-500" />
+                    ) : (
+                      <X className="h-10 w-10 text-gray-500" />
+                    )}
+                  </div>
+                  
+                  <motion.h1
+                    className="text-3xl font-bold mb-2"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.4 }}
+                  >
+                    {isAlreadyScanned 
+                      ? "Already a Member! ✅" 
+                      : isQRLimitReached 
+                      ? "QR Code Full! 📱" 
+                      : "QR Code Inactive ❌"
+                    }
+                  </motion.h1>
+                </motion.div>
+
+                {/* Club Info Card */}
+                <motion.div
+                  className="mb-8"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.6 }}
+                >
+                  <div className="bg-[#0F141E] rounded-xl p-6 border border-primary/20">
+                    <div className="flex items-center gap-3 mb-4">
+                      {clubInfo.image_url ? (
+                        <img
+                          src={clubInfo.image_url}
+                          alt={clubInfo.name}
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center">
+                          <Users className="w-6 h-6 text-primary" />
+                        </div>
+                      )}
+                      <div className="text-left">
+                        <h3 className="font-semibold text-white">{clubInfo.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {isAlreadyScanned 
+                            ? "You're already a member" 
+                            : isQRLimitReached 
+                            ? "Maximum scans reached" 
+                            : "This QR code is no longer active"
+                          }
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="text-sm text-muted-foreground">
+                      {cleanErrorMessage}
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Actions */}
+                <motion.div
+                  className="space-y-3"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.0 }}
+                >
+                  <button
+                    onClick={handleNotificationsOptIn}
+                    disabled={isOptingIn || hasOptedIn}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      hasOptedIn
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-70 shadow-none'
+                        : isOptingIn
+                        ? 'bg-primary text-white opacity-50 cursor-not-allowed'
+                        : 'bg-primary text-white hover:bg-primary/90 cursor-pointer'
+                    }`}
+                  >
+                    {!hasOptedIn && !isOptingIn && <Bell className="w-4 h-4" />}
+                    {hasOptedIn 
+                      ? 'Campaign Launch Alert Enabled ✓' 
+                      : isOptingIn 
+                      ? 'Enabling...' 
+                      : 'Get Campaign Launch Alert'
+                    }
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setScrollToRewards(false);
+                      setShowClubDetails(true);
+                    }}
+                    className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
+                  >
+                    View Club Details
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      console.log('Go to Dashboard clicked in Already Scanned State');
+                      router.push('/dashboard');
+                    }}
+                    className="w-full px-6 py-3 bg-transparent text-muted-foreground rounded-lg hover:bg-white/5 transition-colors border border-[#1E1E32]/20"
+                  >
+                    Go to Dashboard
+                  </button>
+                </motion.div>
+
+              </motion.div>
+            </AnimatePresence>
           )}
 
           {/* Success State */}
@@ -615,71 +822,20 @@ function TapPageContent() {
                   </div>
                 </motion.div>
 
-                {/* Status Display */}
+                {/* Status Progress Card */}
                 <motion.div
                   className="mb-8"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 1.0 }}
                 >
-                  {tapResult.status_changed ? (
-                    <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl p-6 border border-purple-500/30">
-                      <motion.div
-                        className="flex items-center justify-center mb-4"
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ delay: 1.2, type: "spring", stiffness: 200 }}
-                      >
-                        <Sparkles className="h-6 w-6 text-purple-400 mr-2" />
-                        <span className="text-lg font-bold">Status Upgraded!</span>
-                        <Sparkles className="h-6 w-6 text-purple-400 ml-2" />
-                      </motion.div>
-                      
-                      <div className="flex items-center justify-center space-x-4">
-                        <div className="text-center">
-                          <div className={`${getStatusColor(tapResult.previous_status)} mb-1`}>
-                            {React.createElement(getStatusIcon(tapResult.previous_status), { className: "h-6 w-6 mx-auto" })}
-                          </div>
-                          <span className="text-xs text-muted-foreground capitalize">
-                            {tapResult.previous_status}
-                          </span>
-                        </div>
-                        
-                        <motion.div
-                          initial={{ x: -10, opacity: 0 }}
-                          animate={{ x: 0, opacity: 1 }}
-                          transition={{ delay: 1.4 }}
-                        >
-                          →
-                        </motion.div>
-                        
-                        <div className="text-center">
-                          <motion.div
-                            className={`${getStatusColor(tapResult.current_status)} mb-1`}
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ delay: 1.5, type: "spring" }}
-                          >
-                            {React.createElement(getStatusIcon(tapResult.current_status), { className: "h-6 w-6 mx-auto" })}
-                          </motion.div>
-                          <span className="text-xs font-medium capitalize">
-                            {tapResult.current_status}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-[#0F141E] rounded-xl p-4 border border-[#1E1E32]/20">
-                      <div className="flex items-center justify-center">
-                        <div className={`${getStatusColor(tapResult.current_status)} mr-2`}>
-                          {React.createElement(getStatusIcon(tapResult.current_status), { className: "h-5 w-5" })}
-                        </div>
-                        <span className="font-medium capitalize">
-                          {tapResult.current_status} Status
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                  <StatusProgressionCard
+                    currentStatus={tapResult.current_status as any}
+                    currentPoints={tapResult.total_points}
+                    nextStatus={getNextStatus(tapResult.current_status as any)}
+                    pointsToNext={getPointsToNext(tapResult.total_points, tapResult.current_status as any)}
+                    statusIcon={getStatusIcon(tapResult.current_status)}
+                  />
                 </motion.div>
 
                 {/* Actions */}
@@ -690,16 +846,23 @@ function TapPageContent() {
                   transition={{ delay: 1.6 }}
                 >
                   <button
-                    onClick={() => {
-                      setScrollToRewards(true);
-                      if (process.env.NODE_ENV !== 'production') {
-                        console.log('View Available Rewards clicked:', { clubInfo });
-                      }
-                      setShowClubDetails(true);
-                    }}
-                    className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium"
+                    onClick={handleNotificationsOptIn}
+                    disabled={isOptingIn || hasOptedIn}
+                    className={`w-full px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                      hasOptedIn
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-70 shadow-none'
+                        : isOptingIn
+                        ? 'bg-primary text-white opacity-50 cursor-not-allowed'
+                        : 'bg-primary text-white hover:bg-primary/90 cursor-pointer'
+                    }`}
                   >
-                    View Available Rewards
+                    {!hasOptedIn && !isOptingIn && <Bell className="w-4 h-4" />}
+                    {hasOptedIn 
+                      ? 'Campaign Launch Alert Enabled ✓' 
+                      : isOptingIn 
+                      ? 'Enabling...' 
+                      : 'Get Campaign Launch Alert'
+                    }
                   </button>
                   
                   <button
@@ -713,6 +876,16 @@ function TapPageContent() {
                     className="w-full px-6 py-3 bg-[#0F141E] text-white rounded-lg hover:bg-[#131822] transition-colors border border-[#1E1E32]/20"
                   >
                     View Club Details
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      console.log('Go to Dashboard clicked in Success State');
+                      router.push('/dashboard');
+                    }}
+                    className="w-full px-6 py-3 bg-transparent text-muted-foreground rounded-lg hover:bg-white/5 transition-colors border border-[#1E1E32]/20"
+                  >
+                    Go to Dashboard
                   </button>
                 </motion.div>
 

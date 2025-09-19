@@ -60,6 +60,14 @@ export async function generateMetadata(): Promise<Metadata> {
     title: "Superfan",
     description: siteDescription,
     generator: "v0.dev",
+    icons: {
+      icon: [
+        { url: "/favicon.png?v=4", type: "image/png", sizes: "32x32" },
+        { url: "/favicon.svg?v=4", type: "image/svg+xml", sizes: "any" }
+      ],
+      shortcut: "/favicon.png?v=4",
+      apple: "/favicon.png?v=4",
+    },
     keywords: ["music", "artists", "campaigns", "fan tiers", "exclusive perks", "music platform", "superfan", "discounts", "rewards"],
     authors: [{ name: "Superfan" }],
     creator: "Superfan",
@@ -133,6 +141,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/favicon.png?v=4" type="image/png" sizes="32x32" />
+        <link rel="icon" href="/favicon.svg?v=4" type="image/svg+xml" />
+      </head>
       <body
         className={`${inter.variable} antialiased bg-[#0E0E14] text-[#F0F0F0]`}
         suppressHydrationWarning

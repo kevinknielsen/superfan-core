@@ -23,7 +23,7 @@ export function ClubMediaDisplay({
   const { data: media, isLoading, error } = useClubMedia(clubId);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(!autoPlay);
+  const [isMuted, setIsMuted] = useState(true); // Always start muted for better UX
   const videoRef = useRef<HTMLVideoElement>(null);
   
   // (optional) Add back a debug-only ID if needed during local debugging
@@ -50,6 +50,9 @@ export function ClubMediaDisplay({
   // Auto-play video when it becomes current
   useEffect(() => {
     if (currentMedia?.media_type === 'video' && videoRef.current && autoPlay) {
+      // Unmute when auto-playing
+      videoRef.current.muted = false;
+      setIsMuted(false);
       videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
     }
   }, [currentIndex, currentMedia, autoPlay]);
@@ -59,6 +62,9 @@ export function ClubMediaDisplay({
       if (isPlaying) {
         videoRef.current.pause();
       } else {
+        // Unmute when user clicks play
+        videoRef.current.muted = false;
+        setIsMuted(false);
         videoRef.current.play().catch(error => {
           console.error('Error playing video:', error);
         });
@@ -92,12 +98,16 @@ export function ClubMediaDisplay({
 
   if (error || !displayMedia.length) {
     return (
-      <div className={`bg-primary/20 flex items-center justify-center ${className}`}>
-        <img
-          src={fallbackImage}
-          alt="Club"
-          className="w-full h-full object-cover"
-        />
+      <div className={`bg-gradient-to-br from-gray-900/80 to-gray-800/60 border border-gray-700/50 flex items-center justify-center ${className}`}>
+        <div className="text-center p-8">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+            <svg className="w-8 h-8 text-primary/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h3 className="text-white/80 font-medium text-lg mb-2">No Media Yet</h3>
+          <p className="text-gray-400 text-sm">Check back soon for updates</p>
+        </div>
       </div>
     );
   }
