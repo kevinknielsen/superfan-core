@@ -11,38 +11,6 @@ interface TapInMetadata {
   [key: string]: unknown;
 }
 
-interface TapInResult {
-  success: boolean;
-  idempotent?: boolean;
-  tap_in?: { id: string; [key: string]: unknown };
-  points_earned: number;
-  total_points: number;
-  current_status: string;
-  previous_status: string;
-  status_changed: boolean;
-  error?: string;
-}
-
-interface QRCode {
-  usage_count: number;
-  max_usage_limit?: number;
-  is_active: boolean;
-}
-
-interface Club {
-  id: string;
-  name: string;
-}
-
-interface User {
-  id: string;
-}
-
-interface TapIn {
-  id: string;
-  [key: string]: unknown;
-}
-
 const tapInSchema = type({
   club_id: "string",
   source: "string", // 'qr_code', 'nfc', 'link', 'show_entry', 'merch_purchase', etc.
@@ -93,7 +61,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceClient();
     
     // Get the user from our database
-    const { data: userData, error: userError } = await supabase
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
       .eq('privy_id', auth.userId)
@@ -104,10 +72,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const user = userData as User;
-
     // Verify club exists
-    const { data: clubData, error: clubError } = await supabase
+    const { data: club, error: clubError } = await supabase
       .from('clubs' as any)
       .select('id, name')
       .eq('id', tapInData.club_id)
@@ -118,8 +84,6 @@ export async function POST(request: NextRequest) {
       console.error("[Tap-in API] Club not found:", clubError);
       return NextResponse.json({ error: "Club not found" }, { status: 404 });
     }
-
-    const club = clubData as unknown as Club;
 
     // Check for QR code duplicate scans (for any source that has a qr_id in metadata)
     let qrId: string | null = null;
@@ -153,7 +117,7 @@ export async function POST(request: NextRequest) {
       // Check if QR code has reached its usage limit
       // NOTE: usage_count may be stale under high contention. Consider using COUNT(*) from qr_code_usage
       // within the same transaction that awards points for better consistency
-      const { data: qrCodeData, error: qrError } = await supabase
+      const { data: qrCode, error: qrError } = await supabase
         .from('qr_codes' as any)
         .select('usage_count, max_usage_limit, is_active')
         .eq('qr_id', qrId)
@@ -164,9 +128,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "QR code not found" }, { status: 404 });
       }
 
-      const qrCode = qrCodeData as unknown as QRCode;
-
-      if (!qrCode.is_active) {
+      if (!(qrCode as any).is_active) {
         console.log(`[Tap-in API] QR code ${qrId} is inactive`);
         return NextResponse.json({ 
           error: "This QR code is no longer active",
@@ -174,8 +136,8 @@ export async function POST(request: NextRequest) {
         }, { status: 410 });
       }
 
-      if (qrCode.max_usage_limit && qrCode.usage_count >= qrCode.max_usage_limit) {
-        console.log(`[Tap-in API] QR code ${qrId} has reached usage limit: ${qrCode.usage_count}/${qrCode.max_usage_limit}`);
+      if ((qrCode as any).max_usage_limit && (qrCode as any).usage_count >= (qrCode as any).max_usage_limit) {
+        console.log(`[Tap-in API] QR code ${qrId} has reached usage limit: ${(qrCode as any).usage_count}/${(qrCode as any).max_usage_limit}`);
         return NextResponse.json({ 
           error: "This QR code has reached its usage limit",
           error_code: "QR_LIMIT_REACHED"
@@ -201,7 +163,7 @@ export async function POST(request: NextRequest) {
       }`;
 
     // Use unified database function for atomic tap-in processing
-    const { data: tapInResultData, error: tapInError } = await (supabase as any)
+    const { data: tapInResult, error: tapInError } = await (supabase as any)
       .rpc('award_points_unified', {
         p_user_id: user.id,
         p_club_id: tapInData.club_id,
@@ -217,26 +179,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to process tap-in" }, { status: 500 });
     }
 
-    const tapInResult = tapInResultData as TapInResult;
-
     // Check if the operation was successful
-    if (!tapInResult?.success) {
+    if (!(tapInResult as any)?.success) {
       return NextResponse.json({ 
-        error: tapInResult?.error || 'Tap-in processing failed',
+        error: (tapInResult as any)?.error || 'Tap-in processing failed',
         details: tapInResult
       }, { status: 500 });
     }
 
     // Record QR code usage if this was a QR scan
-    if (qrId && tapInResult?.success) {
+    if (qrId && (tapInResult as any)?.success) {
       try {
         const { error: usageError } = await supabase
           .from('qr_code_usage' as any)
           .insert({
             qr_id: qrId,
             user_id: user.id,
-            points_awarded: tapInResult.points_earned,
-            tap_in_id: tapInResult.tap_in?.id
+            points_awarded: (tapInResult as any).points_earned,
+            tap_in_id: (tapInResult as any).tap_in?.id
           });
 
         if (usageError) {
@@ -254,19 +214,19 @@ export async function POST(request: NextRequest) {
     // Build response with all the data from the unified function
     const response = {
       success: true,
-      idempotent: Boolean(tapInResult?.idempotent),
-      tap_in: tapInResult.tap_in,
-      points_earned: tapInResult.points_earned,
-      total_points: tapInResult.total_points,
-      current_status: tapInResult.current_status,
-      previous_status: tapInResult.previous_status,
-      status_changed: tapInResult.status_changed,
-      club_name: club.name
+      idempotent: Boolean((tapInResult as any)?.idempotent),
+      tap_in: (tapInResult as any).tap_in,
+      points_earned: (tapInResult as any).points_earned,
+      total_points: (tapInResult as any).total_points,
+      current_status: (tapInResult as any).current_status,
+      previous_status: (tapInResult as any).previous_status,
+      status_changed: (tapInResult as any).status_changed,
+      club_name: (club as any).name
     };
 
-    console.log(`[Tap-in API] Success: ${tapInResult.points_earned} points awarded to user ${auth.userId} in club ${club.name}`);
-    if (tapInResult.status_changed) {
-      console.log(`[Tap-in API] Status upgraded: ${tapInResult.previous_status} → ${tapInResult.current_status}`);
+    console.log(`[Tap-in API] Success: ${(tapInResult as any).points_earned} points awarded to user ${auth.userId} in club ${(club as any).name}`);
+    if ((tapInResult as any).status_changed) {
+      console.log(`[Tap-in API] Status upgraded: ${(tapInResult as any).previous_status} → ${(tapInResult as any).current_status}`);
     }
 
     return NextResponse.json(response);
@@ -297,7 +257,7 @@ export async function GET(request: NextRequest) {
     // Use service client for server-side queries
     const supabase = createServiceClient();
     // Get the user from our database
-    const { data: userData, error: userError } = await supabase
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
       .eq('privy_id', auth.userId)
@@ -307,9 +267,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const user = userData as User;
-
-    // Get user's tap-in history
+    // TODO: Define proper type for tap_ins table to avoid any cast
     const { data: tapIns, error } = await supabase
       .from('tap_ins' as any)
       .select('*')
