@@ -71,6 +71,22 @@ export async function getOrCreateUser(params: CreateUserParams): Promise<User> {
     .single();
 
   if (createError) {
+    // If it's a duplicate key error, try to fetch the existing user
+    if (createError.code === '23505' || createError.message.includes('duplicate key')) {
+      console.log(`[User Management] User already exists, fetching existing user for privy_id: ${privyId}`);
+      const { data: existingUser, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('privy_id', privyId)
+        .single();
+        
+      if (fetchError) {
+        throw new Error(`Failed to fetch existing user: ${fetchError.message}`);
+      }
+      
+      return existingUser;
+    }
+    
     throw new Error(`Failed to create user: ${createError.message}`);
   }
 
