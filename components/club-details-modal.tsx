@@ -140,7 +140,6 @@ export default function ClubDetailsModal({
 
     try {
       await joinClubMutation.mutateAsync({
-        privyUserId: user.id,
         clubId: club.id,
       });
       

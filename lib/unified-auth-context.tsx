@@ -63,7 +63,13 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   // In Wallet App context (Farcaster/Coinbase), we check for user
   // In web context, we require Privy authentication
   const isAuthenticated = isInWalletApp ? !!farcasterUser : privyAuthenticated;
-  const user = isInWalletApp ? farcasterUser : privyUser;
+  
+  // Create consistent user object with id property for both contexts
+  const user = isInWalletApp
+    ? (farcasterUser && farcasterUser.fid != null
+        ? { ...farcasterUser, id: `farcaster:${farcasterUser.fid}` }
+        : null)
+    : privyUser;
   const isLoading = isInWalletApp ? !isSDKLoaded : !privyReady;
 
   // Get status - use Privy user ID when available

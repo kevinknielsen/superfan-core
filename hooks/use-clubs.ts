@@ -202,36 +202,33 @@ export function useJoinClub() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ privyUserId, clubId }: { privyUserId: string; clubId: string }) => {
-      // First get the user from our database
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('privy_id', privyUserId)
-        .single();
+    mutationFn: async ({ clubId }: { clubId: string }) => {
+      // Get authentication headers for unified auth
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
+      
+      // Use the authenticated API endpoint which handles user lookup/creation
+      const response = await fetch(`/api/clubs/${clubId}/join`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+      });
 
-      if (userError) throw userError;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to join club' }));
+        throw new Error(errorData.error || 'Failed to join club');
+      }
 
-      const { data, error } = await supabase
-        .from('club_memberships')
-        .insert({
-          user_id: user.id,
-          club_id: clubId,
-          points: 0,
-          current_status: 'cadet',
-          status: 'active',
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      return response.json();
     },
-    onSuccess: (_, { privyUserId, clubId }) => {
-      // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ['user-club-memberships', privyUserId] });
-      queryClient.invalidateQueries({ queryKey: ['user-club-membership', privyUserId, clubId] });
-      queryClient.invalidateQueries({ queryKey: ['user-club-data', privyUserId, clubId] });
+    onSuccess: (_, { clubId }) => {
+      // Invalidate all club-related queries since we don't have privyUserId here
+      queryClient.invalidateQueries({ queryKey: ['user-club-memberships'] });
+      queryClient.invalidateQueries({ queryKey: ['user-club-membership'] });
+      queryClient.invalidateQueries({ queryKey: ['user-club-data'] });
+      queryClient.invalidateQueries({ queryKey: ['clubs'] });
     },
   });
 }
