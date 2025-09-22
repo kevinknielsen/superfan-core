@@ -9,16 +9,55 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user's internal ID (handle both Privy and Farcaster users)
-    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
+    // Get user's internal ID (all users use privy_id regardless of auth type)
+    let { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq(userColumn, auth.userId)
+      .eq('privy_id', auth.userId)
       .single();
 
-    if (userError || !user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    // If user not found, create them (same fallback as tap-in API)
+    if (userError && userError.code === 'PGRST116') {
+      console.log(`[Global Balance API] User not found, creating new user for privy_id: ${auth.userId}`);
+      
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          privy_id: auth.userId,
+          email: null,
+          name: null,
+        })
+        .select('id')
+        .single();
+        
+      if (createError) {
+        // If it's a duplicate key error, try to fetch the existing user
+        if (createError.code === '23505' || createError.message.includes('duplicate key')) {
+          console.log(`[Global Balance API] User already exists, fetching existing user for privy_id: ${auth.userId}`);
+          const { data: existingUser, error: fetchError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('privy_id', auth.userId)
+            .single();
+            
+          if (fetchError) {
+            console.error("[Global Balance API] Failed to fetch existing user:", fetchError);
+            return NextResponse.json({ error: "Failed to fetch existing user" }, { status: 500 });
+          }
+          
+          user = existingUser;
+          console.log(`[Global Balance API] Successfully fetched existing user with id: ${user.id}`);
+        } else {
+          console.error("[Global Balance API] Failed to create user:", createError);
+          return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
+        }
+      } else {
+        user = newUser;
+        console.log(`[Global Balance API] Successfully created user with id: ${user.id}`);
+      }
+    } else if (userError) {
+      console.error("[Global Balance API] User lookup error:", userError);
+      return NextResponse.json({ error: "User lookup failed" }, { status: 500 });
     }
 
     // Get global points breakdown across all clubs using the same view as breakdown API

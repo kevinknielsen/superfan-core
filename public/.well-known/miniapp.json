@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "name": "Superfan",
+  "description": "Join exclusive music club memberships, earn points by attending shows, and unlock VIP perks and rewards",
+  "icon": "https://superfan.one/favicon.png",
+  "homeUrl": "https://superfan.one",
+  "imageUrl": "https://superfan.one/og-image.png",
+  "buttonTitle": "🎵 Join A Club",
+  "splashImageUrl": "https://superfan.one/splash.png",
+  "splashBackgroundColor": "#9C26B0",
+  "primaryCategory": "music",
+  "noindex": false,
+  "castShareUrl": "https://superfan.one",
+  "tags": [
+    "music",
+    "clubs",
+    "membership",
+    "points",
+    "rewards",
+    "shows",
+    "events",
+    "vip",
+    "loyalty"
+  ],
+  "screenshots": [
+    "https://i.ibb.co/LDcPD9wd/Screenshot-2025-06-23-at-22-46-13.png"
+  ],
+  "developer": {
+    "name": "Superfan",
+    "url": "https://superfan.one",
+    "contact": "hello@superfan.one"
+  },
+  "privacy": {
+    "privacyPolicyUrl": "https://superfan.one/privacy"
+  },
+  "features": [
+    "club_membership",
+    "points_system",
+    "qr_code_scanning", 
+    "show_checkins",
+    "tier_rewards",
+    "vip_perks",
+    "status_progression",
+    "social_sharing"
+  ]
+}
