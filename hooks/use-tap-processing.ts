@@ -96,6 +96,10 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
     setIsProcessing(true);
     setError(null);
 
+    // Declare timeout and controller outside try block for proper cleanup
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       // Decode additional data if present
       let additionalData: AdditionalData = {};
@@ -150,8 +154,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/tap-in', {
         method: 'POST',
         headers: {
@@ -231,7 +234,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         variant: "destructive",
       });
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
       setIsProcessing(false);
       processingStarted.current = false;
     }
