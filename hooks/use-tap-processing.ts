@@ -143,9 +143,9 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         }
       };
 
-      // Let the backend generate user-specific idempotency key to avoid conflicts
-      // Frontend-generated keys were causing multiple users to share the same ref
-      const idempotencyKey = `tap-in:${Date.now()}:${Math.random().toString(36).slice(2, 11)}`;
+      // Let backend generate user-specific idempotency key based on user context
+      // This prevents multiple users from sharing the same ref while maintaining retry safety
+      const idempotencyKey = undefined; // Backend will generate user-specific key
 
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
@@ -156,7 +156,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
+          ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }),
           ...authHeaders,
         },
         body: JSON.stringify(tapInPayload),
