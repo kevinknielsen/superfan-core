@@ -86,7 +86,7 @@ DECLARE
   new_status TEXT;
   status_points INTEGER;
   status_changed BOOLEAN;
-  total_points_after INTEGER;
+  final_total_points INTEGER;
 BEGIN
   -- Validate positive points
   IF p_points IS NULL OR p_points <= 0 THEN
@@ -115,17 +115,14 @@ BEGIN
 
   old_status := membership_record.current_status;
 
-  -- Calculate total points after this tap-in
-  total_points_after := wallet_record.balance_pts + p_points;
-
-  -- Insert tap-in record with race detection
+  -- Insert tap-in record with race detection (total_points_after will be updated later)
   INSERT INTO tap_ins (
     user_id, club_id, source, points_earned, location, metadata, ref,
     previous_status, current_status, total_points_after
   ) VALUES (
     p_user_id, p_club_id, p_source, p_points, p_location, p_metadata, p_ref,
-    old_status, old_status, total_points_after  -- current_status will be updated below
-  ) ON CONFLICT (ref) DO NOTHING
+    old_status, old_status, 0  -- total_points_after will be calculated after wallet update
+  ) ON CONFLICT (ref) WHERE ref IS NOT NULL DO NOTHING
   RETURNING * INTO tap_in_record;
 
   -- Check if insert actually created a new row
@@ -159,6 +156,11 @@ BEGIN
     updated_at = NOW()
   WHERE id = wallet_record.id;
 
+  -- Get the actual updated balance for total_points calculation
+  SELECT balance_pts INTO final_total_points
+  FROM point_wallets 
+  WHERE id = wallet_record.id;
+
   -- Get updated status_pts from view to compute new status
   SELECT status_pts INTO status_points
   FROM v_point_wallets 
@@ -174,16 +176,17 @@ BEGIN
     last_activity_at = NOW()
   WHERE user_id = p_user_id AND club_id = p_club_id;
 
-  -- Update tap-in record with final status
+  -- Update tap-in record with final status and correct total_points
   UPDATE tap_ins SET
-    current_status = new_status
+    current_status = new_status,
+    total_points_after = final_total_points
   WHERE id = tap_in_record.id;
 
   -- Log transaction
   INSERT INTO point_transactions (
     wallet_id, type, source, pts, ref, affects_status, metadata
   ) VALUES (
-    wallet_record.id, 'BONUS', p_source, p_points, tap_in_record.id, true,
+    wallet_record.id, 'BONUS', 'earned', p_points, tap_in_record.id, true,
     json_build_object(
       'source', p_source,
       'location', p_location,
@@ -197,7 +200,7 @@ BEGIN
     'idempotent', false,
     'tap_in', row_to_json(tap_in_record),
     'points_earned', p_points,
-    'total_points', total_points_after,
+    'total_points', final_total_points,
     'previous_status', old_status,
     'current_status', new_status,
     'status_changed', status_changed,

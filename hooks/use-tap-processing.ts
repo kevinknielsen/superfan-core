@@ -143,11 +143,9 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         }
       };
 
-      // Generate idempotency key for double-submit protection
-      // Use stable key when qrId is present to ensure proper duplicate prevention
-      const idempotencyKey = qrId
-        ? `tap-in:${clubId}:${source}:${qrId}`
-        : `tap-in:${clubId}:${source}:${Date.now()}:${Math.random().toString(36).slice(2, 11)}`;
+      // Let the backend generate user-specific idempotency key to avoid conflicts
+      // Frontend-generated keys were causing multiple users to share the same ref
+      const idempotencyKey = `tap-in:${Date.now()}:${Math.random().toString(36).slice(2, 11)}`;
 
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
