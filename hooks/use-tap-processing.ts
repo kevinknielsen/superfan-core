@@ -96,6 +96,10 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
     setIsProcessing(true);
     setError(null);
 
+    // Declare timeout and controller outside try block for proper cleanup
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       // Decode additional data if present
       let additionalData: AdditionalData = {};
@@ -143,28 +147,24 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         }
       };
 
-      // Generate idempotency key for double-submit protection
-      // Use stable key when qrId is present to ensure proper duplicate prevention
-      const idempotencyKey = qrId
-        ? `tap-in:${clubId}:${source}:${qrId}`
-        : `tap-in:${clubId}:${source}:${Date.now()}:${Math.random().toString(36).slice(2, 11)}`;
+      // Let backend generate user-specific idempotency key based on user context
+      // This prevents multiple users from sharing the same ref while maintaining retry safety
+      const idempotencyKey = undefined; // Backend will generate user-specific key
 
       // Get authentication headers
       const authHeaders = await getAuthHeaders();
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      timeoutId = setTimeout(() => controller.abort(), 30000);
       const response = await fetch('/api/tap-in', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
+          'Accept': 'application/json',
           ...authHeaders,
         },
         body: JSON.stringify(tapInPayload),
         signal: controller.signal,
       });
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorMessage = 'Failed to process tap-in';
@@ -234,6 +234,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         variant: "destructive",
       });
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setIsProcessing(false);
       processingStarted.current = false;
     }
