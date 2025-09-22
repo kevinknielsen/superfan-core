@@ -65,11 +65,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const isAuthenticated = isInWalletApp ? !!farcasterUser : privyAuthenticated;
   
   // Create consistent user object with id property for both contexts
-  const user = isInWalletApp 
-    ? (farcasterUser ? { 
-        ...farcasterUser, 
-        id: `farcaster:${farcasterUser.fid}` // Create consistent ID format
-      } : null)
+  const user = isInWalletApp
+    ? (farcasterUser && farcasterUser.fid != null
+        ? { ...farcasterUser, id: `farcaster:${farcasterUser.fid}` }
+        : null)
     : privyUser;
   const isLoading = isInWalletApp ? !isSDKLoaded : !privyReady;
 

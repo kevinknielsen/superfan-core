@@ -10,30 +10,35 @@
   "frame": {
     "version": "1",
     "name": "Superfan",
-    "iconUrl": "https://i.ibb.co/6cQPpxBV/Logo.png",
+    "iconUrl": "https://superfan.one/favicon.png",
     "homeUrl": "https://superfan.one",
-    "imageUrl": "https://i.ibb.co/WNC9fnPn/cover.png",
-    "buttonTitle": "Launch App",
+    "imageUrl": "https://superfan.one/og-image.png",
+    "buttonTitle": "🎵 Join A Club",
     "splashImageUrl": "https://superfan.one/splash.png",
     "splashBackgroundColor": "#9C26B0",
     "webhookUrl": "https://superfan.one/api/farcaster/webhook",
-    "subtitle": "Fund the Future of Music",
-    "description": "A launchpad and OS for artists to fund, manage, and release music with their team.",
+    "subtitle": "The Loyalty Rail for Culture",
+    "description": "Superfan turns fan engagement into points, tiers, and campaigns. Join clubs, earn status by showing up online and IRL, and help launch vinyl, merch, and presales.",
     "screenshotUrls": [
       "https://i.ibb.co/LDcPD9wd/Screenshot-2025-06-23-at-22-46-13.png"
     ],
-    "primaryCategory": "finance",
+    "primaryCategory": "music",
     "tags": [
       "music",
-      "funding", 
-      "artists",
-      "projects",
-      "finance"
+      "clubs",
+      "membership",
+      "points",
+      "tiers",
+      "campaigns",
+      "drops",
+      "loyalty",
+      "shows",
+      "events"
     ],
-    "heroImageUrl": "https://i.ibb.co/WNC9fnPn/cover.png",
-    "tagline": "Fund the Future of Music",
-    "ogTitle": "Superfan - Fund Music Projects",
-    "ogDescription": "Discover and fund innovative music projects. Connect with artists and back the next big release.",
-    "ogImageUrl": "https://i.ibb.co/LDcPD9wd/Screenshot-2025-06-23-at-22-46-13.png"
+    "heroImageUrl": "https://superfan.one/og-image.png",
+    "tagline": "Engagement Becomes Economy",
+    "ogTitle": "Superfan: Memberships for Culture",
+    "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
+    "ogImageUrl": "https://superfan.one/og-image.png"
   }
 } 
