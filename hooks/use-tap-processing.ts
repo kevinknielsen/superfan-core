@@ -156,13 +156,12 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }),
+          'Accept': 'application/json',
           ...authHeaders,
         },
         body: JSON.stringify(tapInPayload),
         signal: controller.signal,
       });
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorMessage = 'Failed to process tap-in';
@@ -232,6 +231,7 @@ export function useTapProcessing(): TapProcessingState & TapProcessingActions {
         variant: "destructive",
       });
     } finally {
+      clearTimeout(timeoutId);
       setIsProcessing(false);
       processingStarted.current = false;
     }

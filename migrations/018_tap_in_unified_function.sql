@@ -180,7 +180,8 @@ BEGIN
   UPDATE tap_ins SET
     current_status = new_status,
     total_points_after = final_total_points
-  WHERE id = tap_in_record.id;
+  WHERE id = tap_in_record.id
+  RETURNING * INTO tap_in_record;
 
   -- Log transaction
   INSERT INTO point_transactions (
