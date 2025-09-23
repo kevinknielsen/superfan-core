@@ -27,6 +27,11 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initSDK = async () => {
       try {
+        // Initialize the SDK first
+        console.log('🚀 [FarcasterContext] Initializing SDK...');
+        await sdk.init();
+        console.log('✅ [FarcasterContext] SDK initialized');
+        
         const result = await sdk.context;
         setFrameContext(result);
         setUser(result?.user);
@@ -39,19 +44,25 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Call ready to dismiss splash screen in Wallet App context
+        console.log('🔍 [FarcasterContext] Context result:', result);
+        console.log('🔍 [FarcasterContext] User agent:', navigator.userAgent);
+        
         if (result && result.client) {
           console.log('🚀 [FarcasterContext] In miniapp context, calling sdk.actions.ready()');
+          console.log('🔍 [FarcasterContext] Client info:', result.client);
+          
           // Give the UI a moment to render before calling ready
           setTimeout(async () => {
             try {
               await sdk.actions.ready({ disableNativeGestures: true });
-              console.log('✅ [FarcasterContext] sdk.actions.ready() completed');
+              console.log('✅ [FarcasterContext] sdk.actions.ready() completed successfully');
             } catch (readyError) {
               console.error('❌ [FarcasterContext] Error calling ready():', readyError);
             }
           }, 100);
         } else {
           console.log('🌐 [FarcasterContext] Not in miniapp context, skipping ready() call');
+          console.log('🔍 [FarcasterContext] Available context keys:', Object.keys(result || {}));
         }
       } catch (error) {
         console.error('❌ [FarcasterContext] SDK initialization error:', error);

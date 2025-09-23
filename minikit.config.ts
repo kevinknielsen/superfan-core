@@ -26,6 +26,8 @@ export const minikitConfig = {
     ogTitle: "Superfan: Culture Memberships",
     ogDescription: "Join artist clubs, earn points by engaging, and power campaigns.",
     ogImageUrl: `${ROOT_URL}/og-image.png`,
+    buttonTitle: "🎵 Join A Club",
     noindex: false,
+    castShareUrl: ROOT_URL,
   },
 } as const;
