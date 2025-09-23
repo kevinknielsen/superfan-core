@@ -103,7 +103,7 @@ const nextConfig = {
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",
-              "frame-ancestors 'self' https://farcaster.xyz https://*.farcaster.xyz https://warpcast.com https://*.warpcast.com https://wallet.coinbase.com https://*.coinbase.com https://go.cb-w.com https://*.cb-w.com",
+              "frame-ancestors 'self' https://farcaster.xyz https://*.farcaster.xyz https://warpcast.com https://*.warpcast.com https://wallet.coinbase.com https://*.coinbase.com https://go.cb-w.com https://*.cb-w.com https://base.org https://*.base.org https://www.base.org https://build.base.org https://*.base.dev https://base.dev",
               "upgrade-insecure-requests",
               // CSP violation reporting (only in production)
               ...(isDevOrPreview ? [] : ["report-uri /api/csp-report"])
