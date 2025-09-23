@@ -17,11 +17,11 @@ export async function GET(
   try {
     console.log(`[Campaign API] Fetching campaign details: ${campaignId}`);
 
-    // Get campaign progress from view
+    // Get campaign progress from view (note: view uses 'id' not 'campaign_id')
     const { data: campaign, error: campaignError } = await supabaseAny
       .from('v_campaign_progress')
       .select('*')
-      .eq('campaign_id', campaignId)
+      .eq('id', campaignId)
       .single();
       
     if (campaignError || !campaign) {
