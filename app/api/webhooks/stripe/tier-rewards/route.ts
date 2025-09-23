@@ -161,12 +161,16 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       return { success: true };
     }
     
-    // Create reward claim with campaign and discount tracking
+    // NEW: Detect ticket campaign purchase
+    const isTicketPurchase = metadata.type === 'ticket_purchase' || metadata.is_ticket_campaign === 'true';
+    const ticketsPurchased = isTicketPurchase ? parseInt(metadata.tickets_purchased || '0') : 0;
+    
+    // Create reward claim with campaign and discount tracking (enhanced for tickets)
     const { error: insertError } = await supabaseAny.from('reward_claims').insert({
       user_id: metadata.user_id,
       reward_id: metadata.tier_reward_id,
       campaign_id: metadata.campaign_id || null,
-      claim_method: 'upgrade_purchased',
+      claim_method: isTicketPurchase ? 'ticket_purchase' : 'upgrade_purchased',
       user_tier_at_claim: metadata.user_tier,
       user_points_at_claim: 0, // TODO: Get actual points if needed
       original_price_cents: parseInt(metadata.original_price_cents),
@@ -174,9 +178,14 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       discount_applied_cents: parseInt(metadata.discount_cents),
       stripe_payment_intent_id: session.payment_intent as string,
       refund_status: 'none',
-      access_status: 'granted',
+      access_status: isTicketPurchase ? 'tickets_granted' : 'granted',
       access_code: 'AC' + Math.random().toString(36).substring(2, 10).toUpperCase(),
-      claimed_at: new Date().toISOString()
+      claimed_at: new Date().toISOString(),
+      // NEW: Ticket tracking fields
+      is_ticket_claim: isTicketPurchase,
+      tickets_purchased: ticketsPurchased,
+      tickets_available: ticketsPurchased, // Initially all tickets are available
+      tickets_redeemed: 0
     });
     
     if (insertError) {
@@ -198,7 +207,19 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       } else {
         console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${parseInt(metadata.campaign_credit_cents)/100}`);
         
-        // Check if campaign goal reached
+        // NEW: Also update campaigns table if this is a ticket campaign
+        if (isTicketPurchase) {
+          await supabaseAny
+            .from('campaigns')
+            .update({
+              current_funding_cents: supabaseAny.sql`current_funding_cents + ${parseInt(metadata.campaign_credit_cents)}`,
+              stripe_received_cents: supabaseAny.sql`stripe_received_cents + ${parseInt(metadata.final_price_cents)}`,
+              total_tickets_sold: supabaseAny.sql`total_tickets_sold + ${ticketsPurchased}`
+            })
+            .eq('id', metadata.campaign_id);
+        }
+        
+        // Check if campaign goal reached (check both tier_rewards and campaigns table)
         const { data: campaign } = await supabaseAny
           .from('tier_rewards')
           .select('campaign_funding_goal_cents, campaign_current_funding_cents, campaign_title')
@@ -208,11 +229,17 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
         if (campaign && campaign.campaign_current_funding_cents >= campaign.campaign_funding_goal_cents) {
           console.log(`[Tier Rewards Webhook] 🎉 Campaign "${campaign.campaign_title}" reached funding goal!`);
           
-          // Mark campaign as funded
+          // Mark campaign as funded in both tables
           await supabaseAny
             .from('tier_rewards')
             .update({ campaign_status: 'campaign_funded' })
             .eq('campaign_id', metadata.campaign_id);
+            
+          // Also update campaigns table if it exists
+          await supabaseAny
+            .from('campaigns')
+            .update({ status: 'funded' })
+            .eq('id', metadata.campaign_id);
         }
       }
     }

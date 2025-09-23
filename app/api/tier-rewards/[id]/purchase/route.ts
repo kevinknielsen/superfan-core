@@ -112,6 +112,10 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid tier pricing - upgrade price not set' }, { status: 400 });
     }
 
+    // NEW: Detect if this is a ticket campaign purchase
+    const isTicketCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
+    const ticketCost = tierReward.ticket_cost || 1;
+    
     // Calculate percentage-based discount
     const discountPercentage = getDiscountPercentage(userTier, tierReward);
     const discountCents = Math.round(upgradePriceCents * discountPercentage / 100);
@@ -144,7 +148,7 @@ export async function POST(
       success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/cancel`,
       metadata: {
-        type: 'campaign_tier_purchase',
+        type: isTicketCampaign ? 'ticket_purchase' : 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,
         campaign_id: tierReward.campaign_id || '',
         user_id: actualUserId,
@@ -154,7 +158,11 @@ export async function POST(
         final_price_cents: finalPriceCents.toString(),
         campaign_credit_cents: tierReward.upgrade_price_cents.toString(), // Campaign gets full value
         idempotency_key: idempotencyKey,
-        club_name: tierReward.clubs.name
+        club_name: tierReward.clubs.name,
+        // NEW: Ticket campaign metadata
+        is_ticket_campaign: isTicketCampaign.toString(),
+        ticket_cost: ticketCost.toString(),
+        tickets_purchased: isTicketCampaign ? Math.floor(upgradePriceCents / (tierReward.upgrade_price_cents / ticketCost)).toString() : '0'
       }
     }, {
       idempotencyKey // Pass to Stripe for true idempotency
@@ -166,7 +174,11 @@ export async function POST(
       discount_applied_cents: discountCents,
       discount_percentage: discountPercentage,
       original_price_cents: tierReward.upgrade_price_cents,
-      campaign_credit_cents: tierReward.upgrade_price_cents
+      campaign_credit_cents: tierReward.upgrade_price_cents,
+      // NEW: Ticket campaign information
+      is_ticket_campaign: isTicketCampaign,
+      ticket_cost: ticketCost,
+      tickets_purchased: isTicketCampaign ? ticketCost : 0
     });
 
   } catch (error) {

@@ -116,6 +116,9 @@ export async function GET(
         resident_discount_percentage,
         headliner_discount_percentage,
         superfan_discount_percentage,
+        ticket_cost,
+        is_ticket_campaign,
+        cogs_cents,
         clubs!inner(
           id,
           name,
@@ -134,7 +137,7 @@ export async function GET(
       return NextResponse.json({ error: "Failed to fetch tier rewards" }, { status: 500 });
     }
 
-    // Get user's existing claims for this club
+    // Get user's existing claims for this club (including ticket tracking)
     const { data: userClaims, error: claimsError } = await supabaseAny
       .from('reward_claims')
       .select(`
@@ -144,6 +147,11 @@ export async function GET(
         claimed_at,
         access_status,
         access_code,
+        campaign_id,
+        tickets_purchased,
+        tickets_available,
+        tickets_redeemed,
+        is_ticket_claim,
         tier_rewards!inner(title)
       `)
       .eq('user_id', actualUserId)
@@ -335,6 +343,11 @@ export async function GET(
         is_campaign_tier: reward.is_campaign_tier,
         campaign_progress: campaignProgress,
         
+        // NEW: Ticket campaign fields
+        ticket_cost: reward.ticket_cost,
+        is_ticket_campaign: reward.is_ticket_campaign,
+        cogs_cents: reward.cogs_cents,
+        
         // Existing fields
         inventory_status: inventoryStatus,
         current_status: currentStatus,
@@ -344,7 +357,7 @@ export async function GET(
       };
     });
 
-    // Format claimed rewards
+    // Format claimed rewards (including ticket information)
     const claimedRewards = (userClaims || []).map(claim => ({
       id: claim.id,
       reward_id: claim.reward_id,
@@ -352,10 +365,36 @@ export async function GET(
       claim_method: claim.claim_method,
       claimed_at: claim.claimed_at,
       access_status: claim.access_status,
-      access_code: claim.access_code
+      access_code: claim.access_code,
+      // NEW: Ticket information
+      campaign_id: claim.campaign_id,
+      tickets_purchased: claim.tickets_purchased,
+      tickets_available: claim.tickets_available,
+      tickets_redeemed: claim.tickets_redeemed,
+      is_ticket_claim: claim.is_ticket_claim
     }));
 
-    // Compile response
+    // NEW: Get user's ticket balances for all campaigns in this club
+    const { data: userTicketBalances, error: ticketError } = await supabaseAny
+      .rpc('get_user_ticket_balance', {
+        p_user_id: actualUserId,
+        p_campaign_id: null // Get all campaigns - we'll filter by club
+      });
+
+    // Calculate ticket balances by campaign for this club
+    const ticketBalancesByCampaign = new Map();
+    if (userClaims) {
+      userClaims.forEach(claim => {
+        if (claim.campaign_id && claim.is_ticket_claim) {
+          const balance = ticketBalancesByCampaign.get(claim.campaign_id) || 0;
+          ticketBalancesByCampaign.set(claim.campaign_id, 
+            balance + (claim.tickets_purchased || 0) - (claim.tickets_redeemed || 0)
+          );
+        }
+      });
+    }
+
+    // Compile response (enhanced with ticket information)
     const response = {
       user_earned_tier: userQualification.earned_tier,
       user_effective_tier: userQualification.effective_tier,
@@ -365,7 +404,9 @@ export async function GET(
       quarterly_free_used: userQualification.quarterly_free_used,
       current_quarter: quarter,
       available_rewards: processedRewards,
-      claimed_rewards: claimedRewards
+      claimed_rewards: claimedRewards,
+      // NEW: User's ticket balances by campaign
+      user_ticket_balances: Object.fromEntries(ticketBalancesByCampaign)
     };
 
     return NextResponse.json(response);
