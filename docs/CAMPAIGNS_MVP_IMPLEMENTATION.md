@@ -1,4 +1,4 @@
-ne for # Campaigns MVP Implementation
+# Campaigns MVP Implementation
 **Ultra-Lean: Instant Discounts for Earned Tiers**
 
 ## Executive Summary
@@ -86,19 +86,28 @@ CREATE TABLE campaigns (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   
-  CONSTRAINT chk_funding_goal_positive CHECK (funding_goal_cents > 0),
+  CONSTRAINT chk_funding_goal_nonneg CHECK (funding_goal_cents >= 0),
   CONSTRAINT chk_current_funding_nonneg CHECK (current_funding_cents >= 0)
 );
 
 -- Link tier rewards to campaigns (cleaner foreign key relationship)
 ALTER TABLE tier_rewards 
 ADD COLUMN campaign_id UUID REFERENCES campaigns(id),
-ADD COLUMN discount_percentage DECIMAL(5,2) DEFAULT 0; -- Simplified discount per tier
+ADD COLUMN discount_percentage NUMERIC(5,2) NOT NULL DEFAULT 0; -- Simplified discount per tier
 
 -- Campaign progress tracking
 CREATE VIEW v_campaign_overview AS
 SELECT 
-  c.*,
+  c.id,
+  c.club_id,
+  c.title,
+  c.description,
+  c.funding_goal_cents,
+  c.current_funding_cents,
+  c.deadline,
+  c.status,
+  c.created_at,
+  c.updated_at,
   COUNT(tr.id) as tier_count,
   COUNT(DISTINCT rc.user_id) as participant_count,
   CASE 
@@ -106,15 +115,27 @@ SELECT
       (c.current_funding_cents::DECIMAL / c.funding_goal_cents * 100)
     ELSE 0 
   END as funding_percentage,
-  CASE 
-    WHEN c.deadline > NOW() THEN 
-      EXTRACT(EPOCH FROM (c.deadline - NOW()))::INTEGER
-    ELSE 0
-  END as seconds_remaining
+  GREATEST(0, EXTRACT(EPOCH FROM (c.deadline - NOW()))::INTEGER) as seconds_remaining
 FROM campaigns c
 LEFT JOIN tier_rewards tr ON tr.campaign_id = c.id
 LEFT JOIN reward_claims rc ON rc.reward_id = tr.id
-GROUP BY c.id;
+GROUP BY 
+  c.id,
+  c.club_id,
+  c.title,
+  c.description,
+  c.funding_goal_cents,
+  c.current_funding_cents,
+  c.deadline,
+  c.status,
+  c.created_at,
+  c.updated_at;
+
+-- Helpful indexes for join performance
+CREATE INDEX IF NOT EXISTS idx_campaigns_id ON campaigns(id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_club_id ON campaigns(club_id);
+CREATE INDEX IF NOT EXISTS idx_tier_rewards_campaign_id ON tier_rewards(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_reward_claims_reward_id ON reward_claims(reward_id);
 ```
 
 ### **NEW: Ticket-Based Campaign API Design**
@@ -420,89 +441,119 @@ function getTierRank(tier: string): number {
 #### `/api/tier-rewards/[id]/purchase` - Secure Purchase with Validation
 ```typescript
 export async function POST(request: NextRequest) {
-  // Get authenticated user (don't trust request body for user_tier)
-  const auth = await verifyUnifiedAuth(request);
-  if (!auth) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  
-  const tierRewardId = params.id;
-  
-  // Get tier reward with error handling
-  const { data: tierReward, error } = await supabase
-    .from('tier_rewards')
-    .select('*')
-    .eq('id', tierRewardId)
-    .single();
-    
-  if (error || !tierReward) {
-    return NextResponse.json({ error: 'Tier not found' }, { status: 404 });
-  }
-  
-  // Get user's actual earned tier from database (server-side validation)
-  const { data: userTierData } = await supabase
-    .rpc('check_tier_qualification', {
-      p_user_id: auth.userId,
-      p_club_id: tierReward.club_id,
-      p_target_tier: 'superfan',
-      p_rolling_window_days: 60
-    });
-    
-  const userTier = userTierData?.[0]?.earned_tier || 'cadet';
-  
-  // Calculate percentage-based discount
-  const discountPercentage = getDiscountPercentage(userTier, tierReward);
-  const discountCents = Math.round(tierReward.upgrade_price_cents * discountPercentage / 100);
-  const finalPriceCents = tierReward.upgrade_price_cents - discountCents;
-  
-  // Validate final price is positive
-  if (finalPriceCents <= 0) {
-    return NextResponse.json({ error: 'Invalid pricing calculation' }, { status: 400 });
-  }
-  
-  // Generate stable idempotency key
-  const idempotencyKey = `tier_purchase_${tierRewardId}_${auth.userId}`;
-  
-  // Create Stripe session - charge discounted amount immediately
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    line_items: [{
-      price_data: {
-        currency: 'usd',
-        product_data: {
-          name: tierReward.title,
-          description: discountCents > 0 ? 
-            `${tierReward.description} (${discountPercentage}% ${userTier} discount)` : 
-            tierReward.description
-        },
-        unit_amount: finalPriceCents // Charge discounted amount
-      },
-      quantity: 1
-    }],
-    success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/cancel`,
-    metadata: {
-      type: 'campaign_tier_purchase',
-      tier_reward_id: tierRewardId,
-      campaign_id: tierReward.campaign_id || '',
-      user_id: auth.userId,
-      user_tier: userTier,
-      original_price_cents: tierReward.upgrade_price_cents.toString(),
-      discount_cents: discountCents.toString(),
-      final_price_cents: finalPriceCents.toString(),
-      campaign_credit_cents: tierReward.upgrade_price_cents.toString(), // Campaign gets full value
-      idempotency_key: idempotencyKey
+  try {
+    // Get authenticated user (don't trust request body for user_tier)
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-  }, {
-    idempotencyKey // Pass to Stripe for true idempotency
-  });
-  
-  return NextResponse.json({
-    stripe_session_url: session.url,
-    final_price_cents: finalPriceCents,
-    discount_applied_cents: discountCents,
-    discount_percentage: discountPercentage
-  });
+
+    // Parse and validate route param
+    const rawId = params?.id;
+    if (typeof rawId !== 'string' || rawId.length < 8) {
+      return NextResponse.json({ error: 'Invalid tier reward id' }, { status: 400 });
+    }
+    const tierRewardId = rawId;
+
+    // Get tier reward with error handling
+    const { data: tierReward, error: tierErr } = await supabase
+      .from('tier_rewards')
+      .select('*')
+      .eq('id', tierRewardId)
+      .single();
+
+    if (tierErr || !tierReward) {
+      return NextResponse.json({ error: 'Tier not found' }, { status: 404 });
+    }
+
+    // Get user's actual earned tier from database (server-side validation)
+    const { data: userTierData, error: rpcErr } = await supabase
+      .rpc('check_tier_qualification', {
+        p_user_id: auth.userId,
+        p_club_id: tierReward.club_id,
+        p_target_tier: 'superfan',
+        p_rolling_window_days: 60
+      });
+
+    if (rpcErr) {
+      console.error('RPC check_tier_qualification failed');
+      return NextResponse.json({ error: 'Failed to verify user tier' }, { status: 500 });
+    }
+    const earnedTier = Array.isArray(userTierData) ? userTierData?.[0]?.earned_tier : undefined;
+    const userTier = typeof earnedTier === 'string' ? earnedTier : 'cadet';
+
+    // Calculate percentage-based discount
+    const discountPercentage = getDiscountPercentage(userTier, tierReward);
+    const baseAmount = Number(tierReward.upgrade_price_cents);
+    const discountCents = Math.round(baseAmount * discountPercentage / 100);
+    const finalPriceCents = baseAmount - discountCents;
+
+    // Validate final price is a positive integer
+    if (!Number.isFinite(baseAmount) || !Number.isInteger(baseAmount) || baseAmount <= 0) {
+      return NextResponse.json({ error: 'Invalid base price' }, { status: 400 });
+    }
+    if (!Number.isFinite(finalPriceCents) || !Number.isInteger(finalPriceCents) || finalPriceCents <= 0) {
+      return NextResponse.json({ error: 'Invalid pricing calculation' }, { status: 400 });
+    }
+
+    // Generate robust idempotency key
+    const unique = `${Date.now()}_${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+    const idempotencyKey = `tier_purchase_${tierRewardId}_${auth.userId}_${unique}`;
+
+    // Create Stripe session - charge discounted amount immediately
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        line_items: [{
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: tierReward.title,
+              description: discountCents > 0 ? 
+                `${tierReward.description} (${discountPercentage}% ${userTier} discount)` : 
+                tierReward.description
+            },
+            unit_amount: finalPriceCents // Charge discounted amount
+          },
+          quantity: 1
+        }],
+        success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/cancel`,
+        metadata: {
+          type: 'campaign_tier_purchase',
+          tier_reward_id: tierRewardId,
+          campaign_id: tierReward.campaign_id || '',
+          user_id: auth.userId,
+          user_tier: userTier,
+          original_price_cents: baseAmount.toString(),
+          discount_cents: discountCents.toString(),
+          final_price_cents: finalPriceCents.toString(),
+          campaign_credit_cents: baseAmount.toString(), // Campaign gets full value
+          idempotency_key: idempotencyKey
+        }
+      }, {
+        idempotencyKey
+      });
+    } catch (stripeErr) {
+      console.error('Stripe session creation failed');
+      return NextResponse.json({ error: 'Payment initialization failed' }, { status: 502 });
+    }
+
+    if (!session || (!session.id && !session.url)) {
+      return NextResponse.json({ error: 'Invalid payment session' }, { status: 502 });
+    }
+
+    return NextResponse.json({
+      stripe_session_url: session.url,
+      final_price_cents: finalPriceCents,
+      discount_applied_cents: discountCents,
+      discount_percentage: discountPercentage
+    });
+  } catch (e) {
+    console.error('Unexpected error in purchase handler');
+    return NextResponse.json({ error: 'Unexpected server error' }, { status: 500 });
+  }
 }
 
 function getDiscountPercentage(userTier: string, tierReward: any): number {
@@ -759,10 +810,16 @@ function calculateUserDiscount(userTier: string, rewardTier: string, reward: any
   
   // Only discount if user tier >= reward tier
   if (userRank >= rewardRank) {
+    const baseAmountCents = reward?.upgrade_price_cents ?? 0;
+    let percent = 0;
     switch (userTier) {
-      case 'resident': return reward.resident_discount_cents || 500;
-      case 'headliner': return reward.headliner_discount_cents || 1000;
-      case 'superfan': return reward.superfan_discount_cents || 2000;
+      case 'resident': percent = reward?.resident_discount_percent ?? 0; break;
+      case 'headliner': percent = reward?.headliner_discount_percent ?? 0; break;
+      case 'superfan': percent = reward?.superfan_discount_percent ?? 0; break;
+      default: percent = 0;
+    }
+    if (typeof percent === 'number' && percent > 0 && baseAmountCents > 0) {
+      return Math.round(baseAmountCents * percent / 100);
     }
   }
   return 0;
@@ -793,8 +850,9 @@ export async function POST(request: NextRequest) {
   const discountCents = Math.round(tierReward.upgrade_price_cents * discountPercentage / 100);
   const finalPriceCents = tierReward.upgrade_price_cents - discountCents;
   
-  // Generate idempotency key for this purchase
-  const idempotencyKey = `tier_purchase_${tierRewardId}_${auth.userId}_${Date.now()}`;
+  // Generate idempotency key for this purchase (avoid collisions)
+  const unique = `${Date.now()}_${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+  const idempotencyKey = `tier_purchase_${tierRewardId}_${auth.userId}_${unique}`;
   
   // Create Stripe session - charge discounted amount immediately
   const session = await stripe.checkout.sessions.create({
@@ -860,13 +918,18 @@ export async function POST(request: NextRequest) {
     if (session.metadata?.type === 'campaign_tier_purchase') {
       const idempotencyKey = session.metadata.idempotency_key;
       
-      // Check if already processed (idempotency)
-      const { data: existingClaim } = await supabase
+      // Check if already processed (idempotency) with error handling
+      const { data: existingClaim, error: existingErr } = await supabase
         .from('reward_claims')
         .select('id')
         .eq('stripe_payment_intent_id', session.payment_intent as string)
         .single();
         
+      if (existingErr) {
+        console.error('Error checking existing reward_claim for idempotency');
+        return NextResponse.json({ error: 'Failed to verify payment status' }, { status: 500 });
+      }
+
       if (existingClaim) {
         console.log('Payment already processed, skipping');
         return NextResponse.json({ received: true });
