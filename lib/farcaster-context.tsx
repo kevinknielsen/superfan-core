@@ -39,16 +39,34 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Call ready to dismiss splash screen in Wallet App context
+        // Check for Base app context (different from Farcaster)
+        const isInBaseApp = typeof window !== "undefined" && 
+          (window.location.href.includes('base.') || 
+           navigator.userAgent.includes('base') ||
+           window.parent !== window); // Detect if in iframe
+        
         if (result && result.client) {
-          console.log('🚀 [FarcasterContext] In miniapp context, calling sdk.actions.ready()');
+          console.log('🚀 [FarcasterContext] In Farcaster miniapp context, calling sdk.actions.ready()');
           
           // Give the UI a moment to render before calling ready
           setTimeout(async () => {
             try {
               await sdk.actions.ready({ disableNativeGestures: true });
-              console.log('✅ [FarcasterContext] sdk.actions.ready() completed');
+              console.log('✅ [FarcasterContext] Farcaster sdk.actions.ready() completed');
             } catch (readyError) {
               console.error('❌ [FarcasterContext] Error calling ready():', readyError);
+            }
+          }, 100);
+        } else if (isInBaseApp) {
+          console.log('🏗️ [FarcasterContext] In Base app context, calling sdk.actions.ready()');
+          
+          // For Base app, try calling ready without context check
+          setTimeout(async () => {
+            try {
+              await sdk.actions.ready({ disableNativeGestures: true });
+              console.log('✅ [FarcasterContext] Base sdk.actions.ready() completed');
+            } catch (readyError) {
+              console.error('❌ [FarcasterContext] Base ready() error:', readyError);
             }
           }, 100);
         } else {
