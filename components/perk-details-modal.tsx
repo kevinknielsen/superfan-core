@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare } from "lucide-react";
+import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -169,6 +169,13 @@ export default function PerkDetailsModal({
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center text-white">
                     <div className="text-4xl font-bold mb-2">{perk.title}</div>
+                    {/* NEW: Show ticket cost for campaign items */}
+                    {(perk.metadata as any)?.is_ticket_campaign && (
+                      <div className="text-lg opacity-90 flex items-center justify-center gap-2">
+                        <span>🎟️</span>
+                        <span>{(perk.metadata as any)?.ticket_cost || 1} Ticket{((perk.metadata as any)?.ticket_cost || 1) > 1 ? 's' : ''}</span>
+                      </div>
+                    )}
                     {hasValidDate && (
                       <div className="text-lg opacity-90">
                         {eventDateObj!.toLocaleDateString('en-US', {
@@ -248,6 +255,32 @@ export default function PerkDetailsModal({
                         <span>Limited to {capacity} attendees</span>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* NEW: Ticket Campaign Information */}
+              {(perk.metadata as any)?.is_ticket_campaign && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-white">Campaign Item Details</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 text-gray-300">
+                      <Ticket className="h-5 w-5 text-blue-400" />
+                      <span>Costs {(perk.metadata as any)?.ticket_cost || 1} ticket{((perk.metadata as any)?.ticket_cost || 1) > 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-gray-300">
+                      <span className="text-blue-400">💰</span>
+                      <span>Campaign value: ${((perk.metadata as any)?.upgrade_price_cents || 0) / 100}</span>
+                    </div>
+                    {(perk.metadata as any)?.cogs_cents > 0 && (
+                      <div className="flex items-center gap-3 text-gray-300">
+                        <span className="text-green-400">🏭</span>
+                        <span>Production cost: ${((perk.metadata as any)?.cogs_cents || 0) / 100}</span>
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-400 mt-2">
+                      Items are fulfilled after campaign reaches its funding goal
+                    </div>
                   </div>
                 </div>
               )}
