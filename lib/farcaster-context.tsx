@@ -39,8 +39,22 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Call ready to dismiss splash screen in Wallet App context
-        await sdk.actions.ready();
+        if (result && result.client) {
+          console.log('🚀 [FarcasterContext] In miniapp context, calling sdk.actions.ready()');
+          // Give the UI a moment to render before calling ready
+          setTimeout(async () => {
+            try {
+              await sdk.actions.ready({ disableNativeGestures: true });
+              console.log('✅ [FarcasterContext] sdk.actions.ready() completed');
+            } catch (readyError) {
+              console.error('❌ [FarcasterContext] Error calling ready():', readyError);
+            }
+          }, 100);
+        } else {
+          console.log('🌐 [FarcasterContext] Not in miniapp context, skipping ready() call');
+        }
       } catch (error) {
+        console.error('❌ [FarcasterContext] SDK initialization error:', error);
         setIsSDKLoaded(true); // Still mark as loaded for web fallback
       }
     };

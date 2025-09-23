@@ -10,31 +10,23 @@
   "miniapp": {
     "version": "1",
     "name": "Superfan",
+    "homeUrl": "https://superfan.one",
+    "iconUrl": "https://superfan.one/favicon.png",
+    "splashImageUrl": "https://superfan.one/splash.png",
+    "splashBackgroundColor": "#9C26B0",
+    "webhookUrl": "https://superfan.one/api/farcaster/webhook",
     "subtitle": "The Loyalty Rail for Culture",
     "description": "Superfan turns fan engagement into points, tiers, and campaigns. Join clubs, earn status by showing up online and IRL, and help launch vinyl, merch, and presales.",
     "screenshotUrls": [
       "https://i.ibb.co/LDcPD9wd/Screenshot-2025-06-23-at-22-46-13.png"
     ],
-    "iconUrl": "https://superfan.one/favicon.png",
-    "splashImageUrl": "https://superfan.one/splash.png",
-    "splashBackgroundColor": "#9C26B0",
-    "homeUrl": "https://superfan.one",
-    "webhookUrl": "https://superfan.one/api/farcaster/webhook",
     "primaryCategory": "music",
-    "tags": [
-      "music",
-      "clubs",
-      "membership",
-      "points",
-      "campaigns"
-    ],
+    "tags": ["music", "clubs", "membership", "points", "campaigns"],
     "heroImageUrl": "https://superfan.one/og-image.png",
     "tagline": "Engagement Becomes Economy",
     "ogTitle": "Superfan: Culture Memberships",
     "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
     "ogImageUrl": "https://superfan.one/og-image.png",
-    "buttonTitle": "🎵 Join A Club",
-    "noindex": false,
-    "castShareUrl": "https://superfan.one"
+    "noindex": false
   }
 } 
