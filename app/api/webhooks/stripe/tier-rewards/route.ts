@@ -230,16 +230,21 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
           console.log(`[Tier Rewards Webhook] 🎉 Campaign "${campaign.campaign_title}" reached funding goal!`);
           
           // Mark campaign as funded in both tables
-          await supabaseAny
+          const { error: tierError } = await supabaseAny
             .from('tier_rewards')
             .update({ campaign_status: 'campaign_funded' })
             .eq('campaign_id', metadata.campaign_id);
             
           // Also update campaigns table if it exists
-          await supabaseAny
+          const { error: campaignError } = await supabaseAny
             .from('campaigns')
             .update({ status: 'funded' })
             .eq('id', metadata.campaign_id);
+
+          if (tierError || campaignError) {
+            console.error('[Tier Rewards Webhook] Failed to update campaign status:', { tierError, campaignError });
+            // Consider whether this should fail the whole operation
+          }
         }
       }
     }

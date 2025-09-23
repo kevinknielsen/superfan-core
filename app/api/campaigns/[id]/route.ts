@@ -50,22 +50,34 @@ export async function GET(
 
     if (itemsError) {
       console.error('[Campaign API] Error fetching campaign items:', itemsError);
+      const isDevelopment = process.env.NODE_ENV === 'development';
       return NextResponse.json({ 
-        error: 'Failed to fetch campaign items', 
-        details: itemsError.message 
+        error: 'Failed to fetch campaign items',
+        ...(isDevelopment && { details: itemsError.message })
       }, { status: 500 });
     }
 
+    // Destructure to avoid data duplication in response
+    const { 
+      funding_percentage, 
+      current_funding_cents, 
+      funding_goal_cents, 
+      seconds_remaining, 
+      participant_count, 
+      total_tickets_sold,
+      ...campaignData 
+    } = campaign;
+
     const response = {
-      ...campaign,
+      ...campaignData,
       items: items || [],
       progress: {
-        funding_percentage: campaign.funding_percentage,
-        current_funding_cents: campaign.current_funding_cents,
-        funding_goal_cents: campaign.funding_goal_cents,
-        seconds_remaining: campaign.seconds_remaining,
-        participant_count: campaign.participant_count,
-        total_tickets_sold: campaign.total_tickets_sold
+        funding_percentage,
+        current_funding_cents,
+        funding_goal_cents,
+        seconds_remaining,
+        participant_count,
+        total_tickets_sold
       }
     };
 
@@ -75,9 +87,10 @@ export async function GET(
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[Campaign API] Unexpected error:', error);
+    const isDevelopment = process.env.NODE_ENV === 'development';
     return NextResponse.json({ 
       error: 'Failed to fetch campaign',
-      details: errMsg 
+      ...(isDevelopment && { details: errMsg })
     }, { status: 500 });
   }
 }

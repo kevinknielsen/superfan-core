@@ -7,6 +7,7 @@ export const runtime = 'nodejs';
 
 // Create service client to bypass RLS for admin operations
 const supabase = createServiceClient();
+// Note: Using any for new tables not in generated types yet
 const supabaseAny = supabase as any;
 
 // Get all campaigns (admin only)
@@ -33,9 +34,10 @@ export async function GET(request: NextRequest) {
       
     if (campaignError) {
       console.error('[Campaigns API] Error fetching campaigns:', campaignError);
+      const isDevelopment = process.env.NODE_ENV === 'development';
       return NextResponse.json({ 
-        error: 'Failed to fetch campaigns', 
-        details: campaignError.message 
+        error: 'Failed to fetch campaigns',
+        ...(isDevelopment && { details: campaignError.message })
       }, { status: 500 });
     }
 
@@ -45,9 +47,10 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[Campaigns API] Unexpected error:', error);
+    const isDevelopment = process.env.NODE_ENV === 'development';
     return NextResponse.json({ 
       error: 'Failed to fetch campaigns',
-      details: errMsg 
+      ...(isDevelopment && { details: errMsg })
     }, { status: 500 });
   }
 }
@@ -66,27 +69,83 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = await request.json() as {
+      title?: string;
+      club_id?: string;
+      description?: string;
+      funding_goal_cents?: string | number;
+      deadline?: string;
+      ticket_price_cents?: string | number;
+    };
     
-    // Validate required fields
-    if (!body.title || !body.club_id || !body.funding_goal_cents) {
+    // Enhanced validation with proper checks
+    if (!body.title || typeof body.title !== 'string' || body.title.trim().length === 0) {
       return NextResponse.json({ 
-        error: 'Missing required fields: title, club_id, funding_goal_cents' 
+        error: 'Title is required and must be a non-empty string' 
       }, { status: 400 });
+    }
+
+    if (!body.club_id || typeof body.club_id !== 'string') {
+      return NextResponse.json({ 
+        error: 'Club ID is required and must be a valid string' 
+      }, { status: 400 });
+    }
+
+    // Verify club exists (using any for clubs table as it may not be in types)
+    const { data: club, error: clubError } = await supabaseAny
+      .from('clubs')
+      .select('id')
+      .eq('id', body.club_id)
+      .single();
+
+    if (clubError || !club) {
+      return NextResponse.json({ 
+        error: 'Club not found or invalid club_id' 
+      }, { status: 400 });
+    }
+
+    // Validate funding goal
+    const fundingGoalCents = parseInt(String(body.funding_goal_cents || '0'), 10);
+    if (!body.funding_goal_cents || isNaN(fundingGoalCents) || fundingGoalCents <= 0) {
+      return NextResponse.json({ 
+        error: 'Funding goal must be a positive integer (in cents)' 
+      }, { status: 400 });
+    }
+
+    // Validate deadline if provided
+    if (body.deadline) {
+      const deadlineDate = new Date(body.deadline);
+      if (isNaN(deadlineDate.getTime())) {
+        return NextResponse.json({ 
+          error: 'Deadline must be a valid date' 
+        }, { status: 400 });
+      }
+      if (deadlineDate <= new Date()) {
+        return NextResponse.json({ 
+          error: 'Deadline must be in the future' 
+        }, { status: 400 });
+      }
     }
 
     console.log('[Campaigns API] Creating new campaign:', body.title);
 
-    // Create campaign
+    // Create campaign with validated data
+    const ticketPriceCents = parseInt(String(body.ticket_price_cents || '1800'), 10); // Default $18
+    if (isNaN(ticketPriceCents) || ticketPriceCents <= 0) {
+      return NextResponse.json({ 
+        error: 'Ticket price must be a positive integer (in cents)' 
+      }, { status: 400 });
+    }
+
     const { data: campaign, error: createError } = await supabaseAny
       .from('campaigns')
       .insert({
         club_id: body.club_id,
-        title: body.title,
-        description: body.description || null,
-        funding_goal_cents: parseInt(body.funding_goal_cents),
+        title: body.title.trim(),
+        description: body.description?.trim() || null,
+        funding_goal_cents: fundingGoalCents,
         deadline: body.deadline || null,
-        ticket_price_cents: parseInt(body.ticket_price_cents || '1800'), // Default $18
+        ticket_price_cents: ticketPriceCents,
         status: 'draft'
       })
       .select('*')
@@ -94,9 +153,10 @@ export async function POST(request: NextRequest) {
 
     if (createError) {
       console.error('[Campaigns API] Error creating campaign:', createError);
+      const isDevelopment = process.env.NODE_ENV === 'development';
       return NextResponse.json({ 
-        error: 'Failed to create campaign', 
-        details: createError.message 
+        error: 'Failed to create campaign',
+        ...(isDevelopment && { details: createError.message })
       }, { status: 500 });
     }
 
@@ -106,9 +166,10 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error('[Campaigns API] Unexpected error:', error);
+    const isDevelopment = process.env.NODE_ENV === 'development';
     return NextResponse.json({ 
       error: 'Failed to create campaign',
-      details: errMsg 
+      ...(isDevelopment && { details: errMsg })
     }, { status: 500 });
   }
 }
