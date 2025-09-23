@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, User, Wallet, AlertCircle } from "lucide-react";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { usePrivy } from "@/lib/auth-context";
-import frameSdk from "@farcaster/frame-sdk";
+import frameSdk from "@farcaster/miniapp-sdk";
 import { useLoginToFrame } from "@privy-io/react-auth/farcaster";
 
 interface FarcasterAuthContextType {

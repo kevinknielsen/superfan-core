@@ -1,4 +1,4 @@
-import sdk from '@farcaster/frame-sdk';
+import sdk from '@farcaster/miniapp-sdk';
 import { SwitchChainError, fromHex, getAddress, numberToHex } from 'viem';
 import { ChainNotConfiguredError, createConnector } from 'wagmi';
 

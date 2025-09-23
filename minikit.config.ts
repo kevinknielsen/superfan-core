@@ -5,8 +5,8 @@ const ROOT_URL = process.env.NODE_ENV === 'production'
 export const minikitConfig = {
   accountAssociation: {
     "header": "eyJmaWQiOjEwOTkxNjQsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgwMjgwOTI0YWVkNzI1Y2RhMTE2OGEwMkEyNDBkQTlGOTIwNEYzODFiIn0",
-    "payload": "eyJkb21haW4iOiJzdXBlcmZhbi5vbmUifQ==",
-    "signature": "MHgyZjYzYmM0ZTk5YmZjNDMxYWU2NzkzYWI0YzFjNDFhNjA2NGI3MjEyYzdmNDAwYjdmZDkyMjg1YTJlZjczNTFmNDllZTZjMjc5YmYwYTMyMzE3NjI2ZGQ3YjVkZWJlM2VlNzM1MDE1M2RjOGE0ZDI3OTVmZjNjYWU1ZTk4YmU0ODFj"
+    "payload": "eyJkb21haW4iOiJzdXBlcmZhbi5vbmUifQ",
+    "signature": "MHg2MTBjMjkyNmM5Zjk4MDZiOTJiNzQ1YmUwMTNiODNlYzhhMmU0YmE0ZWFjYTgwNDlmN2YzOTkyYzM1ZjVmNWQwMDRiOWI5MmU2NDMyOTkyZWFhZTQ4MWZmYzc4YWM5NDE0NTQyM2RiZGQwZDEyNWEyMzNlMjM3ZTVjNzc3NjI2MTFj"
   },
   miniapp: {
     version: "1",
@@ -28,5 +28,6 @@ export const minikitConfig = {
     ogImageUrl: `${ROOT_URL}/og-image.png`,
     buttonTitle: "🎵 Join A Club",
     noindex: false,
+    castShareUrl: ROOT_URL,
   },
 } as const;

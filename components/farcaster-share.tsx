@@ -3,7 +3,7 @@
 import { useFarcaster } from '@/lib/farcaster-context';
 import { Button } from '@/components/ui/button';
 import { Share } from 'lucide-react';
-import { sdk } from '@farcaster/frame-sdk';
+import { sdk } from '@farcaster/miniapp-sdk';
 
 interface FarcasterShareProps {
   url: string;
