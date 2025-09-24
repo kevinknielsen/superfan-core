@@ -114,7 +114,17 @@ export async function POST(
 
     // NEW: Detect if this is a ticket campaign purchase
     const isTicketCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
-    const ticketCost = tierReward.ticket_cost || 1;
+    
+    // Validate ticket_cost for ticket campaigns
+    let ticketCost = 1; // Default for non-ticket campaigns
+    if (isTicketCampaign) {
+      if (!tierReward.ticket_cost || !Number.isInteger(tierReward.ticket_cost) || tierReward.ticket_cost <= 0) {
+        return NextResponse.json({ 
+          error: 'Invalid ticket campaign: ticket_cost must be a positive integer' 
+        }, { status: 400 });
+      }
+      ticketCost = tierReward.ticket_cost;
+    }
     
     // Calculate percentage-based discount
     const discountPercentage = getDiscountPercentage(userTier, tierReward);
@@ -162,7 +172,7 @@ export async function POST(
         // NEW: Ticket campaign metadata
         is_ticket_campaign: isTicketCampaign.toString(),
         ticket_cost: ticketCost.toString(),
-        tickets_purchased: isTicketCampaign ? Math.floor(upgradePriceCents / (tierReward.upgrade_price_cents / ticketCost)).toString() : '0'
+        tickets_purchased: isTicketCampaign ? ticketCost.toString() : '0'
       }
     }, {
       idempotencyKey // Pass to Stripe for true idempotency

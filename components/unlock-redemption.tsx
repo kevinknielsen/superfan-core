@@ -176,7 +176,9 @@ export default function UnlockRedemption({
   useEffect(() => {
     const ac = new AbortController();
     loadData(ac.signal).catch((error) => {
-      console.error('Failed to load unlock data:', error);
+      if (error.name !== 'AbortError') {
+        console.error('Error loading data:', error);
+      }
     });
     return () => ac.abort();
   }, [clubId]);
@@ -267,15 +269,22 @@ export default function UnlockRedemption({
         setUnlocks(sortedUnlocks);
         setRedemptions(convertedRedemptions);
         
-        // Extract campaign data for parent component
-        const campaignTier = convertedUnlocks.find((unlock: Unlock) => unlock.is_campaign_tier && unlock.campaign_progress);
+        // Extract campaign data for parent component (support both tier campaigns and ticket campaigns)
+        const campaignTier = convertedUnlocks.find((unlock: Unlock) => 
+          (unlock.is_campaign_tier || unlock.is_ticket_campaign) && unlock.campaign_progress
+        );
         
         if (campaignTier && onCampaignDataChange) {
           onCampaignDataChange({
             campaign_id: campaignTier.campaign_id,
             campaign_title: campaignTier.campaign_title,
             campaign_status: campaignTier.campaign_status,
-            campaign_progress: campaignTier.campaign_progress
+            campaign_progress: {
+              funding_percentage: campaignTier.campaign_progress?.funding_percentage || 0,
+              seconds_remaining: campaignTier.campaign_progress?.seconds_remaining || 0,
+              current_funding_cents: campaignTier.campaign_progress?.current_funding_cents || 0,
+              goal_funding_cents: campaignTier.campaign_progress?.funding_goal_cents || 0
+            }
           });
         }
       } else {
@@ -616,11 +625,15 @@ export default function UnlockRedemption({
     .reduce((campaigns, unlock) => {
       const campaignId = unlock.campaign_id!;
       if (!campaigns[campaignId]) {
+        const ticket_cost_safe = Number(unlock.ticket_cost) || 0;
+        const upgrade_price_cents_safe = Number(unlock.upgrade_price_cents) || 0;
+        const ticket_price = ticket_cost_safe > 0 ? upgrade_price_cents_safe / ticket_cost_safe : 0;
+        
         campaigns[campaignId] = {
           campaign_id: campaignId,
           campaign_title: unlock.campaign_title || 'Campaign',
           ticket_balance: unlock.user_ticket_balance || 0,
-          ticket_price: unlock.upgrade_price_cents / unlock.ticket_cost // Price per ticket
+          ticket_price: ticket_price // Price per ticket
         };
       }
       return campaigns;
@@ -662,8 +675,11 @@ export default function UnlockRedemption({
                   if (redemption) {
                     // Already redeemed - show persistent details modal
                     onShowPerkDetails?.(unlock, redemption);
+                  } else if (unlock.is_ticket_campaign) {
+                    // NEW: For ticket campaigns, show preview modal even if not redeemed
+                    onShowPerkDetails?.(unlock, null); // null = preview mode
                   } else {
-                    // Not redeemed - show redemption modal
+                    // Regular tier reward - show redemption modal
                     setSelectedUnlock(unlock);
                   }
                 }}

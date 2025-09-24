@@ -47,7 +47,10 @@ export default function TicketBalance({
                 {ticketBalance} Ticket{ticketBalance !== 1 ? 's' : ''}
               </div>
               <div className="text-sm text-blue-700 dark:text-blue-300">
-                Campaign value: ${(ticketValue / 100).toFixed(0)}
+                Campaign value: ${(() => {
+                  const dollars = ticketValue / 100;
+                  return Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2);
+                })()}
               </div>
             </div>
             
