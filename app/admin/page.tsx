@@ -182,7 +182,7 @@ export default function AdminDashboard() {
     if (!authLoading && isAuthenticated && user) {
       checkAdminStatus();
     } else if (!authLoading && !isAuthenticated) {
-      router.push('/login');
+      router.push('/dashboard');
     }
   }, [authLoading, isAuthenticated, user, router]);
 

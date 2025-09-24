@@ -23,7 +23,7 @@ type PerkMetadata = TicketCampaignMetadata | RegularPerkMetadata;
 
 // Type guard functions for safe metadata access
 function isTicketCampaignMetadata(metadata: PerkMetadata | undefined): metadata is TicketCampaignMetadata {
-  return !!metadata && metadata.is_ticket_campaign === true;
+  return !!metadata && metadata.is_ticket_campaign === true && typeof metadata.ticket_cost === 'number';
 }
 
 interface PerkDetailsModalProps {
@@ -94,7 +94,7 @@ export default function PerkDetailsModal({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          redemption_id: redemption.id,
+          redemption_id: redemption?.id,
           resend: true,
         }),
         signal: controller.signal,

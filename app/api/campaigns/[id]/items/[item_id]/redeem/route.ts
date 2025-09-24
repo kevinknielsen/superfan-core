@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../../../../auth";
 import { createServiceClient } from "../../../../../supabase";
-import type { Database } from "@/types/database.types";
 
 export const runtime = 'nodejs';
 
 // Create service client for database operations
 const supabase = createServiceClient();
+// Note: Using any for new tables not in generated types yet
+const supabaseAny = supabase as any;
 
 // Redeem tickets for a campaign item
 export async function POST(
@@ -24,7 +25,7 @@ export async function POST(
 
     // Get the user from our database
     const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
+    const { data: user, error: userError } = await supabaseAny
       .from('users')
       .select('id')
       .eq(userColumn, auth.userId)
@@ -38,7 +39,7 @@ export async function POST(
     const actualUserId = user.id;
 
     // Get the campaign item (tier reward with ticket campaign info)
-    const { data: item, error: itemError } = await supabase
+    const { data: item, error: itemError } = await supabaseAny
       .from('tier_rewards')
       .select(`
         id,
@@ -58,11 +59,18 @@ export async function POST(
       return NextResponse.json({ error: 'Campaign item not found' }, { status: 404 });
     }
 
-    // Simplified: Always use the item's defined ticket cost
-    const ticketsToSpend = item.ticket_cost;
+    // Validate ticket_cost before using it
+    if (!item.ticket_cost || !Number.isFinite(item.ticket_cost) || item.ticket_cost <= 0) {
+      return NextResponse.json({ 
+        error: 'Invalid item configuration: ticket_cost must be a positive number' 
+      }, { status: 400 });
+    }
+    
+    // Use validated and normalized ticket cost
+    const ticketsToSpend = Math.floor(item.ticket_cost);
 
     // Use database function to atomically spend tickets
-    const { data: success, error: spendError } = await supabase
+    const { data: success, error: spendError } = await supabaseAny
       .rpc('spend_tickets_for_item', {
         p_user_id: actualUserId,
         p_campaign_id: campaignId,
@@ -74,7 +82,7 @@ export async function POST(
       console.error('Failed to redeem tickets:', spendError);
       
       // Get user's current ticket balance for better error message
-      const { data: ticketBalance } = await supabase
+      const { data: ticketBalance } = await supabaseAny
         .rpc('get_user_ticket_balance', {
           p_user_id: actualUserId,
           p_campaign_id: campaignId

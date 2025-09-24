@@ -32,7 +32,6 @@ export const isRouteAllowed = (pathname: string, hostname?: string) => {
         return pathname === route || pathname.startsWith(`${route}/`);
       }) ||
       pathname === "/" ||
-      pathname.startsWith("/login") ||
       pathname.startsWith("/profile")
     );
   }

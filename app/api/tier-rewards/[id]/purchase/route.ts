@@ -116,7 +116,7 @@ export async function POST(
     const isTicketCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
     
     // Validate ticket_cost for ticket campaigns
-    let ticketCost = 1; // Default for non-ticket campaigns
+    let ticketCost = 0;
     if (isTicketCampaign) {
       if (!tierReward.ticket_cost || !Number.isInteger(tierReward.ticket_cost) || tierReward.ticket_cost <= 0) {
         return NextResponse.json({ 
