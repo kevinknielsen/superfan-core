@@ -308,7 +308,7 @@ export default function Dashboard() {
                   backgroundPosition: "left center",
                 }}
               >
-                Earn Your Status
+                Back Their Brand
               </motion.span>
             </h2>
           </motion.div>
