@@ -19,7 +19,7 @@ CREATE TABLE campaigns (
   club_id UUID NOT NULL REFERENCES clubs(id),
   title TEXT NOT NULL,
   description TEXT,
-  funding_goal_cents INTEGER NOT NULL DEFAULT 0,
+  funding_goal_cents INTEGER NOT NULL DEFAULT 1, -- Minimum positive default
   current_funding_cents INTEGER NOT NULL DEFAULT 0, -- Full value progress tracking
   stripe_received_cents INTEGER NOT NULL DEFAULT 0, -- Actual Stripe payments (after discounts)
   deadline TIMESTAMPTZ,
@@ -33,6 +33,30 @@ CREATE TABLE campaigns (
   CONSTRAINT chk_stripe_received_nonneg CHECK (stripe_received_cents >= 0),
   CONSTRAINT chk_ticket_price_positive CHECK (ticket_price_cents > 0)
 );
+
+-- ============================================================================
+-- AUTO-UPDATE TRIGGER FOR CAMPAIGNS.UPDATED_AT
+-- ============================================================================
+
+-- Drop existing trigger if it exists (idempotent)
+DROP TRIGGER IF EXISTS trigger_campaigns_updated_at ON campaigns;
+
+-- Create or replace the trigger function
+CREATE OR REPLACE FUNCTION update_campaigns_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+-- Create the trigger
+CREATE TRIGGER trigger_campaigns_updated_at
+  BEFORE UPDATE ON campaigns
+  FOR EACH ROW
+  EXECUTE FUNCTION update_campaigns_updated_at();
 
 -- ============================================================================
 -- ENHANCE EXISTING TIER_REWARDS TABLE FOR CAMPAIGN ITEMS
@@ -108,19 +132,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to atomically spend tickets for item redemption
+-- Function to atomically spend tickets for item redemption (with concurrency protection)
 CREATE OR REPLACE FUNCTION spend_tickets_for_item(
   p_user_id UUID,
   p_campaign_id UUID,
   p_item_id UUID,
   p_tickets_to_spend INTEGER
 )
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_available_tickets INTEGER;
   v_item tier_rewards;
+  v_lock_key BIGINT;
+  v_lock_string TEXT;
 BEGIN
-  -- Get user's available ticket balance
+  -- Create deterministic lock key from user_id + campaign_id
+  v_lock_string := p_user_id::TEXT || p_campaign_id::TEXT;
+  v_lock_key := ('x' || substr(md5(v_lock_string), 1, 15))::bit(60)::BIGINT;
+  
+  -- Acquire advisory lock for this user+campaign combination
+  PERFORM pg_advisory_xact_lock(v_lock_key);
+  
+  -- Re-check user's available ticket balance while holding lock
   v_available_tickets := get_user_ticket_balance(p_user_id, p_campaign_id);
   
   -- Check if user has enough tickets
@@ -128,7 +165,7 @@ BEGIN
     RETURN FALSE; -- Not enough tickets
   END IF;
   
-  -- Get the item to redeem
+  -- Get the item to redeem (re-check while locked)
   SELECT * INTO v_item FROM tier_rewards 
   WHERE id = p_item_id AND campaign_id = p_campaign_id AND is_ticket_campaign = TRUE;
   
@@ -136,7 +173,7 @@ BEGIN
     RETURN FALSE; -- Item not found or wrong ticket cost
   END IF;
   
-  -- Create redemption record (spending tickets)
+  -- Create redemption record (spending tickets) - now safe from double-spend
   INSERT INTO reward_claims (
     user_id,
     reward_id,
@@ -157,7 +194,7 @@ BEGIN
   
   RETURN TRUE; -- Success
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- ============================================================================
 -- RECREATE CAMPAIGN PROGRESS VIEW (ENHANCED)
@@ -189,6 +226,30 @@ FROM campaigns c
 LEFT JOIN tier_rewards tr ON tr.campaign_id = c.id AND tr.is_ticket_campaign = TRUE
 LEFT JOIN reward_claims rc ON rc.campaign_id = c.id AND rc.is_ticket_claim = TRUE
 GROUP BY c.id;
+
+-- ============================================================================
+-- WEBHOOK SUPPORT FUNCTIONS
+-- ============================================================================
+
+-- Function to atomically increment campaign counters (used by webhook)
+CREATE OR REPLACE FUNCTION increment_campaigns_ticket_progress(
+  p_campaign_id UUID,
+  p_increment_current_funding_cents INTEGER,
+  p_increment_stripe_received_cents INTEGER,
+  p_increment_total_tickets_sold INTEGER DEFAULT 0
+)
+RETURNS VOID
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE campaigns
+  SET
+    current_funding_cents = current_funding_cents + GREATEST(0, COALESCE(p_increment_current_funding_cents, 0)),
+    stripe_received_cents = stripe_received_cents + GREATEST(0, COALESCE(p_increment_stripe_received_cents, 0)),
+    updated_at = NOW()
+  WHERE id = p_campaign_id;
+$$;
 
 -- ============================================================================
 -- MIGRATION COMPLETE

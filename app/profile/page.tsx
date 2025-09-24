@@ -27,7 +27,7 @@ function ProfilePageContent() {
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isInWalletApp) {
       // Redirect to dashboard for profile access - users typically come here via header modal
-      router.push("/dashboard");
+      router.replace("/dashboard");
     }
   }, [isLoading, isAuthenticated, router, isInWalletApp]);
 

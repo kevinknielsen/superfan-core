@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/points";
 
 // TypeScript interfaces for perk metadata
 interface TicketCampaignMetadata {
@@ -293,12 +294,12 @@ export default function PerkDetailsModal({
                     </div>
                     <div className="flex items-center gap-3 text-gray-300">
                       <span className="text-blue-400">💰</span>
-                      <span>Campaign value: ${(perk.metadata.upgrade_price_cents || 0) / 100}</span>
+                      <span>Campaign value: {formatCurrency(perk.metadata.upgrade_price_cents || 0)}</span>
                     </div>
                     {perk.metadata.cogs_cents && perk.metadata.cogs_cents > 0 && (
                       <div className="flex items-center gap-3 text-gray-300">
                         <span className="text-green-400">🏭</span>
-                        <span>Production cost: ${perk.metadata.cogs_cents / 100}</span>
+                        <span>Production cost: {formatCurrency(perk.metadata.cogs_cents)}</span>
                       </div>
                     )}
                     <div className="text-xs text-gray-400 mt-2">

@@ -161,7 +161,12 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Campaigns API] Created campaign ${campaign.id}: ${campaign.title}`);
-    return NextResponse.json(campaign);
+    return NextResponse.json(campaign, { 
+      status: 201,
+      headers: {
+        'Location': `/api/campaigns/${campaign.id}`
+      }
+    });
 
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);

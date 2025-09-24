@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "../../../supabase";
 import { stripe, verifyWebhookSignature } from "@/lib/stripe";
 import Stripe from "stripe";
+import crypto from "node:crypto";
 
 export const runtime = 'nodejs';
 
@@ -161,10 +162,30 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       return { success: true };
     }
     
-    // NEW: Detect ticket campaign purchase
-    const isTicketPurchase = metadata.type === 'ticket_purchase' || metadata.is_ticket_campaign === 'true';
-    const ticketsPurchased = isTicketPurchase ? parseInt(metadata.tickets_purchased || '0') : 0;
+    // Helper function for safe integer parsing
+    const toInt = (val: string | undefined): number => {
+      if (!val) return 0;
+      const parsed = Number.parseInt(val.trim(), 10);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    };
+
+    // Helper function for boolean detection
+    const toBool = (val: string | undefined): boolean => {
+      if (!val) return false;
+      const normalized = val.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1' || normalized === 'yes';
+    };
+
+    // NEW: Detect ticket campaign purchase with robust parsing
+    const normalizedType = metadata.type?.trim().toLowerCase();
+    const isTicketPurchase = normalizedType === 'ticket_purchase' || toBool(metadata.is_ticket_campaign);
+    const ticketsPurchased = isTicketPurchase ? Math.max(0, toInt(metadata.tickets_purchased)) : 0;
     
+    // Generate secure access code using crypto
+    const generateAccessCode = (): string => {
+      return 'AC' + crypto.randomBytes(4).toString('hex').toUpperCase();
+    };
+
     // Create reward claim with campaign and discount tracking (enhanced for tickets)
     const { error: insertError } = await supabaseAny.from('reward_claims').insert({
       user_id: metadata.user_id,
@@ -173,13 +194,13 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       claim_method: isTicketPurchase ? 'ticket_purchase' : 'upgrade_purchased',
       user_tier_at_claim: metadata.user_tier,
       user_points_at_claim: 0, // TODO: Get actual points if needed
-      original_price_cents: parseInt(metadata.original_price_cents),
-      paid_price_cents: parseInt(metadata.final_price_cents),
-      discount_applied_cents: parseInt(metadata.discount_cents),
+      original_price_cents: toInt(metadata.original_price_cents),
+      paid_price_cents: toInt(metadata.final_price_cents),
+      discount_applied_cents: toInt(metadata.discount_cents),
       stripe_payment_intent_id: session.payment_intent as string,
       refund_status: 'none',
-      access_status: isTicketPurchase ? 'tickets_granted' : 'granted',
-      access_code: 'AC' + Math.random().toString(36).substring(2, 10).toUpperCase(),
+      access_status: 'granted', // Use standard DB-allowed status for both types
+      access_code: generateAccessCode(),
       claimed_at: new Date().toISOString(),
       // NEW: Ticket tracking fields
       is_ticket_claim: isTicketPurchase,
@@ -205,18 +226,22 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
         console.error('[Tier Rewards Webhook] Failed to update campaign progress:', campaignError);
         // Don't fail the whole operation, just log the error
       } else {
-        console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${parseInt(metadata.campaign_credit_cents)/100}`);
+        console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${toInt(metadata.campaign_credit_cents)/100}`);
         
-        // NEW: Also update campaigns table if this is a ticket campaign
+        // NEW: Also update campaigns table if this is a ticket campaign using atomic RPC
         if (isTicketPurchase) {
-          await supabaseAny
-            .from('campaigns')
-            .update({
-              current_funding_cents: supabaseAny.sql`current_funding_cents + ${parseInt(metadata.campaign_credit_cents)}`,
-              stripe_received_cents: supabaseAny.sql`stripe_received_cents + ${parseInt(metadata.final_price_cents)}`,
-              total_tickets_sold: supabaseAny.sql`total_tickets_sold + ${ticketsPurchased}`
-            })
-            .eq('id', metadata.campaign_id);
+          const { error: campaignUpdateError } = await supabaseAny
+            .rpc('increment_campaigns_ticket_progress', {
+              p_campaign_id: metadata.campaign_id,
+              p_increment_current_funding_cents: toInt(metadata.campaign_credit_cents),
+              p_increment_stripe_received_cents: toInt(metadata.final_price_cents),
+              p_increment_total_tickets_sold: ticketsPurchased
+            });
+            
+          if (campaignUpdateError) {
+            console.error('[Tier Rewards Webhook] Failed to update campaign table:', campaignUpdateError);
+            // Don't fail the whole operation, just log the error
+          }
         }
         
         // Check if campaign goal reached (check both tier_rewards and campaigns table)

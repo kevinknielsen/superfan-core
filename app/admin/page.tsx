@@ -182,7 +182,7 @@ export default function AdminDashboard() {
     if (!authLoading && isAuthenticated && user) {
       checkAdminStatus();
     } else if (!authLoading && !isAuthenticated) {
-      router.push('/dashboard');
+      router.replace('/dashboard');
     }
   }, [authLoading, isAuthenticated, user, router]);
 
@@ -202,6 +202,9 @@ export default function AdminDashboard() {
         },
       });
       
+      if (!response.ok) {
+        throw new Error(`Admin status check failed: ${response.status}`);
+      }
       const responseData = await response.json() as { isAdmin?: boolean };
       const userIsAdmin = responseData.isAdmin;
       
@@ -215,12 +218,12 @@ export default function AdminDashboard() {
           description: "You don't have admin permissions",
           variant: "destructive"
         });
-        router.push('/dashboard');
+        router.replace('/dashboard');
       }
     } catch (error) {
       console.error('Error checking admin status:', error);
       setIsAdmin(false);
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } finally {
       setIsLoading(false);
     }
@@ -228,10 +231,18 @@ export default function AdminDashboard() {
 
   const loadAdminStats = async () => {
     try {
-      const response = await fetch('/api/admin/stats');
+      const accessToken = await getAccessToken();
+      const response = await fetch('/api/admin/stats', {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+        }
+      });
       if (response.ok) {
         const stats = await response.json() as AdminStats;
         setAdminStats(stats);
+      } else {
+        console.error('Failed to load admin stats:', response.status);
       }
     } catch (error) {
       console.error('Error loading admin stats:', error);

@@ -5,9 +5,9 @@ import { motion } from "framer-motion";
 import { Ticket, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatCurrency } from "@/lib/points";
 
 interface TicketBalanceProps {
-  campaignId: string;
   campaignTitle: string;
   ticketBalance: number;
   ticketPrice: number; // Price per ticket in cents
@@ -15,7 +15,6 @@ interface TicketBalanceProps {
 }
 
 export default function TicketBalance({ 
-  campaignId, 
   campaignTitle, 
   ticketBalance, 
   ticketPrice,
@@ -47,10 +46,7 @@ export default function TicketBalance({
                 {ticketBalance} Ticket{ticketBalance !== 1 ? 's' : ''}
               </div>
               <div className="text-sm text-blue-700 dark:text-blue-300">
-                Campaign value: ${(() => {
-                  const dollars = ticketValue / 100;
-                  return Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2);
-                })()}
+                Campaign value: {formatCurrency(ticketValue)}
               </div>
             </div>
             

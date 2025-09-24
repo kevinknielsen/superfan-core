@@ -60,14 +60,13 @@ export async function POST(
     }
 
     // Validate ticket_cost before using it
-    if (!item.ticket_cost || !Number.isFinite(item.ticket_cost) || item.ticket_cost <= 0) {
+    const ticketCost = Number(item.ticket_cost);
+    if (!Number.isInteger(ticketCost) || ticketCost <= 0) {
       return NextResponse.json({ 
-        error: 'Invalid item configuration: ticket_cost must be a positive number' 
+        error: 'Invalid item configuration: ticket_cost must be a positive integer' 
       }, { status: 400 });
     }
-    
-    // Use validated and normalized ticket cost
-    const ticketsToSpend = Math.floor(item.ticket_cost);
+    const ticketsToSpend = ticketCost;
 
     // Use database function to atomically spend tickets
     const { data: success, error: spendError } = await supabaseAny
@@ -105,10 +104,17 @@ export async function POST(
 
     console.log(`[Ticket Redemption] User ${actualUserId} redeemed ${ticketsToSpend} tickets for item ${item.title}`);
 
+    // Fetch remaining balance
+    const { data: remainingBalance } = await supabaseAny.rpc('get_user_ticket_balance', {
+      p_user_id: actualUserId,
+      p_campaign_id: campaignId
+    });
+
     return NextResponse.json({
       success: true,
       item_redeemed: item.title,
       tickets_spent: ticketsToSpend,
+      remaining_tickets: remainingBalance ?? undefined,
       message: `Successfully redeemed ${item.title}! Check your email for fulfillment details.`
     });
 

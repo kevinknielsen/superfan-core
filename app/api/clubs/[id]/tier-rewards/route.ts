@@ -374,13 +374,6 @@ export async function GET(
       is_ticket_claim: claim.is_ticket_claim
     }));
 
-    // NEW: Get user's ticket balances for all campaigns in this club
-    const { data: userTicketBalances, error: ticketError } = await supabaseAny
-      .rpc('get_user_ticket_balance', {
-        p_user_id: actualUserId,
-        p_campaign_id: null // Get all campaigns - we'll filter by club
-      });
-
     // Calculate ticket balances by campaign for this club
     const ticketBalancesByCampaign = new Map();
     if (userClaims) {

@@ -175,17 +175,18 @@ export default function UnlockRedemption({
 
   useEffect(() => {
     const ac = new AbortController();
-    loadData(ac.signal).catch((error) => {
+    let mounted = true;
+    loadData(ac.signal, () => mounted).catch((error) => {
       if (error.name !== 'AbortError') {
         console.error('Error loading data:', error);
       }
     });
-    return () => ac.abort();
+    return () => { mounted = false; ac.abort(); };
   }, [clubId]);
 
-  const loadData = async (signal?: AbortSignal) => {
+  const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
-      setIsLoading(true);
+      if (!isMounted || isMounted()) setIsLoading(true);
       // Get auth token
       const accessToken = await getAccessToken();
       if (!accessToken) {
@@ -266,8 +267,8 @@ export default function UnlockRedemption({
         // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
         const sortedUnlocks = sortUnlocksByPrice(convertedUnlocks);
 
-        setUnlocks(sortedUnlocks);
-        setRedemptions(convertedRedemptions);
+        if (!isMounted || isMounted()) setUnlocks(sortedUnlocks);
+        if (!isMounted || isMounted()) setRedemptions(convertedRedemptions);
         
         // Extract campaign data for parent component (support both tier campaigns and ticket campaigns)
         const campaignTier = convertedUnlocks.find((unlock: Unlock) => 
@@ -283,21 +284,21 @@ export default function UnlockRedemption({
               funding_percentage: campaignTier.campaign_progress?.funding_percentage || 0,
               seconds_remaining: campaignTier.campaign_progress?.seconds_remaining || 0,
               current_funding_cents: campaignTier.campaign_progress?.current_funding_cents || 0,
-              goal_funding_cents: campaignTier.campaign_progress?.funding_goal_cents || 0
+              funding_goal_cents: campaignTier.campaign_progress?.funding_goal_cents || 0
             }
           });
         }
       } else {
         console.error('Failed to fetch tier rewards:', response.status);
-        setUnlocks([]);
-        setRedemptions([]);
+        if (!isMounted || isMounted()) setUnlocks([]);
+        if (!isMounted || isMounted()) setRedemptions([]);
       }
     } catch (error) {
       console.error('Error loading data:', error);
-      setUnlocks([]);
-      setRedemptions([]);
+      if (!isMounted || isMounted()) setUnlocks([]);
+      if (!isMounted || isMounted()) setRedemptions([]);
     } finally {
-      setIsLoading(false);
+      if (!isMounted || isMounted()) setIsLoading(false);
     }
   };
 
@@ -492,7 +493,23 @@ export default function UnlockRedemption({
 
   // NEW: Handle ticket redemption for campaign items
   const handleTicketRedemption = async (unlock: Unlock) => {
+    // Double-submit protection: return early if already processing
+    if (isRedeeming) {
+      return;
+    }
+
     try {
+      // Input validation
+      if (!unlock.campaign_id) {
+        throw new Error('Campaign ID is required for ticket redemption');
+      }
+
+      // Validate and coerce ticket_cost to positive integer
+      const ticketCost = typeof unlock.ticket_cost === 'number' ? unlock.ticket_cost : Number(unlock.ticket_cost);
+      if (!Number.isInteger(ticketCost) || ticketCost <= 0) {
+        throw new Error('Invalid ticket cost: must be a positive integer');
+      }
+
       const accessToken = await getAccessToken();
       if (!accessToken) {
         throw new Error('User not authenticated');
@@ -500,7 +517,7 @@ export default function UnlockRedemption({
 
       setIsRedeeming(true);
 
-      // Redeem tickets for the item
+      // Redeem tickets for the item using validated integer value
       const response = await fetch(`/api/campaigns/${unlock.campaign_id}/items/${unlock.id}/redeem`, {
         method: 'POST',
         headers: {
@@ -508,7 +525,7 @@ export default function UnlockRedemption({
           'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          tickets_to_spend: unlock.ticket_cost
+          tickets_to_spend: ticketCost
         })
       });
 
@@ -524,6 +541,13 @@ export default function UnlockRedemption({
         await loadData();
         onRedemption?.();
         
+      } else if (response.status === 409) {
+        // Handle 409 Conflict with specific message
+        toast({
+          title: "Redemption Conflict",
+          description: "Item already claimed or conflicting request. Please refresh and try again.",
+          variant: "destructive",
+        });
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to redeem tickets');
@@ -645,7 +669,6 @@ export default function UnlockRedemption({
       {Object.values(ticketCampaigns).map((campaign: any) => (
         <TicketBalance
           key={campaign.campaign_id}
-          campaignId={campaign.campaign_id}
           campaignTitle={campaign.campaign_title}
           ticketBalance={campaign.ticket_balance}
           ticketPrice={campaign.ticket_price}
