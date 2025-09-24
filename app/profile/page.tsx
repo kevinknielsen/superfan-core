@@ -4,11 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
+import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/header";
 import WalletSettings from "@/components/wallet-settings";
 import { Wallet, Bell, Settings } from "lucide-react";
 import { Suspense } from "react";
 import dynamic from 'next/dynamic';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // Dynamic import for scanner-wallet toggle
 const ScannerWalletToggle = dynamic(() => import('@/components/scanner-wallet-toggle'), {
@@ -20,9 +22,68 @@ function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated, isLoading, isInWalletApp } = useUnifiedAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   // Default to wallet tab as requested
   const [activeTab, setActiveTab] = useState("wallet");
   const [showBillfoldWallet, setShowBillfoldWallet] = useState(false);
+
+  // Fetch current notification preference
+  const { data: notificationPrefs, isLoading: loadingPrefs } = useQuery({
+    queryKey: ['notification-preferences'],
+    queryFn: async () => {
+      // Get authentication headers for unified auth
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
+      
+      const response = await fetch('/api/users/notifications-opt-in', {
+        headers: authHeaders,
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch notification preferences');
+      }
+      return response.json();
+    },
+    enabled: isAuthenticated || isInWalletApp,
+  });
+
+  // Update notification preference mutation
+  const updateNotificationPref = useMutation({
+    mutationFn: async (notifications_opt_in: boolean) => {
+      // Get authentication headers for unified auth
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
+      
+      const response = await fetch('/api/users/notifications-opt-in', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({ notifications_opt_in }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update notification preference');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-preferences'] });
+      toast({
+        title: "Notification preference updated",
+        description: "Your campaign notification setting has been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to update preference",
+        description: "Please try again later.",
+        variant: "destructive",
+      });
+    },
+  });
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isInWalletApp) {
@@ -113,40 +174,20 @@ function ProfilePageContent() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 rounded-lg bg-gray-800/50">
                   <div>
-                    <h4 className="font-medium">Email Notifications</h4>
+                    <h4 className="font-medium">Campaign Notifications</h4>
                     <p className="text-sm text-muted-foreground">
-                      Get notified about new unlocks and club updates
+                      Get notified about new campaigns and exclusive perks
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" defaultChecked />
-                    <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 rounded-lg bg-gray-800/50">
-                  <div>
-                    <h4 className="font-medium">Auto-Add Memberships</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Automatically add memberships to clubs from artists you follow
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" />
-                    <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between p-4 rounded-lg bg-gray-800/50">
-                  <div>
-                    <h4 className="font-medium">Location Tracking</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Enable location-based tap-ins at events and venues
-                    </p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" defaultChecked />
-                    <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={notificationPrefs?.notifications_opt_in ?? false}
+                      disabled={loadingPrefs || updateNotificationPref.isPending}
+                      onChange={(e) => updateNotificationPref.mutate(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-disabled:opacity-50"></div>
                   </label>
                 </div>
 
