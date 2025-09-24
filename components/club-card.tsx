@@ -180,9 +180,8 @@ export default function ClubCard({
   // (removed unused StatusIcon)
 
   const performJoin = async () => {
-    if (!user?.id) return;
     try {
-      await joinClubMutation.mutateAsync({ privyUserId: user.id, clubId: club.id });
+      await joinClubMutation.mutateAsync({ clubId: club.id });
       toast({ title: "Membership added!", description: `You've successfully joined ${club.name}` });
     } catch (error) {
       console.error('Error joining club:', error);

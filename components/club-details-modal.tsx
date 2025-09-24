@@ -321,7 +321,7 @@ export default function ClubDetailsModal({
                 e.preventDefault();
                 e.stopPropagation();
                 if (!club) return;
-                const url = `${window.location.origin}/clubs/${club.id}`;
+                const url = `${window.location.origin}/dashboard?club=${club.id}&view=details`;
                 try {
                   await navigator.clipboard.writeText(url);
                   toast({
@@ -424,26 +424,18 @@ export default function ClubDetailsModal({
                   <CampaignProgressCard campaignData={campaignData} />
                 )}
                 
-                <UnlockRedemption
-                  clubId={club.id}
-                  clubName={club.name}
-                  userStatus={currentStatus}
-                  userPoints={currentPoints}
-                  onCampaignDataChange={setCampaignData}
-                  onRedemption={async () => {
-                    await refetch();
-                    toast({
-                      title: "Perk Redeemed!",
-                      description: "Wallet and status updated",
-                    });
-                  }}
-                  onShowRedemptionConfirmation={(redemption, unlock) => {
-                    setRedemptionConfirmation({ redemption, unlock });
-                  }}
-                  onShowPerkDetails={(unlock, redemption) => {
-                    setPerkDetails({ isOpen: true, unlock, redemption });
-                  }}
-                />
+                {/* Temporarily hide campaigns section for testing */}
+                <div className="rounded-xl border border-gray-800 bg-gray-900/30 p-8 text-center">
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/20">
+                      <Calendar className="h-8 w-8 text-primary" />
+                    </div>
+                    <h3 className="mb-2 text-xl font-medium">Campaigns Coming Soon</h3>
+                    <p className="text-muted-foreground">
+                      Your status sets your discount. Earn points now and get ready.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
