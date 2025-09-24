@@ -10,6 +10,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    
+    // Validate request body
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    
     const { notifications_opt_in } = body;
 
     if (typeof notifications_opt_in !== 'boolean') {

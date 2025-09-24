@@ -29,7 +29,7 @@ function ProfilePageContent() {
   const [showBillfoldWallet, setShowBillfoldWallet] = useState(false);
 
   // Fetch current notification preference
-  const { data: notificationPrefs, isLoading: loadingPrefs } = useQuery({
+  const { data: notificationPrefs, isLoading: loadingPrefs } = useQuery<{ notifications_opt_in: boolean }>({
     queryKey: ['notification-preferences'],
     queryFn: async () => {
       // Get authentication headers for unified auth
@@ -42,7 +42,7 @@ function ProfilePageContent() {
       if (!response.ok) {
         throw new Error('Failed to fetch notification preferences');
       }
-      return response.json();
+      return response.json() as Promise<{ notifications_opt_in: boolean }>;
     },
     enabled: isAuthenticated || isInWalletApp,
   });
@@ -69,6 +69,21 @@ function ProfilePageContent() {
       
       return response.json();
     },
+    onMutate: async (newPreference) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['notification-preferences'] });
+      
+      // Snapshot the previous value
+      const previousPrefs = queryClient.getQueryData(['notification-preferences']);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(['notification-preferences'], {
+        notifications_opt_in: newPreference
+      });
+      
+      // Return a context object with the snapshotted value
+      return { previousPrefs };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-preferences'] });
       toast({
@@ -76,7 +91,11 @@ function ProfilePageContent() {
         description: "Your campaign notification setting has been saved.",
       });
     },
-    onError: () => {
+    onError: (err, newPreference, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousPrefs) {
+        queryClient.setQueryData(['notification-preferences'], context.previousPrefs);
+      }
       toast({
         title: "Failed to update preference",
         description: "Please try again later.",
@@ -183,7 +202,7 @@ function ProfilePageContent() {
                     <input 
                       type="checkbox" 
                       className="sr-only peer" 
-                      checked={notificationPrefs?.notifications_opt_in ?? false}
+                      checked={Boolean(notificationPrefs?.notifications_opt_in)}
                       disabled={loadingPrefs || updateNotificationPref.isPending}
                       onChange={(e) => updateNotificationPref.mutate(e.target.checked)}
                     />
