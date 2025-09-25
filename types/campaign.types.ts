@@ -44,6 +44,10 @@ export interface TierReward {
     description?: string | null;
     city?: string | null;
   };
+  // NEW: Ticket campaign fields
+  ticket_cost?: number;
+  is_ticket_campaign?: boolean;
+  cogs_cents?: number;
 }
 
 export interface ClaimOption {
@@ -64,6 +68,8 @@ export interface ClaimedReward {
 export interface TierRewardsResponse {
   available_rewards: TierReward[];
   claimed_rewards: ClaimedReward[];
+  // NEW: User's ticket balances by campaign
+  user_ticket_balances?: Record<string, number>;
 }
 
 export interface PurchaseResponse {
@@ -71,4 +77,8 @@ export interface PurchaseResponse {
   final_price_cents: number;
   discount_applied_cents: number;
   discount_percentage: number;
+  // NEW: Ticket campaign fields
+  is_ticket_campaign?: boolean;
+  ticket_cost?: number;
+  tickets_purchased?: number;
 }

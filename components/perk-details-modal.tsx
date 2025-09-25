@@ -2,9 +2,30 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare } from "lucide-react";
+import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/points";
+
+// TypeScript interfaces for perk metadata
+interface TicketCampaignMetadata {
+  is_ticket_campaign: true;
+  ticket_cost: number;
+  upgrade_price_cents?: number;
+  cogs_cents?: number;
+}
+
+interface RegularPerkMetadata {
+  is_ticket_campaign?: false;
+  [key: string]: unknown;
+}
+
+type PerkMetadata = TicketCampaignMetadata | RegularPerkMetadata;
+
+// Type guard functions for safe metadata access
+function isTicketCampaignMetadata(metadata: PerkMetadata | undefined): metadata is TicketCampaignMetadata {
+  return !!metadata && metadata.is_ticket_campaign === true && typeof metadata.ticket_cost === 'number';
+}
 
 interface PerkDetailsModalProps {
   isOpen: boolean;
@@ -21,7 +42,7 @@ interface PerkDetailsModalProps {
       contact_email?: string;
       external_link?: string;
     };
-    metadata?: Record<string, unknown>;
+    metadata?: PerkMetadata;
   } | null;
   redemption: {
     id: string;
@@ -45,15 +66,18 @@ export default function PerkDetailsModal({
   const { toast } = useToast();
   const [isResending, setIsResending] = useState(false);
 
-  if (!isOpen || !perk || !redemption) return null;
+  if (!isOpen || !perk) return null;
 
-  // Extract relevant data from perk and redemption
-  const eventDate = perk.rules?.event_date || redemption.metadata?.event_date;
+  // NEW: Support preview mode (no redemption)
+  const isPreviewMode = !redemption;
+
+  // Extract relevant data from perk and redemption (handle preview mode)
+  const eventDate = perk.rules?.event_date || redemption?.metadata?.event_date;
   const eventDateObj = eventDate ? new Date(eventDate) : null;
   const hasValidDate = !!(eventDateObj && !isNaN(eventDateObj.getTime()));
-  const location = perk.rules?.location || redemption.metadata?.location;
+  const location = perk.rules?.location || redemption?.metadata?.location;
   const capacity = perk.rules?.capacity;
-  const accessCode = redemption.metadata?.access_code;
+  const accessCode = redemption?.metadata?.access_code;
   const instructions = perk.rules?.instructions || perk.description;
   const contactEmail = perk.rules?.contact_email;
   const externalLink = perk.rules?.external_link;
@@ -71,7 +95,7 @@ export default function PerkDetailsModal({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          redemption_id: redemption.id,
+          redemption_id: redemption?.id,
           resend: true,
         }),
         signal: controller.signal,
@@ -169,6 +193,13 @@ export default function PerkDetailsModal({
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center text-white">
                     <div className="text-4xl font-bold mb-2">{perk.title}</div>
+                    {/* NEW: Show ticket cost for campaign items */}
+                    {isTicketCampaignMetadata(perk.metadata) && (
+                      <div className="text-lg opacity-90 flex items-center justify-center gap-2">
+                        <Ticket className="h-5 w-5" />
+                        <span>{perk.metadata.ticket_cost} Ticket{perk.metadata.ticket_cost > 1 ? 's' : ''}</span>
+                      </div>
+                    )}
                     {hasValidDate && (
                       <div className="text-lg opacity-90">
                         {eventDateObj!.toLocaleDateString('en-US', {
@@ -252,6 +283,32 @@ export default function PerkDetailsModal({
                 </div>
               )}
 
+              {/* NEW: Ticket Campaign Information */}
+              {isTicketCampaignMetadata(perk.metadata) && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-white">Campaign Item Details</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 text-gray-300">
+                      <Ticket className="h-5 w-5 text-blue-400" />
+                      <span>Costs {perk.metadata.ticket_cost} ticket{perk.metadata.ticket_cost > 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-gray-300">
+                      <span className="text-blue-400">💰</span>
+                      <span>Campaign value: {formatCurrency(perk.metadata.upgrade_price_cents || 0)}</span>
+                    </div>
+                    {perk.metadata.cogs_cents && perk.metadata.cogs_cents > 0 && (
+                      <div className="flex items-center gap-3 text-gray-300">
+                        <span className="text-green-400">🏭</span>
+                        <span>Production cost: {formatCurrency(perk.metadata.cogs_cents)}</span>
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-400 mt-2">
+                      Items are fulfilled after campaign reaches its funding goal
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Access Information */}
               {accessCode && (
                 <div className="space-y-4">
@@ -313,18 +370,38 @@ export default function PerkDetailsModal({
             </div>
           </div>
 
-          {/* Fixed Action Button */}
+          {/* Enhanced Action Button - Support both preview and redemption modes */}
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent">
-            <Button
-              onClick={handleResendDetails}
-              disabled={isResending}
-              size="lg"
-              className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl"
-              aria-busy={isResending}
-              aria-live="polite"
-            >
-              {isResending ? 'Sending...' : 'Resend Details'}
-            </Button>
+            {isPreviewMode ? (
+              // Preview mode - show action button for ticket campaigns or close for regular perks
+              <Button
+                onClick={() => {
+                  onClose();
+                  // For ticket campaigns, we could trigger purchase/redemption flow here
+                  // For now, just close and let the user interact with the main card
+                }}
+                size="lg"
+                className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
+              >
+                {isTicketCampaignMetadata(perk.metadata) ? (
+                  'Got It - Back to Campaign'
+                ) : (
+                  'Close Preview'
+                )}
+              </Button>
+            ) : (
+              // Redemption mode - existing resend functionality
+              <Button
+                onClick={handleResendDetails}
+                disabled={isResending}
+                size="lg"
+                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl"
+                aria-busy={isResending}
+                aria-live="polite"
+              >
+                {isResending ? 'Sending...' : 'Resend Details'}
+              </Button>
+            )}
           </div>
         </motion.div>
       </motion.div>

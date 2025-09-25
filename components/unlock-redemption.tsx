@@ -35,6 +35,7 @@ import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
+import TicketBalance from "./ticket-balance";
 
 // Helper to get current quarter end date in UTC
 const getQuarterEndDate = () => {
@@ -102,6 +103,12 @@ interface TierRewardFields {
   user_discount_percentage?: number;
   user_final_price_cents?: number;
   discount_description?: string;
+  
+  // NEW: Ticket campaign fields
+  ticket_cost?: number;
+  is_ticket_campaign?: boolean;
+  cogs_cents?: number;
+  user_ticket_balance?: number;
 }
 
 type Unlock = BaseUnlock & TierRewardFields;
@@ -168,15 +175,18 @@ export default function UnlockRedemption({
 
   useEffect(() => {
     const ac = new AbortController();
-    loadData(ac.signal).catch((error) => {
-      console.error('Failed to load unlock data:', error);
+    let mounted = true;
+    loadData(ac.signal, () => mounted).catch((error) => {
+      if (error.name !== 'AbortError') {
+        console.error('Error loading data:', error);
+      }
     });
-    return () => ac.abort();
+    return () => { mounted = false; ac.abort(); };
   }, [clubId]);
 
-  const loadData = async (signal?: AbortSignal) => {
+  const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
-      setIsLoading(true);
+      if (!isMounted || isMounted()) setIsLoading(true);
       // Get auth token
       const accessToken = await getAccessToken();
       if (!accessToken) {
@@ -230,7 +240,13 @@ export default function UnlockRedemption({
           claim_options: reward.claim_options,
           tier_boost_price_cents: reward.tier_boost_price_cents,
           direct_unlock_price_cents: reward.direct_unlock_price_cents,
-          inventory_status: reward.inventory_status
+          inventory_status: reward.inventory_status,
+          
+          // NEW: Ticket campaign fields
+          ticket_cost: reward.ticket_cost,
+          is_ticket_campaign: reward.is_ticket_campaign,
+          cogs_cents: reward.cogs_cents,
+          user_ticket_balance: tierRewardsData.user_ticket_balances?.[reward.campaign_id] || 0
         }));
         
         // Convert claimed rewards to redemption format
@@ -251,31 +267,38 @@ export default function UnlockRedemption({
         // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
         const sortedUnlocks = sortUnlocksByPrice(convertedUnlocks);
 
-        setUnlocks(sortedUnlocks);
-        setRedemptions(convertedRedemptions);
+        if (!isMounted || isMounted()) setUnlocks(sortedUnlocks);
+        if (!isMounted || isMounted()) setRedemptions(convertedRedemptions);
         
-        // Extract campaign data for parent component
-        const campaignTier = convertedUnlocks.find((unlock: Unlock) => unlock.is_campaign_tier && unlock.campaign_progress);
+        // Extract campaign data for parent component (support both tier campaigns and ticket campaigns)
+        const campaignTier = convertedUnlocks.find((unlock: Unlock) => 
+          (unlock.is_campaign_tier || unlock.is_ticket_campaign) && unlock.campaign_progress
+        );
         
         if (campaignTier && onCampaignDataChange) {
           onCampaignDataChange({
             campaign_id: campaignTier.campaign_id,
             campaign_title: campaignTier.campaign_title,
             campaign_status: campaignTier.campaign_status,
-            campaign_progress: campaignTier.campaign_progress
+            campaign_progress: {
+              funding_percentage: campaignTier.campaign_progress?.funding_percentage || 0,
+              seconds_remaining: campaignTier.campaign_progress?.seconds_remaining || 0,
+              current_funding_cents: campaignTier.campaign_progress?.current_funding_cents || 0,
+              funding_goal_cents: campaignTier.campaign_progress?.funding_goal_cents || 0
+            }
           });
         }
       } else {
         console.error('Failed to fetch tier rewards:', response.status);
-        setUnlocks([]);
-        setRedemptions([]);
+        if (!isMounted || isMounted()) setUnlocks([]);
+        if (!isMounted || isMounted()) setRedemptions([]);
       }
     } catch (error) {
       console.error('Error loading data:', error);
-      setUnlocks([]);
-      setRedemptions([]);
+      if (!isMounted || isMounted()) setUnlocks([]);
+      if (!isMounted || isMounted()) setRedemptions([]);
     } finally {
-      setIsLoading(false);
+      if (!isMounted || isMounted()) setIsLoading(false);
     }
   };
 
@@ -468,6 +491,80 @@ export default function UnlockRedemption({
     );
   }
 
+  // NEW: Handle ticket redemption for campaign items
+  const handleTicketRedemption = async (unlock: Unlock) => {
+    // Double-submit protection: return early if already processing
+    if (isRedeeming) {
+      return;
+    }
+
+    try {
+      // Input validation
+      if (!unlock.campaign_id) {
+        throw new Error('Campaign ID is required for ticket redemption');
+      }
+
+      // Validate and coerce ticket_cost to positive integer
+      const ticketCost = typeof unlock.ticket_cost === 'number' ? unlock.ticket_cost : Number(unlock.ticket_cost);
+      if (!Number.isInteger(ticketCost) || ticketCost <= 0) {
+        throw new Error('Invalid ticket cost: must be a positive integer');
+      }
+
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      setIsRedeeming(true);
+
+      // Redeem tickets for the item using validated integer value
+      const response = await fetch(`/api/campaigns/${unlock.campaign_id}/items/${unlock.id}/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          tickets_to_spend: ticketCost
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        toast({
+          title: "Item Redeemed! 🎉",
+          description: result.message || `Successfully redeemed ${unlock.title}`,
+        });
+
+        // Reload data to update ticket balances and claimed status
+        await loadData();
+        onRedemption?.();
+        
+      } else if (response.status === 409) {
+        // Handle 409 Conflict with specific message
+        toast({
+          title: "Redemption Conflict",
+          description: "Item already claimed or conflicting request. Please refresh and try again.",
+          variant: "destructive",
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to redeem tickets');
+      }
+
+    } catch (error) {
+      console.error('Error redeeming tickets:', error);
+      toast({
+        title: "Redemption Failed",
+        description: error instanceof Error ? error.message : "Failed to redeem tickets",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
       const accessToken = await getAccessToken();
@@ -546,8 +643,38 @@ export default function UnlockRedemption({
     }
   };
 
+  // NEW: Get unique campaigns with ticket balances
+  const ticketCampaigns = unlocks
+    .filter(unlock => unlock.is_ticket_campaign && unlock.campaign_id)
+    .reduce((campaigns, unlock) => {
+      const campaignId = unlock.campaign_id!;
+      if (!campaigns[campaignId]) {
+        const ticket_cost_safe = Number(unlock.ticket_cost) || 0;
+        const upgrade_price_cents_safe = Number(unlock.upgrade_price_cents) || 0;
+        const ticket_price = ticket_cost_safe > 0 ? upgrade_price_cents_safe / ticket_cost_safe : 0;
+        
+        campaigns[campaignId] = {
+          campaign_id: campaignId,
+          campaign_title: unlock.campaign_title || 'Campaign',
+          ticket_balance: unlock.user_ticket_balance || 0,
+          ticket_price: ticket_price // Price per ticket
+        };
+      }
+      return campaigns;
+    }, {} as Record<string, any>);
+
   return (
     <>
+      {/* NEW: Show ticket balances for campaigns */}
+      {Object.values(ticketCampaigns).map((campaign: any) => (
+        <TicketBalance
+          key={campaign.campaign_id}
+          campaignTitle={campaign.campaign_title}
+          ticketBalance={campaign.ticket_balance}
+          ticketPrice={campaign.ticket_price}
+        />
+      ))}
+      
       <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
         {unlocks.map((unlock, index) => {
           const IconComponent = getUnlockIcon(unlock.type);
@@ -571,8 +698,11 @@ export default function UnlockRedemption({
                   if (redemption) {
                     // Already redeemed - show persistent details modal
                     onShowPerkDetails?.(unlock, redemption);
+                  } else if (unlock.is_ticket_campaign) {
+                    // NEW: For ticket campaigns, show preview modal even if not redeemed
+                    onShowPerkDetails?.(unlock, null); // null = preview mode
                   } else {
-                    // Not redeemed - show redemption modal
+                    // Regular tier reward - show redemption modal
                     setSelectedUnlock(unlock);
                   }
                 }}
@@ -626,12 +756,22 @@ export default function UnlockRedemption({
                     {unlock.title}
                   </h4>
                   
-                  {/* Discount info - Campaign MVP */}
+                  {/* Enhanced info - Support both tier rewards and ticket campaigns */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
-                    {unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
-                      ? `${unlock.user_discount_percentage}% Discount`
-                      : `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
-                    }
+                    {unlock.is_ticket_campaign ? (
+                      // Ticket campaign display
+                      <div className="flex items-center justify-between">
+                        <span className="text-blue-400">🎟️ {unlock.ticket_cost} Ticket{unlock.ticket_cost > 1 ? 's' : ''}</span>
+                        {unlock.user_discount_eligible && unlock.user_discount_percentage > 0 && (
+                          <span className="text-green-400 text-xs">{unlock.user_discount_percentage}% off</span>
+                        )}
+                      </div>
+                    ) : (
+                      // Regular tier reward display
+                      unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
+                        ? `${unlock.user_discount_percentage}% Discount`
+                        : `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
+                    )}
                   </div>
                   
                   {/* Discount pricing display */}
@@ -660,9 +800,22 @@ export default function UnlockRedemption({
                     onClick={(e) => {
                       e.stopPropagation();
                       const redemption = getUnlockRedemption(unlock);
+                      
                       if (redemption) {
+                        // Already redeemed - show details
                         onShowPerkDetails?.(unlock, redemption);
+                      } else if (unlock.is_ticket_campaign) {
+                        // NEW: Ticket campaign logic
+                        const userTickets = (unlock as any).user_ticket_balance || 0;
+                        if (userTickets >= unlock.ticket_cost) {
+                          // User has enough tickets - handle redemption
+                          handleTicketRedemption(unlock);
+                        } else {
+                          // User needs more tickets - show purchase flow
+                          setSelectedUnlock(unlock);
+                        }
                       } else if (isAvailable) {
+                        // Regular tier reward flow
                         setSelectedUnlock(unlock);
                       }
                     }}
@@ -671,7 +824,18 @@ export default function UnlockRedemption({
                       ? 'Open Details' 
                       : isAvailable 
                         ? (() => {
-                            // Campaign MVP: Always show discounted pricing, no free claims
+                            // NEW: Ticket campaign button text
+                            if (unlock.is_ticket_campaign) {
+                              const userTickets = (unlock as any).user_ticket_balance || 0;
+                              if (userTickets >= unlock.ticket_cost) {
+                                return `Redeem ${unlock.ticket_cost} Ticket${unlock.ticket_cost > 1 ? 's' : ''}`;
+                              } else {
+                                const finalPrice = unlock.user_final_price_cents || unlock.upgrade_price_cents || 0;
+                                return `Buy ${unlock.ticket_cost} Ticket${unlock.ticket_cost > 1 ? 's' : ''} - ${formatCurrency(finalPrice)}`;
+                              }
+                            }
+                            
+                            // Regular tier reward pricing (unchanged)
                             if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
                               return `Commit ${formatCurrency(unlock.user_final_price_cents)}`;
                             } else {

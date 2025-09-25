@@ -106,8 +106,8 @@ function ProfilePageContent() {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isInWalletApp) {
-      // Redirect to login for profile access - users typically come here via header modal
-      router.push("/login?redirect=/profile");
+      // Redirect to dashboard for profile access - users typically come here via header modal
+      router.replace("/dashboard");
     }
   }, [isLoading, isAuthenticated, router, isInWalletApp]);
 
