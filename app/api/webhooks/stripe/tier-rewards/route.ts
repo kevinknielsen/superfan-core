@@ -180,14 +180,16 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     const normalizedType = metadata.type?.trim().toLowerCase();
     const isCreditPurchase =
       normalizedType === 'credit_purchase' || toBool(metadata.is_credit_campaign);
-    // Back-compat: accept both credits_purchased and tickets_purchased
+    // Back-compat: accept both credits_purchased and tickets_purchased with safe fallback
+    const creditsParsed = toInt(metadata.credits_purchased);
+    const ticketsParsed = toInt(metadata.tickets_purchased);
     const unitsPurchased = isCreditPurchase
-      ? Math.max(0, toInt(metadata.credits_purchased) || toInt(metadata.tickets_purchased))
+      ? Math.max(0, creditsParsed || ticketsParsed)
       : 0;
     
-    // Generate secure access code using crypto
+    // Generate secure access code using crypto (8 bytes = 64-bit entropy)
     const generateAccessCode = (): string => {
-      return 'AC' + crypto.randomBytes(4).toString('hex').toUpperCase();
+      return 'AC' + crypto.randomBytes(8).toString('hex').toUpperCase();
     };
 
     // Create reward claim with campaign and discount tracking (enhanced for tickets)
@@ -221,59 +223,57 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     
     // Update campaign progress with FULL tier value (not discounted amount)
     if (metadata.campaign_id) {
-      const { error: campaignError } = await supabaseAny
-        .rpc('increment_campaign_funding', {
-          p_campaign_id: metadata.campaign_id,
-          p_amount_cents: parseInt(metadata.campaign_credit_cents)
-        });
-        
-      if (campaignError) {
-        console.error('[Tier Rewards Webhook] Failed to update campaign progress:', campaignError);
-        // Don't fail the whole operation, just log the error
-      } else {
-        console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${toInt(metadata.campaign_credit_cents)/100}`);
-        
-        // Also update campaigns table if this is a credit campaign using atomic RPC
-        if (isCreditPurchase) {
-          const { error: campaignUpdateError } = await supabaseAny
-            .rpc('increment_campaigns_ticket_progress', {
-              p_campaign_id: metadata.campaign_id,
-              p_increment_current_funding_cents: toInt(metadata.campaign_credit_cents),
-              p_increment_stripe_received_cents: toInt(metadata.final_price_cents),
-              p_increment_total_tickets_sold: unitsPurchased
-            });
-            
-          if (campaignUpdateError) {
-            console.error('[Tier Rewards Webhook] Failed to update campaign table:', campaignUpdateError);
-            // Don't fail the whole operation, just log the error
-          }
+      const campaignCreditCents = toInt(metadata.campaign_credit_cents);
+      const finalPriceCents = toInt(metadata.final_price_cents);
+      
+      // Only update campaigns table (credit campaigns) - atomic single update
+      if (isCreditPurchase) {
+        const { error: campaignUpdateError } = await supabaseAny
+          .rpc('increment_campaigns_ticket_progress', {
+            p_campaign_id: metadata.campaign_id,
+            p_increment_current_funding_cents: campaignCreditCents,
+            p_increment_stripe_received_cents: finalPriceCents,
+            p_increment_total_tickets_sold: unitsPurchased
+          });
+          
+        if (campaignUpdateError) {
+          console.error('[Tier Rewards Webhook] Failed to update campaign table:', campaignUpdateError);
+          // Don't fail the whole operation, just log the error
+        } else {
+          console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${campaignCreditCents/100}`);
         }
-        
-        // Check if campaign goal reached (check both tier_rewards and campaigns table)
+      } else {
+        // Legacy tier rewards - update tier_rewards table
+        const { error: campaignError } = await supabaseAny
+          .rpc('increment_campaign_funding', {
+            p_campaign_id: metadata.campaign_id,
+            p_amount_cents: campaignCreditCents
+          });
+          
+        if (campaignError) {
+          console.error('[Tier Rewards Webhook] Failed to update campaign progress:', campaignError);
+        }
+      }
+      
+      // Check if campaign goal reached (check campaigns table for credit campaigns)
+      if (isCreditPurchase) {
         const { data: campaign } = await supabaseAny
-          .from('tier_rewards')
-          .select('campaign_funding_goal_cents, campaign_current_funding_cents, campaign_title')
-          .eq('campaign_id', metadata.campaign_id)
+          .from('campaigns')
+          .select('funding_goal_cents, current_funding_cents, title')
+          .eq('id', metadata.campaign_id)
           .single();
+        
+        if (campaign && campaign.current_funding_cents >= campaign.funding_goal_cents) {
+          console.log(`[Tier Rewards Webhook] 🎉 Campaign "${campaign.title}" reached funding goal!`);
           
-        if (campaign && campaign.campaign_current_funding_cents >= campaign.campaign_funding_goal_cents) {
-          console.log(`[Tier Rewards Webhook] 🎉 Campaign "${campaign.campaign_title}" reached funding goal!`);
-          
-          // Mark campaign as funded in both tables
-          const { error: tierError } = await supabaseAny
-            .from('tier_rewards')
-            .update({ campaign_status: 'campaign_funded' })
-            .eq('campaign_id', metadata.campaign_id);
-            
-          // Also update campaigns table if it exists
+          // Mark campaign as funded (atomic update)
           const { error: campaignError } = await supabaseAny
             .from('campaigns')
             .update({ status: 'funded' })
             .eq('id', metadata.campaign_id);
 
-          if (tierError || campaignError) {
-            console.error('[Tier Rewards Webhook] Failed to update campaign status:', { tierError, campaignError });
-            // Consider whether this should fail the whole operation
+          if (campaignError) {
+            console.error('[Tier Rewards Webhook] Failed to update campaign status:', campaignError);
           }
         }
       }

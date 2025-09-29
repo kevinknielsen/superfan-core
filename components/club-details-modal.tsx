@@ -124,9 +124,7 @@ export default function ClubDetailsModal({
   // Auto-open wallet after successful purchase
   useEffect(() => {
     if (isOpen && autoOpenWallet && membership) {
-      console.log('[ClubDetailsModal] Auto-opening wallet after purchase');
       const timer = setTimeout(() => {
-        console.log('[ClubDetailsModal] Opening wallet overlay now');
         setShowPurchaseOverlay(true);
       }, 800); // Wait for modal animation
       return () => clearTimeout(timer);
@@ -338,7 +336,7 @@ export default function ClubDetailsModal({
                 e.preventDefault();
                 e.stopPropagation();
                 if (!club) return;
-                const url = `${window.location.origin}/dashboard?club=${club.id}&view=details`;
+                const url = `${window.location.origin}/clubs/${club.id}`;
                 try {
                   if (navigator.share) {
                     await navigator.share({ url, title: club.name });
@@ -350,7 +348,11 @@ export default function ClubDetailsModal({
                     });
                   }
                 } catch (err) {
-                  // User cancel or api failure; provide gentle fallback message only on clipboard failure
+                  // User cancelled share - don't show error
+                  if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
+                    return;
+                  }
+                  // Real error - show toast
                   toast({
                     variant: "destructive",
                     title: "Could not share",

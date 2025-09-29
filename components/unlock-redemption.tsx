@@ -317,7 +317,8 @@ export default function UnlockRedemption({
         if (campaignTier && onCampaignDataChange && campaignTier.campaign_progress) {
           queueMicrotask(() => {
             // Check if still mounted before updating state
-            if (isMounted && isMounted()) {
+            // Allow callback when isMounted guard not provided (initial load, manual reloads)
+            if (!isMounted || isMounted()) {
               onCampaignDataChange({
                 campaign_id: campaignTier.campaign_id,
                 campaign_title: campaignTier.campaign_title,
@@ -586,12 +587,15 @@ export default function UnlockRedemption({
         onRedemption?.();
         
       } else if (response.status === 409) {
-        // Handle 409 Conflict with specific message
+        // Handle 409 Conflict - reload data to sync UI with server state
         toast({
           title: "Redemption Conflict",
           description: "Item already claimed or conflicting request. Please refresh and try again.",
           variant: "destructive",
         });
+        // Reload data to reflect server state
+        await loadData();
+        return; // Exit early after reload
       } else {
         const errorData = await response.json() as { error?: string };
         throw new Error(errorData.error || 'Failed to redeem credits');
@@ -954,7 +958,7 @@ export default function UnlockRedemption({
                   <div className="flex justify-between items-center py-2">
                     <span className="text-sm font-medium">Estimated Delivery</span>
                     <Badge variant="outline" className="font-normal">
-                      {selectedUnlock.reward_type === 'digital_product' ? 'Immediate' : '2 months'}
+                      {selectedUnlock.type === 'digital_product' ? 'Immediate' : '2 months'}
                     </Badge>
                   </div>
                   

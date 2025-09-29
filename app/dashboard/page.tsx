@@ -222,10 +222,8 @@ export default function Dashboard() {
     
     // Handle campaign purchase success (credit purchases)
     if (clubParam && isCampaignPurchaseSuccess) {
-      console.log('[Dashboard] Campaign purchase success detected!', { clubParam });
       const club = allClubs.find(c => c.id === clubParam);
       if (club) {
-        console.log('[Dashboard] Opening club modal and wallet for:', club.name);
         setSelectedClubId(clubParam);
         setAutoOpenWallet(true); // Auto-open wallet to show new credits
         
@@ -243,14 +241,16 @@ export default function Dashboard() {
           title: "Purchase Successful! 🎉",
           description: `Your credits have been added to ${club.name}`,
         });
+        
+        // Clean URL after a delay to allow state to propagate
+        setTimeout(() => {
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.delete('purchase_success');
+          newUrl.searchParams.delete('club_id');
+          newUrl.searchParams.delete('session_id');
+          router.replace(newUrl.pathname + newUrl.search);
+        }, 100);
       }
-      
-      // Clean URL
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('purchase_success');
-      newUrl.searchParams.delete('club_id');
-      newUrl.searchParams.delete('session_id');
-      router.replace(newUrl.pathname + newUrl.search);
     }
     
     // Handle upgrade redirects (from root path - no club needed)
