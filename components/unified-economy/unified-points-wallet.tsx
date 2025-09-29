@@ -312,8 +312,8 @@ export default function UnifiedPointsWallet({
         body: JSON.stringify({
           club_id: clubId,
           credit_amount: creditAmount, // Number of credits to purchase
-          success_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?club_id=${clubId}&credit_purchase_success=true`,
-          cancel_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?club_id=${clubId}&credit_purchase_cancelled=true`
+          success_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_success=true`,
+          cancel_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_cancelled=true`
         })
       });
 

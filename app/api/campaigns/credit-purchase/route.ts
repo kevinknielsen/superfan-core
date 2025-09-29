@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 import { stripe } from "@/lib/stripe";
+import { randomUUID } from "crypto";
 
 // Resilient base URL resolution
 function resolveBaseUrl() {
@@ -9,14 +10,14 @@ function resolveBaseUrl() {
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
   if (explicit) return explicit;
 
-  // Production fallback - use superfan.one for production
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://superfan.one';
-  }
-
-  // Vercel preview deployments
+  // Vercel preview deployments (check first before production fallback)
   const vercelHost = process.env.VERCEL_URL;
   if (vercelHost) return `https://${vercelHost}`;
+
+  // Production fallback - use superfan.one only for true production
+  if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV === 'production') {
+    return 'https://superfan.one';
+  }
 
   // Local dev fallback
   return 'http://localhost:3000';
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const body = await request.json();
+    const body = await request.json() as any;
     const { club_id, credit_amount, success_url, cancel_url } = body;
 
     // Validate inputs
@@ -106,8 +107,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Minimum purchase is 1 credit ($1.00)' }, { status: 400 });
     }
 
-    // Generate stable idempotency key
-    const idempotencyKey = `credit_purchase_${club_id}_${actualUserId}_${credit_amount}`;
+    // Generate unique idempotency key for each attempt (prevents Stripe session replay)
+    const idempotencyKey = `credit_purchase_${randomUUID()}`;
     
     // Create Stripe session for direct credit purchase
     const session = await stripe.checkout.sessions.create({
@@ -134,7 +135,9 @@ export async function POST(request: NextRequest) {
         price_cents: priceCents.toString(),
         idempotency_key: idempotencyKey,
         club_name: club.name,
-        campaign_title: activeCampaign.title
+        campaign_title: activeCampaign.title,
+        // Preserve deterministic data for correlation
+        correlation_key: `${club_id}_${actualUserId}_${credit_amount}`
       }
     }, {
       idempotencyKey // Pass to Stripe for true idempotency

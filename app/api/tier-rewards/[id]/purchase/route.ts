@@ -9,14 +9,14 @@ function resolveBaseUrl() {
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
   if (explicit) return explicit;
 
-  // Production fallback - use superfan.one for production
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://superfan.one';
-  }
-
-  // Vercel preview deployments
+  // Vercel preview deployments (check first before production fallback)
   const vercelHost = process.env.VERCEL_URL;
   if (vercelHost) return `https://${vercelHost}`;
+
+  // Production fallback - use superfan.one only for true production
+  if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV === 'production') {
+    return 'https://superfan.one';
+  }
 
   // Local dev fallback
   return 'http://localhost:3000';
