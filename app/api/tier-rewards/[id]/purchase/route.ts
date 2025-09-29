@@ -5,13 +5,18 @@ import { stripe } from "@/lib/stripe";
 
 // Resilient base URL resolution
 function resolveBaseUrl() {
-  // Prefer non-public server var
+  // Prefer explicit BASE_URL for production
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
   if (explicit) return explicit;
 
-  // Vercel sets VERCEL_URL without protocol
+  // Vercel preview deployments (check first before production fallback)
   const vercelHost = process.env.VERCEL_URL;
   if (vercelHost) return `https://${vercelHost}`;
+
+  // Production fallback - use superfan.one only for true production
+  if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV === 'production') {
+    return 'https://superfan.one';
+  }
 
   // Local dev fallback
   return 'http://localhost:3000';
@@ -106,7 +111,7 @@ export async function POST(
       return NextResponse.json({ error: 'You have already claimed this tier' }, { status: 400 });
     }
 
-    // Detect if this is a credit campaign purchase (1 credit = $1 = 100 cents)
+    // Detect if this is a credit campaign purchase
     const isCreditCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
     
     // Calculate pricing based on campaign type
@@ -125,7 +130,7 @@ export async function POST(
       }
       creditCost = tierReward.ticket_cost; // DB field ticket_cost maps to credit_cost
       
-      // Credit campaign pricing: 1 credit = $1 = 100 cents (no discounts)
+      // Credit campaign pricing: no discounts applied
       upgradePriceCents = creditCost * 100; // e.g., 9 credits = 900 cents = $9.00
       discountPercentage = 0;
       discountCents = 0;
@@ -182,7 +187,7 @@ export async function POST(
         campaign_credit_cents: upgradePriceCents.toString(), // Campaign gets full value
         idempotency_key: idempotencyKey,
         club_name: tierReward.clubs.name,
-        // Credit campaign metadata (1 credit = $1)
+        // Credit campaign metadata
         is_credit_campaign: isCreditCampaign.toString(),
         credit_cost: creditCost.toString(),
         credits_purchased: isCreditCampaign ? creditCost.toString() : '0'
@@ -198,7 +203,7 @@ export async function POST(
       discount_percentage: discountPercentage,
       original_price_cents: upgradePriceCents,
       campaign_credit_cents: upgradePriceCents,
-      // Credit campaign information (1 credit = $1)
+      // Credit campaign information
       is_credit_campaign: isCreditCampaign,
       credit_cost: creditCost,
       credits_purchased: isCreditCampaign ? creditCost : 0

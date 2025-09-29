@@ -179,12 +179,16 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     // Detect credit/ticket campaign purchase with robust parsing
     const normalizedType = metadata.type?.trim().toLowerCase();
     const isCreditPurchase =
-      normalizedType === 'credit_purchase' || toBool(metadata.is_credit_campaign);
+      normalizedType === 'credit_purchase' || 
+      normalizedType === 'direct_credit_purchase' || 
+      toBool(metadata.is_credit_campaign);
+    // For direct credit purchases, get credit amount from metadata
+    const directCreditAmount = toInt(metadata.credit_amount);
     // Back-compat: accept both credits_purchased and tickets_purchased with safe fallback
     const creditsParsed = toInt(metadata.credits_purchased);
     const ticketsParsed = toInt(metadata.tickets_purchased);
     const unitsPurchased = isCreditPurchase
-      ? Math.max(0, creditsParsed || ticketsParsed)
+      ? Math.max(0, directCreditAmount || creditsParsed || ticketsParsed)
       : 0;
     
     // Generate secure access code using crypto (8 bytes = 64-bit entropy)
@@ -193,28 +197,34 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     };
 
     // Create reward claim with campaign and discount tracking (enhanced for tickets)
-    const { error: insertError } = await supabaseAny.from('reward_claims').insert({
+    const claimData: any = {
       user_id: metadata.user_id,
-      reward_id: metadata.tier_reward_id,
       campaign_id: metadata.campaign_id || null,
-      claim_method: isCreditPurchase ? 'ticket_purchase' : 'upgrade_purchased',
-      user_tier_at_claim: metadata.user_tier,
+      claim_method: isCreditPurchase ? 'credit_purchase' : 'upgrade_purchased',
+      user_tier_at_claim: metadata.user_tier || 'cadet',
       user_points_at_claim: 0, // TODO: Get actual points if needed
-      original_price_cents: toInt(metadata.original_price_cents),
-      paid_price_cents: toInt(metadata.final_price_cents),
+      original_price_cents: toInt(metadata.original_price_cents || metadata.price_cents),
+      paid_price_cents: toInt(metadata.final_price_cents || metadata.price_cents),
       discount_applied_cents: toInt(metadata.discount_cents),
       stripe_payment_intent_id: session.payment_intent as string,
       refund_status: 'none',
-      // Gate access until campaign is funded for credit/ticket purchases
-      access_status: isCreditPurchase ? 'pending' : 'granted',
+      // Grant access immediately for direct credit purchases
+      access_status: normalizedType === 'direct_credit_purchase' ? 'granted' : (isCreditPurchase ? 'pending' : 'granted'),
       access_code: generateAccessCode(),
       claimed_at: new Date().toISOString(),
-      // Credit/ticket tracking fields (1 credit = $1)
+      // Credit/ticket tracking fields
       is_ticket_claim: isCreditPurchase,
       tickets_purchased: unitsPurchased, // DB uses tickets_purchased for credits too
       tickets_available: unitsPurchased, // Initially all available
       tickets_redeemed: 0
-    });
+    };
+
+    // Only set reward_id if it exists (direct credit purchases don't have specific reward_id)
+    if (metadata.tier_reward_id) {
+      claimData.reward_id = metadata.tier_reward_id;
+    }
+
+    const { error: insertError } = await supabaseAny.from('reward_claims').insert(claimData);
     
     if (insertError) {
       console.error('[Tier Rewards Webhook] Failed to create reward claim:', insertError);
@@ -223,8 +233,8 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     
     // Update campaign progress with FULL tier value (not discounted amount)
     if (metadata.campaign_id) {
-      const campaignCreditCents = toInt(metadata.campaign_credit_cents);
-      const finalPriceCents = toInt(metadata.final_price_cents);
+      const campaignCreditCents = toInt(metadata.campaign_credit_cents || metadata.price_cents);
+      const finalPriceCents = toInt(metadata.final_price_cents || metadata.price_cents);
       
       // Only update campaigns table (credit campaigns) - atomic single update
       if (isCreditPurchase) {
@@ -441,8 +451,8 @@ async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ s
     
     console.log(`[Tier Rewards Webhook] Processing checkout.session.completed: ${session.id}`);
     
-    // Check if this is a campaign tier purchase
-    if (session.metadata?.type === 'campaign_tier_purchase') {
+    // Check if this is a campaign tier purchase or direct credit purchase
+    if (session.metadata?.type === 'campaign_tier_purchase' || session.metadata?.type === 'direct_credit_purchase') {
       return await processCampaignTierPurchase(session);
     }
     

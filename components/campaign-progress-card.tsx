@@ -2,14 +2,22 @@
 
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
-import { Play, CheckCircle, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Play, CheckCircle, ArrowRight, CreditCard } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { getAccessToken } from "@privy-io/react-auth";
 import type { CampaignData } from "@/types/campaign.types";
+import { useState } from "react";
 
 interface CampaignProgressCardProps {
   campaignData: CampaignData;
+  clubId?: string;
 }
 
-export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps) {
+export function CampaignProgressCard({ campaignData, clubId }: CampaignProgressCardProps) {
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const { toast } = useToast();
+  
   const pct = Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)));
   const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   
@@ -18,6 +26,68 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
   const currentCents = campaignData.campaign_progress.current_funding_cents || 0;
   const remainingCents = Math.max(0, goalCents - currentCents);
   const remainingAmount = usd0.format(remainingCents / 100);
+
+  // Handle credit purchase flow
+  const handleCreditPurchase = async (creditAmount: number) => {
+    if (!clubId) {
+      toast({
+        title: "Error",
+        description: "Club ID is required for credit purchases",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      if (isPurchasing) return;
+      setIsPurchasing(true);
+      
+      const token = await getAccessToken();
+      if (!token) {
+        toast({ 
+          title: 'Sign in required', 
+          description: 'Please sign in to purchase credits.', 
+          variant: 'destructive' 
+        });
+        return;
+      }
+      
+      const response = await fetch(`/api/campaigns/credit-purchase`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          club_id: clubId,
+          credit_amount: creditAmount,
+          success_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_success=true`,
+          cancel_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_cancelled=true`
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json() as any;
+        const url = result?.stripe_session_url;
+        if (!url || typeof url !== 'string') {
+          throw new Error('Missing checkout URL');
+        }
+        window.location.href = url;
+      } else {
+        const errorData = await response.json() as any;
+        throw new Error(errorData.error || 'Failed to start credit purchase');
+      }
+    } catch (error) {
+      console.error('Credit purchase error:', error);
+      toast({ 
+        title: 'Purchase Failed', 
+        description: error instanceof Error ? error.message : 'Failed to start credit purchase', 
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
 
   return (
     <motion.div 
@@ -44,7 +114,7 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
             </motion.div>
             <div>
               <h4 className="text-lg font-semibold text-white">Live</h4>
-              <p className="text-sm text-gray-400">{usd0.format(campaignData.campaign_progress.current_funding_cents / 100)} raised</p>
+              <p className="text-sm text-gray-400">{usd0.format(campaignData.campaign_progress.current_funding_cents / 100)} </p>
             </div>
           </motion.div>
 
@@ -124,15 +194,54 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
           </div>
         </motion.div>
 
-        {/* Status Description - moved below progress bar */}
-        <motion.div 
-          className="text-gray-300 mt-4"
-          initial={{ y: 10, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.7 }}
-        >
-          <span className="text-sm">Items can be redeemed once the goal is reached. Commitments will be refunded otherwise.</span>
-        </motion.div>
+        {/* Credit Purchase Buttons */}
+        {clubId && (
+          <motion.div 
+            className="mt-6 space-y-4"
+            initial={{ y: 10, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.7 }}
+          >
+            <div className="text-sm text-gray-300 text-center">Purchase Credits</div>
+            <div className="grid grid-cols-3 gap-3">
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button 
+                  onClick={() => handleCreditPurchase(100)}
+                  disabled={isPurchasing}
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
+                >
+                  <CreditCard className="w-3 h-3 mr-1" />
+                  100
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button 
+                  onClick={() => handleCreditPurchase(150)}
+                  disabled={isPurchasing}
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
+                >
+                  <CreditCard className="w-3 h-3 mr-1" />
+                  150
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button 
+                  onClick={() => handleCreditPurchase(250)}
+                  disabled={isPurchasing}
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
+                >
+                  <CreditCard className="w-3 h-3 mr-1" />
+                  250
+                </Button>
+              </motion.div>
+            </div>
+            
+            {/* Credit Information Tooltip */}
+            <div className="text-xs text-gray-400 text-center px-3 py-2 bg-gray-800/30 rounded-lg border border-gray-700/50">
+              ✨ Credits never expire and can be used to claim future drops and items
+            </div>
+          </motion.div>
+        )}
       </Card>
     </motion.div>
   );

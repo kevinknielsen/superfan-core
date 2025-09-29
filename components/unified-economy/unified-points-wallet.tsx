@@ -288,80 +288,49 @@ export default function UnifiedPointsWallet({
     [creditBalances]
   );
 
-  // Handle status boost flow - redirect to tier rewards system
-  const handleBuyPoints = async () => {
+  // Handle credit purchase flow - create direct Stripe checkout for credits
+  const handleCreditPurchase = async (creditAmount: number) => {
     try {
       if (isPurchasing) return;
       setIsPurchasing(true);
       
-      console.log('Starting status boost flow for club:', clubId);
+      console.log('Starting credit purchase flow for amount:', creditAmount);
       const token = await getAccessToken();
       if (!token) {
-        toast({ title: 'Sign in required', description: 'Please sign in to boost your status.', variant: 'destructive' });
+        toast({ title: 'Sign in required', description: 'Please sign in to purchase credits.', variant: 'destructive' });
         return;
       }
       
-      // Get available tier rewards to find the cheapest upgrade option
-      const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load tier rewards');
-      }
-
-      const tierRewardsData = await response.json();
-      const availableRewards = tierRewardsData.available_rewards || [];
-      
-      // Find the cheapest reward that requires an upgrade
-      const upgradeableRewards = availableRewards.filter((reward: any) => 
-        !reward.user_can_claim_free && 
-        reward.claim_options && 
-        reward.claim_options.length > 0
-      );
-
-      if (upgradeableRewards.length === 0) {
-        toast({ 
-          title: 'No Upgrades Available', 
-          description: 'There are no tier rewards available for upgrade in this club.', 
-          variant: 'destructive' 
-        });
-        return;
-      }
-
-      // Sort by tier_boost_price_cents and pick the cheapest
-      const cheapestReward = upgradeableRewards.sort((a: any, b: any) => 
-        (a.tier_boost_price_cents || 0) - (b.tier_boost_price_cents || 0)
-      )[0];
-
-      // Redirect to the tier rewards upgrade flow
-      const upgradeResponse = await fetch(`/api/clubs/${clubId}/tier-rewards/${cheapestReward.id}/upgrade`, {
+      // Create direct credit purchase via a dedicated endpoint
+      // For now, we'll create a simple Stripe checkout session directly
+      const purchaseResponse = await fetch(`/api/campaigns/credit-purchase`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          purchase_type: 'tier_boost',
-          success_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?club=${clubId}&boost_success=true`,
-          cancel_url: `${window.location.origin}${window.location.pathname === '/' ? '/dashboard' : window.location.pathname}?club=${clubId}&boost_cancelled=true`
+          club_id: clubId,
+          credit_amount: creditAmount, // Number of credits to purchase
+          success_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_success=true`,
+          cancel_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_cancelled=true`
         })
       });
 
-      if (upgradeResponse.ok) {
-        const result = await upgradeResponse.json();
+      if (purchaseResponse.ok) {
+        const result = await purchaseResponse.json() as any;
         const url = result?.stripe_session_url;
         if (!url || typeof url !== 'string') {
           throw new Error('Missing checkout URL');
         }
         window.location.href = url;
       } else {
-        const errorData = await upgradeResponse.json();
-        throw new Error(errorData.error || 'Failed to start boost purchase');
+        const errorData = await purchaseResponse.json() as any;
+        throw new Error(errorData.error || 'Failed to start credit purchase');
       }
     } catch (error) {
-      console.error('Status boost error:', error);
-      toast({ title: 'Boost Failed', description: error instanceof Error ? error.message : 'Failed to start boost', variant: 'destructive' });
+      console.error('Credit purchase error:', error);
+      toast({ title: 'Purchase Failed', description: error instanceof Error ? error.message : 'Failed to start credit purchase', variant: 'destructive' });
     } finally {
       setIsPurchasing(false);
     }
@@ -407,11 +376,11 @@ export default function UnifiedPointsWallet({
   const statusInfo = getStatusInfo(status.current);
 
   // Calculate effective points when user has temporary boost
-  const effectiveTotalBalance = status?.has_active_boost 
+  const effectiveTotalBalance = (status as any)?.has_active_boost 
     ? (wallet?.status_points ?? 0) // Use status points when boosted
     : (wallet?.total_balance ?? 0); // Use actual balance when not boosted
   
-  const effectiveEarnedPoints = status?.has_active_boost
+  const effectiveEarnedPoints = (status as any)?.has_active_boost
     ? (wallet?.status_points ?? 0) // Use status points when boosted
     : (wallet?.earned_points ?? 0); // Use actual earned points when not boosted
 
@@ -445,7 +414,7 @@ export default function UnifiedPointsWallet({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-300 mb-1">Campaign Credits</p>
+                  <p className="text-sm text-slate-300 mb-1">Credits</p>
                   <div className="flex items-center gap-2">
                     <motion.div
                       animate={{ rotate: totalCampaignCredits > 0 ? [0, 15, -15, 0] : 0 }}
@@ -470,61 +439,92 @@ export default function UnifiedPointsWallet({
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-1">
-                <Button 
-                  onClick={handleBuyPoints}
-                  disabled={isPurchasing}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm"
-                >
-                  <Zap className="w-4 h-4 mr-2" />
-                  {isPurchasing ? 'Loading...' : 'Boost Status'}
-                </Button>
-              </motion.div>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-1">
-                <Button 
-                  variant="outline" 
-                  className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
-                  disabled={totalCampaignCredits === 0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Close wallet and scroll to campaign items to redeem
-                    onCloseWallet?.();
-                    toast({
-                      title: "View Campaign Items",
-                      description: "Scroll to the Store section to redeem your credits",
-                    });
-                  }}
-                >
-                  <Gift className="w-4 h-4 mr-2" />
-                  Redeem
-                </Button>
-              </motion.div>
+            {/* Credit Purchase Buttons */}
+            <div className="space-y-3">
+              <div className="text-sm text-slate-300 text-center mb-3">Purchase Credits</div>
+              <div className="grid grid-cols-3 gap-2">
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button 
+                    onClick={() => handleCreditPurchase(100)}
+                    disabled={isPurchasing}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
+                  >
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    100
+                  </Button>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button 
+                    onClick={() => handleCreditPurchase(150)}
+                    disabled={isPurchasing}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
+                  >
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    150
+                  </Button>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button 
+                    onClick={() => handleCreditPurchase(250)}
+                    disabled={isPurchasing}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
+                  >
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    250
+                  </Button>
+                </motion.div>
+              </div>
+              
+              {/* Credit Information */}
+              <div className="text-xs text-slate-400 text-center px-2 py-2 bg-white/5 rounded-lg">
+                ✨ Credits never expire and can be used to claim future drops and items
+              </div>
+              
+              {totalCampaignCredits > 0 && (
+                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-3">
+                  <Button 
+                    variant="outline" 
+                    className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Close wallet and scroll to campaign items to redeem
+                      onCloseWallet?.();
+                      toast({
+                        title: "View Items",
+                        description: "Scroll to the Store section to redeem your credits",
+                      });
+                    }}
+                  >
+                    <Gift className="w-4 h-4 mr-2" />
+                    Redeem Credits ({totalCampaignCredits})
+                  </Button>
+                </motion.div>
+              )}
             </div>
           </div>
         </Card>
       </motion.div>
 
-      {/* Status Progress Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-      >
-        <Card className="bg-background border-border">
-          <CardContent className="p-6">
-            <h3 className="font-semibold text-foreground mb-4">Your Status</h3>
-            <StatusProgressSection 
-              currentStatus={status.current}
-              currentPoints={wallet.status_points ?? 0}
-              nextStatus={status.next_status}
-              pointsToNext={status.points_to_next}
-              progressPercentage={status.progress_to_next}
-            />
-            
+      {/* Status Progress Card - Hidden for now (will reactivate soon) */}
+      {false && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <Card className="bg-background border-border">
+            <CardContent className="p-6">
+              <h3 className="font-semibold text-foreground mb-4">Your Status</h3>
+              <StatusProgressSection 
+                currentStatus={status.current}
+                currentPoints={wallet.status_points ?? 0}
+                nextStatus={status.next_status}
+                pointsToNext={status.points_to_next}
+                progressPercentage={status.progress_to_next}
+              />
+              
             {/* Tier Boost Info */}
-            {status.has_active_boost && (
+            {(status as any).has_active_boost && (
               <div className="text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 mt-4">
                 <div className="text-sm text-blue-400 font-medium mb-1">
                   🚀 Active Tier Boost
@@ -534,12 +534,13 @@ export default function UnifiedPointsWallet({
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
-      </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
-      {/* Campaign Credits Breakdown */}
-      {Object.keys(creditBalances).length > 0 && (
+      {/* Campaign Credits Breakdown - Hidden for now */}
+      {false && Object.keys(creditBalances).length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -549,7 +550,6 @@ export default function UnifiedPointsWallet({
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-foreground">Campaign Credits</h3>
-                <div className="text-sm text-muted-foreground">1 credit = $1</div>
               </div>
               <div className="space-y-3">
                 {Object.entries(creditBalances).map(([campaignId, data]) => (
