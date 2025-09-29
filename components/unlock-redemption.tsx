@@ -84,6 +84,7 @@ interface TierRewardFields {
     name: string;
     description?: string | null;
     city?: string | null;
+    image_url?: string | null;
   } | null;
   
   // Enhanced with campaign and discount fields
@@ -102,6 +103,12 @@ interface TierRewardFields {
   user_discount_percentage?: number;
   user_final_price_cents?: number;
   discount_description?: string;
+  
+  // Credit campaign fields (1 credit = $1)
+  credit_cost?: number;
+  is_credit_campaign?: boolean;
+  cogs_cents?: number;
+  user_credit_balance?: number;
 }
 
 type Unlock = BaseUnlock & TierRewardFields;
@@ -113,8 +120,9 @@ interface UnlockRedemptionProps {
   userPoints: number;
   onRedemption?: () => void;
   onShowRedemptionConfirmation?: (redemption: any, unlock: Unlock) => void;
-  onShowPerkDetails?: (unlock: Unlock, redemption: any) => void;
+  onShowPerkDetails?: (unlock: Unlock, redemption: any, onPurchase?: () => void) => void;
   onCampaignDataChange?: (campaignData: any) => void;
+  onCreditBalancesChange?: (creditBalances: Record<string, { campaign_title: string; balance: number }>) => void;
 }
 
 const UNLOCK_TYPE_ICONS: Record<string, any> = {
@@ -135,6 +143,12 @@ const STATUS_POINTS = Object.freeze(STATUS_THRESHOLDS) as Readonly<Record<ClubSt
 
 // Helper function to get effective price for sorting
 const getEffectivePrice = (unlock: Unlock): number => {
+  // For credit campaigns: 1 credit = $1 = 100 cents
+  if (unlock.is_credit_campaign && unlock.credit_cost) {
+    return unlock.credit_cost * 100; // Convert credits to cents
+  }
+  
+  // For regular tier rewards: use existing pricing
   const v =
     unlock.user_final_price_cents ??
     unlock.upgrade_price_cents ??
@@ -157,7 +171,8 @@ export default function UnlockRedemption({
   onRedemption,
   onShowRedemptionConfirmation,
   onShowPerkDetails,
-  onCampaignDataChange
+  onCampaignDataChange,
+  onCreditBalancesChange
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
@@ -166,17 +181,44 @@ export default function UnlockRedemption({
   const [selectedUnlock, setSelectedUnlock] = useState<Unlock | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
 
+  // Always declare all hooks first (React Rules of Hooks)
   useEffect(() => {
     const ac = new AbortController();
-    loadData(ac.signal).catch((error) => {
-      console.error('Failed to load unlock data:', error);
+    let mounted = true;
+    
+    loadData(ac.signal, () => mounted).catch((error: unknown) => {
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.error('Error loading data:', error);
+      }
     });
-    return () => ac.abort();
+    
+    return () => { 
+      mounted = false; 
+      ac.abort(); 
+    };
   }, [clubId]);
 
-  const loadData = async (signal?: AbortSignal) => {
+  // Credit balances effect - always declare, but conditionally execute
+  useEffect(() => {
+    if (!onCreditBalancesChange) return;
+    
+    const creditBalances = unlocks
+      .filter(u => u.is_credit_campaign && u.campaign_id)
+      .reduce((balances, u) => {
+        const id = u.campaign_id!;
+        const title = balances[id]?.campaign_title || u.campaign_title || 'Campaign';
+        const balance = Math.max(balances[id]?.balance ?? 0, u.user_credit_balance ?? 0);
+        balances[id] = { campaign_title: title, balance };
+        return balances;
+      }, {} as Record<string, { campaign_title: string; balance: number }>);
+    
+    // Pass credit balances to parent (will be shown in wallet modal)
+    onCreditBalancesChange(creditBalances);
+  }, [unlocks, onCreditBalancesChange]);
+
+  const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
-      setIsLoading(true);
+      if (!isMounted || isMounted()) setIsLoading(true);
       // Get auth token
       const accessToken = await getAccessToken();
       if (!accessToken) {
@@ -203,12 +245,17 @@ export default function UnlockRedemption({
           is_active: reward.current_status === 'available',
           metadata: {
             ...(reward.metadata ?? {}),
-            redemption_instructions: reward.metadata?.instructions
+            redemption_instructions: reward.metadata?.instructions,
+            // Add credit campaign metadata for perk-details-modal
+            is_credit_campaign: reward.is_credit_campaign,
+            credit_cost: reward.credit_cost
+            // Note: cogs_cents excluded - sensitive commercial data
           },
           
           // Enhanced with campaign and discount fields
           campaign_id: reward.campaign_id,
           campaign_title: reward.campaign_title,
+          campaign_description: reward.campaign_description,
           campaign_status: reward.campaign_status,
           is_campaign_tier: reward.is_campaign_tier,
           campaign_progress: reward.campaign_progress,
@@ -223,15 +270,22 @@ export default function UnlockRedemption({
             id: reward.clubs.id,
             name: reward.clubs.name,
             description: reward.clubs.description,
-            city: reward.clubs.city
+            city: reward.clubs.city,
+            image_url: reward.clubs.image_url
           } : null,
           // Add tier rewards specific fields
           user_can_claim_free: reward.user_can_claim_free,
           claim_options: reward.claim_options,
           tier_boost_price_cents: reward.tier_boost_price_cents,
           direct_unlock_price_cents: reward.direct_unlock_price_cents,
-          inventory_status: reward.inventory_status
-        }));
+          inventory_status: reward.inventory_status,
+          
+          // Credit campaign fields
+          credit_cost: reward.credit_cost,
+          is_credit_campaign: reward.is_credit_campaign,
+          user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0
+          // Note: cogs_cents excluded - sensitive commercial data
+        }) as any);
         
         // Convert claimed rewards to redemption format
         const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: ClaimedReward) => ({
@@ -251,31 +305,45 @@ export default function UnlockRedemption({
         // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
         const sortedUnlocks = sortUnlocksByPrice(convertedUnlocks);
 
-        setUnlocks(sortedUnlocks);
-        setRedemptions(convertedRedemptions);
+        if (!isMounted || isMounted()) setUnlocks(sortedUnlocks);
+        if (!isMounted || isMounted()) setRedemptions(convertedRedemptions);
         
-        // Extract campaign data for parent component
-        const campaignTier = convertedUnlocks.find((unlock: Unlock) => unlock.is_campaign_tier && unlock.campaign_progress);
+        // Extract campaign data for parent component (support both tier campaigns and credit campaigns)
+        const campaignTier = convertedUnlocks.find((unlock: any) => 
+          (unlock.is_campaign_tier || unlock.is_credit_campaign) && unlock.campaign_progress
+        );
         
-        if (campaignTier && onCampaignDataChange) {
-          onCampaignDataChange({
-            campaign_id: campaignTier.campaign_id,
-            campaign_title: campaignTier.campaign_title,
-            campaign_status: campaignTier.campaign_status,
-            campaign_progress: campaignTier.campaign_progress
+        // Defer campaign data update to avoid setState during render
+        if (campaignTier && onCampaignDataChange && campaignTier.campaign_progress) {
+          queueMicrotask(() => {
+            // Check if still mounted before updating state
+            // Allow callback when isMounted guard not provided (initial load, manual reloads)
+            if (!isMounted || isMounted()) {
+              onCampaignDataChange({
+                campaign_id: campaignTier.campaign_id,
+                campaign_title: campaignTier.campaign_title,
+                campaign_description: campaignTier.campaign_description,
+                campaign_status: campaignTier.campaign_status,
+                campaign_progress: campaignTier.campaign_progress
+              });
+            }
           });
         }
       } else {
         console.error('Failed to fetch tier rewards:', response.status);
-        setUnlocks([]);
-        setRedemptions([]);
+        if (!isMounted || isMounted()) setUnlocks([]);
+        if (!isMounted || isMounted()) setRedemptions([]);
       }
     } catch (error) {
+      // Ignore AbortError - it's expected when component unmounts
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
       console.error('Error loading data:', error);
-      setUnlocks([]);
-      setRedemptions([]);
+      if (!isMounted || isMounted()) setUnlocks([]);
+      if (!isMounted || isMounted()) setRedemptions([]);
     } finally {
-      setIsLoading(false);
+      if (!isMounted || isMounted()) setIsLoading(false);
     }
   };
 
@@ -387,7 +455,7 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        const result = await response.json();
+        const resultData = await response.json() as any;
         
         // Close current modal
         setSelectedUnlock(null);
@@ -396,15 +464,16 @@ export default function UnlockRedemption({
         await loadData();
         
         // Show full-screen confirmation
-        const payload = (result && typeof result === 'object' && 'redemption' in result)
-          ? (result as any).redemption
-          : result;
+        const payload = (resultData && typeof resultData === 'object' && 'redemption' in resultData)
+          ? resultData.redemption
+          : resultData;
         onShowRedemptionConfirmation?.(payload, unlock);
         
         // Callback for parent component
         onRedemption?.();
       } else {
-        const errorData = await response.json() as { error?: string };
+        const errorData = await response.json();
+        const errorMsg = errorData as { error?: string };
         
         // Handle specific error cases
         if (response.status === 409) {
@@ -418,7 +487,7 @@ export default function UnlockRedemption({
           return;
         }
         
-        throw new Error(errorData.error || 'Failed to redeem unlock');
+        throw new Error(errorMsg.error || 'Failed to redeem unlock');
       }
     } catch (error) {
       toast({
@@ -468,6 +537,82 @@ export default function UnlockRedemption({
     );
   }
 
+  // Handle credit redemption for campaign items (1 credit = $1)
+  const handleCreditRedemption = async (unlock: Unlock) => {
+    // Double-submit protection: check and set flag atomically
+    if (isRedeeming) {
+      return;
+    }
+    setIsRedeeming(true);
+
+    try {
+      // Input validation
+      if (!unlock.campaign_id) {
+        throw new Error('Campaign ID is required for credit redemption');
+      }
+
+      // Validate and coerce credit_cost to positive integer
+      const creditCost = typeof unlock.credit_cost === 'number' ? unlock.credit_cost : Number(unlock.credit_cost);
+      if (!Number.isInteger(creditCost) || creditCost <= 0) {
+        throw new Error('Invalid credit cost: must be a positive integer');
+      }
+
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('User not authenticated');
+      }
+
+      // Redeem credits for the item using validated integer value
+      const response = await fetch(`/api/campaigns/${unlock.campaign_id}/items/${unlock.id}/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          credits_to_spend: creditCost
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json() as { message?: string };
+        
+        toast({
+          title: "Item Redeemed! 🎉",
+          description: result.message || `Successfully redeemed ${unlock.title}`,
+        });
+
+        // Reload data to update credit balances and claimed status
+        await loadData();
+        onRedemption?.();
+        
+      } else if (response.status === 409) {
+        // Handle 409 Conflict - reload data to sync UI with server state
+        toast({
+          title: "Redemption Conflict",
+          description: "Item already claimed or conflicting request. Please refresh and try again.",
+          variant: "destructive",
+        });
+        // Reload data to reflect server state
+        await loadData();
+        return; // Exit early after reload
+      } else {
+        const errorData = await response.json() as { error?: string };
+        throw new Error(errorData.error || 'Failed to redeem credits');
+      }
+
+    } catch (error) {
+      console.error('Error redeeming credits:', error);
+      toast({
+        title: "Redemption Failed",
+        description: error instanceof Error ? error.message : "Failed to redeem credits",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
       const accessToken = await getAccessToken();
@@ -489,17 +634,18 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
-          const result = await response.json() as PurchaseResponse;
-          const url = result?.stripe_session_url;
+          const result = await response.json();
+          const url = (result as PurchaseResponse)?.stripe_session_url;
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
           }
           
           // Show discount confirmation if applicable
-          if ((result?.discount_applied_cents ?? 0) > 0) {
+          const purchaseResult = result as PurchaseResponse;
+          if ((purchaseResult?.discount_applied_cents ?? 0) > 0) {
             toast({
               title: "Discount Applied!",
-              description: `You're saving $${(result.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
+              description: `You're saving $${(purchaseResult.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
             });
           }
           
@@ -546,8 +692,10 @@ export default function UnlockRedemption({
     }
   };
 
+
   return (
     <>
+      
       <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
         {unlocks.map((unlock, index) => {
           const IconComponent = getUnlockIcon(unlock.type);
@@ -571,8 +719,11 @@ export default function UnlockRedemption({
                   if (redemption) {
                     // Already redeemed - show persistent details modal
                     onShowPerkDetails?.(unlock, redemption);
+                  } else if (unlock.is_credit_campaign) {
+                    // For credit campaigns, show preview modal with purchase handler
+                    onShowPerkDetails?.(unlock, null, () => handleUpgradePurchase(unlock));
                   } else {
-                    // Not redeemed - show redemption modal
+                    // Regular tier reward - show redemption modal
                     setSelectedUnlock(unlock);
                   }
                 }}
@@ -580,12 +731,25 @@ export default function UnlockRedemption({
               >
                 {/* Background Image/Icon Area */}
                 <div className="absolute inset-0">
-                  <div className="relative w-full h-full bg-gradient-to-br from-primary/30 via-purple-600/20 to-pink-500/30 flex items-center justify-center">
-                    <IconComponent className={`h-20 w-20 ${isAvailable ? 'text-white/90' : 'text-gray-400'}`} />
-                    
-                    {/* Gradient overlay for text readability */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                  </div>
+                  {unlock.metadata?.image_url ? (
+                    // Campaign item with image (no icon overlay)
+                    <div className="relative w-full h-full">
+                      <img 
+                        src={unlock.metadata.image_url} 
+                        alt={unlock.metadata?.image_alt || unlock.title}
+                        className="w-full h-full object-cover opacity-30"
+                      />
+                      {/* Gradient overlay for text readability */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/20" />
+                    </div>
+                  ) : (
+                    // Fallback to gradient + icon
+                    <div className="relative w-full h-full bg-gradient-to-br from-primary/30 via-purple-600/20 to-pink-500/30 flex items-center justify-center">
+                      <IconComponent className={`h-20 w-20 ${isAvailable ? 'text-white/90' : 'text-gray-400'}`} />
+                      {/* Gradient overlay for text readability */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    </div>
+                  )}
                   
                   {/* Top badges */}
                   <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
@@ -626,16 +790,23 @@ export default function UnlockRedemption({
                     {unlock.title}
                   </h4>
                   
-                  {/* Discount info - Campaign MVP */}
+                  {/* Enhanced info - Support both tier rewards and credit campaigns */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
-                    {unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
-                      ? `${unlock.user_discount_percentage}% Discount`
-                      : `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
-                    }
+                    {unlock.is_credit_campaign ? (
+                      // Credit campaign display (credits only, no dollars)
+                      <div className="flex items-center justify-between">
+                        <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>
+                      </div>
+                    ) : (
+                      // Regular tier reward display
+                      unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
+                        ? `${unlock.user_discount_percentage}% Discount`
+                        : `Requires ${unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}`
+                    )}
                   </div>
                   
-                  {/* Discount pricing display */}
-                  {unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
+                  {/* Pricing display - Credit campaigns show credit count, not discount */}
+                  {!unlock.is_credit_campaign && unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
                     <div className="mb-2 text-xs">
                       <div className="flex items-center justify-between text-white/60">
                         <span className="line-through">${((unlock.upgrade_price_cents || 0) / 100).toFixed(0)}</span>
@@ -660,18 +831,42 @@ export default function UnlockRedemption({
                     onClick={(e) => {
                       e.stopPropagation();
                       const redemption = getUnlockRedemption(unlock);
+                      
                       if (redemption) {
+                        // Already redeemed - show details
                         onShowPerkDetails?.(unlock, redemption);
+                      } else if (unlock.is_credit_campaign) {
+                        // Credit campaign logic (1 credit = $1)
+                        const userCredits = (unlock as any).user_credit_balance || 0;
+                        if (userCredits >= (unlock.credit_cost || 0)) {
+                          // User has enough credits - handle redemption
+                          handleCreditRedemption(unlock);
+                        } else {
+                          // User needs more credits - show purchase flow
+                          setSelectedUnlock(unlock);
+                        }
                       } else if (isAvailable) {
+                        // Regular tier reward flow
                         setSelectedUnlock(unlock);
                       }
                     }}
                   >
                     {isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
-                      : isAvailable 
+                      :                       isAvailable 
                         ? (() => {
-                            // Campaign MVP: Always show discounted pricing, no free claims
+                            // Credit campaign button text (1 credit = $1)
+                            if (unlock.is_credit_campaign) {
+                              const userCredits = (unlock as any).user_credit_balance || 0;
+                              const creditCost = unlock.credit_cost || 0;
+                              if (userCredits >= creditCost) {
+                                return `Redeem ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
+                              } else {
+                                return `Commit ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
+                              }
+                            }
+                            
+                            // Regular tier reward pricing (unchanged)
                             if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
                               return `Commit ${formatCurrency(unlock.user_final_price_cents)}`;
                             } else {
@@ -697,141 +892,124 @@ export default function UnlockRedemption({
         })}
       </div>
 
-      {/* Redemption Modal */}
+      {/* Pre-Purchase Confirmation Modal */}
       <Dialog open={!!selectedUnlock} onOpenChange={(open) => { if (!open) setSelectedUnlock(null); }}>
         {selectedUnlock && (
-          <DialogContent className="max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {React.createElement(getUnlockIcon(selectedUnlock.type), { 
                   className: "h-5 w-5 text-primary" 
                 })}
-                {selectedUnlock.title}
+                Confirm Your Purchase
               </DialogTitle>
+              <div className="text-sm text-muted-foreground">
+                Review the details before proceeding to checkout
+              </div>
             </DialogHeader>
             
-              <div className="space-y-4">
-              <p className="text-muted-foreground">
-                {selectedUnlock.description}
-              </p>
-              
-              
-              {/* Discount information for earned tiers */}
-              {selectedUnlock.user_discount_eligible && selectedUnlock.user_discount_amount_cents && selectedUnlock.user_discount_amount_cents > 0 && (
-                <div className="p-4 rounded-xl border border-green-200 bg-green-50/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                    <span className="font-medium text-green-900">Your Status Discount</span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-lg font-bold text-green-600">
-                      ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)}
-                    </div>
-                    <div className="text-sm text-green-600">
-                      {selectedUnlock.discount_description}
-                    </div>
-                    {selectedUnlock.campaign_id && (
-                      <div className="text-xs text-green-700">
-                        Your ${(selectedUnlock.user_final_price_cents! / 100).toFixed(0)} payment adds ${((selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} to campaign progress
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {/* Boost explanation for non-qualified users (legacy) */}
-              {!selectedUnlock.user_can_claim_free && !selectedUnlock.user_discount_eligible && isUnlockAvailable(selectedUnlock) && (
-                <div className={`p-4 rounded-xl border ${getStatusBgColor(selectedUnlock.min_status as any)} ${getStatusBorderColor(selectedUnlock.min_status as any)} backdrop-blur-sm`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${getStatusBgColor(selectedUnlock.min_status as any)} ${getStatusTextColor(selectedUnlock.min_status as any)}`}>
-                      <Lock className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <p className={`font-medium mb-1 ${getStatusTextColor(selectedUnlock.min_status as any)}`}>
-                        Boost to {selectedUnlock.min_status.charAt(0).toUpperCase() + selectedUnlock.min_status.slice(1)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Get temporary access until <strong>{formatQuarterEnd()}</strong> to claim this perk for free.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {/* Only show redemption instructions if user has already redeemed */}
-              {selectedUnlock.metadata?.redemption_instructions && isUnlockRedeemed(selectedUnlock) && (
-                <div className="bg-muted p-3 rounded-lg">
-                  <h4 className="font-medium mb-2">How to Redeem:</h4>
-                  <p className="text-sm">
-                    {selectedUnlock.metadata.redemption_instructions}
+            <div className="px-4 py-4 space-y-4">
+              {/* Item Image and Basic Info */}
+              <div className="flex gap-4">
+                {selectedUnlock.metadata?.image_url && (
+                  <img
+                    src={selectedUnlock.metadata.image_url}
+                    alt={selectedUnlock.title}
+                    className="w-20 h-20 object-cover rounded-lg border"
+                  />
+                )}
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold">{selectedUnlock.title}</h3>
+                  {selectedUnlock.campaign_title && (
+                    <Badge variant="secondary" className="mt-1 bg-primary/10 text-primary border-primary/20">
+                      {selectedUnlock.campaign_title}
+                    </Badge>
+                  )}
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                    {selectedUnlock.description}
                   </p>
                 </div>
-              )}
-              
-              <div className="space-y-2 text-sm">
-                {selectedUnlock.metadata?.location && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span>{selectedUnlock.metadata.location}</span>
-                  </div>
-                )}
-                
-                {selectedUnlock.metadata?.expiry_date && (
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      Valid until {
-                        (() => {
-                          try {
-                            return new Date(selectedUnlock.metadata.expiry_date).toLocaleDateString();
-                          } catch {
-                            return selectedUnlock.metadata.expiry_date;
-                          }
-                        })()
-                      }
-                    </span>
-                  </div>
-                )}
-                
-                {selectedUnlock.metadata?.capacity && (
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span>Limited to {selectedUnlock.metadata.capacity} people</span>
-                  </div>
-                )}
               </div>
+
+              <div className="h-[1px] w-full bg-border" />
               
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setSelectedUnlock(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={() => handleRedeem(selectedUnlock)}
-                  disabled={!isUnlockAvailable(selectedUnlock) || isRedeeming}
-                >
-                  {isRedeeming ? 'Processing...' : 
-                   (() => {
-                     // Campaign MVP: Always show discounted pricing, no free claims
-                     if (selectedUnlock.user_discount_eligible && selectedUnlock.user_final_price_cents !== undefined) {
-                       return `Commit ${formatCurrency(selectedUnlock.user_final_price_cents)}`;
-                     } else {
-                       // Fallback to upgrade pricing if no discount available
-                       const purchaseType = getClaimOptionsPurchaseType(selectedUnlock);
-                       const price = purchaseType === 'direct_unlock' 
-                         ? selectedUnlock.direct_unlock_price_cents 
-                         : selectedUnlock.tier_boost_price_cents;
-                       const verb = purchaseType === 'direct_unlock' ? 'Commit' : 'Commit';
-                       return `${verb} ${formatCurrencyOrFree(price)}`;
-                     }
-                   })()
+              
+              {/* Pricing - Clean display */}
+              <div className="flex items-center justify-between py-2">
+                <span className="text-sm font-medium text-muted-foreground">Price</span>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-foreground">
+                    {selectedUnlock.credit_cost || 0} Credits
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-[1px] w-full bg-border" />
+
+              {/* Delivery Information */}
+              <div>
+                <h4 className="font-medium mb-3 flex items-center gap-2 text-sm">
+                  <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Delivery & Fulfillment
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm font-medium">Estimated Delivery</span>
+                    <Badge variant="outline" className="font-normal">
+                      {selectedUnlock.type === 'digital_product' ? 'Immediate' : '2 months'}
+                    </Badge>
+                  </div>
+                  
+                  <div>
+                    <h5 className="text-xs font-medium mb-2 text-muted-foreground">Fulfillment Instructions:</h5>
+                    <ul className="space-y-1.5">
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="text-primary font-bold mt-0.5">•</span>
+                        Your commitment helps reach the funding goal
+                      </li>
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="text-primary font-bold mt-0.5">•</span>
+                        Items are ordered after campaign succeeds
+                      </li>
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="text-primary font-bold mt-0.5">•</span>
+                        Full refund if goal isn't met by deadline
+                      </li>
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
+                        <span className="text-primary font-bold mt-0.5">•</span>
+                        You'll receive claim details via email
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer Actions */}
+            <div className="flex flex-col gap-2 rounded-b-lg border-t px-4 py-3 sm:flex-row sm:justify-end bg-muted/30">
+              <Button
+                variant="outline"
+                onClick={() => setSelectedUnlock(null)}
+                className="sm:w-auto w-full"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  // Credit campaigns use purchase flow, regular tiers use redeem flow
+                  if (selectedUnlock.is_credit_campaign) {
+                    handleUpgradePurchase(selectedUnlock);
+                  } else {
+                    handleRedeem(selectedUnlock);
                   }
-                </Button>
-              </div>
+                }}
+                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock)}
+                className="min-w-[140px] sm:w-auto w-full"
+              >
+                {isRedeeming ? 'Processing...' : 'Proceed to Checkout'}
+              </Button>
             </div>
           </DialogContent>
         )}

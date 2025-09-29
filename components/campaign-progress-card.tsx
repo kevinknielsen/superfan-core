@@ -18,14 +18,6 @@ export function CampaignProgressCard({ campaignData }: CampaignProgressCardProps
   const currentCents = campaignData.campaign_progress.current_funding_cents || 0;
   const remainingCents = Math.max(0, goalCents - currentCents);
   const remainingAmount = usd0.format(remainingCents / 100);
-  
-  // Debug logging for goal data (development only)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[Campaign Progress Debug]', {
-      campaign_title: campaignData.campaign_title,
-      funding_percentage: campaignData.campaign_progress.funding_percentage
-    });
-  }
 
   return (
     <motion.div 

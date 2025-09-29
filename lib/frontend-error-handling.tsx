@@ -191,7 +191,7 @@ export function useErrorHandler() {
       actionLabel: 'Sign In',
       onAction: () => {
         // TODO: Trigger sign in flow
-        window.location.href = '/login';
+        window.location.href = '/dashboard';
       },
     });
   };

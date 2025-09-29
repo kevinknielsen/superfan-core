@@ -85,6 +85,7 @@ export default function Dashboard() {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [showPurchaseSuccess, setShowPurchaseSuccess] = useState(false);
   const [showPurchaseCanceled, setShowPurchaseCanceled] = useState(false);
+  const [autoOpenWallet, setAutoOpenWallet] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -142,9 +143,10 @@ export default function Dashboard() {
     const isUpgradeCancelled = purchaseParam === 'upgrade_cancelled' || searchParams.get('upgrade_cancelled') === 'true';
     const isPointsSuccess = purchaseParam === 'success';
     const isPointsCancelled = purchaseParam === 'canceled';
+    const isCampaignPurchaseSuccess = searchParams.get('purchase_success') === 'true';
 
     // Wait for clubs to load before processing any redirects that need club data
-    if ((clubParam && (isBoostSuccess || isBoostCancelled || isPointsSuccess || isPointsCancelled)) && clubsLoading) {
+    if ((clubParam && (isBoostSuccess || isBoostCancelled || isPointsSuccess || isPointsCancelled || isCampaignPurchaseSuccess)) && clubsLoading) {
       return;
     }
 
@@ -215,6 +217,39 @@ export default function Dashboard() {
             variant: "default",
           });
         }
+      }
+    }
+    
+    // Handle campaign purchase success (credit purchases)
+    if (clubParam && isCampaignPurchaseSuccess) {
+      const club = allClubs.find(c => c.id === clubParam);
+      if (club) {
+        setSelectedClubId(clubParam);
+        setAutoOpenWallet(true); // Auto-open wallet to show new credits
+        
+        // Trigger confetti
+        setTimeout(() => {
+          confetti({
+            particleCount: 150,
+            spread: 90,
+            origin: { y: 0.6 },
+            colors: ['#10b981', '#22c55e', '#4ade80']
+          });
+        }, 500);
+
+        toast({
+          title: "Purchase Successful! 🎉",
+          description: `Your credits have been added to ${club.name}`,
+        });
+        
+        // Clean URL after a delay to allow state to propagate
+        setTimeout(() => {
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.delete('purchase_success');
+          newUrl.searchParams.delete('club_id');
+          newUrl.searchParams.delete('session_id');
+          router.replace(newUrl.pathname + newUrl.search);
+        }, 100);
       }
     }
     
@@ -437,10 +472,12 @@ export default function Dashboard() {
           club={allClubs.find(c => c.id === selectedClubId)!}
           membership={userMemberships.find(m => m.club_id === selectedClubId)}
           isOpen={!!selectedClubId}
+          autoOpenWallet={autoOpenWallet}
           onClose={() => {
             setSelectedClubId(null);
             setShowPurchaseSuccess(false);
             setShowPurchaseCanceled(false);
+            setAutoOpenWallet(false);
           }}
         />
       )}

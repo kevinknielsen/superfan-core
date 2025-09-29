@@ -13,7 +13,9 @@ import {
   Shield,
   ArrowRight,
   Sparkles,
-  Zap
+  Zap,
+  CreditCard,
+  Gift
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,6 +33,8 @@ interface UnifiedPointsWalletProps {
   showPurchaseOptions?: boolean;
   showTransferOptions?: boolean;
   className?: string;
+  creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
+  onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
 }
 
 // Enhanced status icons mapping
@@ -254,7 +258,9 @@ export default function UnifiedPointsWallet({
   clubName, 
   showPurchaseOptions = false,
   showTransferOptions = false,
-  className = ""
+  className = "",
+  creditBalances = {},
+  onCloseWallet
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -274,8 +280,13 @@ export default function UnifiedPointsWallet({
     totalBalance
   } = useUnifiedPoints(clubId);
 
-
   const { getStatusInfo } = useStatusInfo();
+  
+  // Calculate total campaign credits (memoized for performance) - MUST be before early returns
+  const totalCampaignCredits = useMemo(
+    () => Object.values(creditBalances).reduce((sum, d) => sum + d.balance, 0),
+    [creditBalances]
+  );
 
   // Handle status boost flow - redirect to tier rewards system
   const handleBuyPoints = async () => {
@@ -405,109 +416,168 @@ export default function UnifiedPointsWallet({
     : (wallet?.earned_points ?? 0); // Use actual earned points when not boosted
 
   return (
-    <Card className={`${className} overflow-hidden`}>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Wallet className="h-5 w-5" />
-          {clubName}
-        </CardTitle>
-      </CardHeader>
+    <>
+      <div className={`${className} space-y-4`}>
+        {/* Main Balance Card - Gradient Design */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <Card className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-slate-700 text-white">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/5 to-transparent" />
+          <div className="relative p-6 space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm">
+                  <Wallet className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-white">My Wallet</h2>
+                  <p className="text-sm text-slate-300">{clubName}</p>
+                </div>
+              </div>
+              <CreditCard className="w-6 h-6 text-slate-400" />
+            </div>
 
-      <CardContent className="space-y-6">
-        {/* Main Balance Display */}
-        <div className="text-center space-y-2">
-          <div className="text-3xl font-bold text-foreground">
-            {formatPoints(effectiveTotalBalance)}
+            {/* Balance Display - Side by Side */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-300 mb-1">Campaign Credits</p>
+                  <div className="flex items-center gap-2">
+                    <motion.div
+                      animate={{ rotate: totalCampaignCredits > 0 ? [0, 15, -15, 0] : 0 }}
+                      transition={{ duration: 0.5 }}
+                    >
+                      <Sparkles className="w-5 h-5 text-green-400" />
+                    </motion.div>
+                    <span className="text-2xl font-bold text-white">
+                      {totalCampaignCredits.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-slate-300 mb-1">Status Points</p>
+                  <div className="flex items-center gap-2 justify-end">
+                    <Star className="w-5 h-5 text-purple-400" />
+                    <span className="text-2xl font-bold text-white">
+                      {formatPoints(wallet.status_points ?? 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-1">
+                <Button 
+                  onClick={handleBuyPoints}
+                  disabled={isPurchasing}
+                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm"
+                >
+                  <Zap className="w-4 h-4 mr-2" />
+                  {isPurchasing ? 'Loading...' : 'Boost Status'}
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex-1">
+                <Button 
+                  variant="outline" 
+                  className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
+                  disabled={totalCampaignCredits === 0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Close wallet and scroll to campaign items to redeem
+                    onCloseWallet?.();
+                    toast({
+                      title: "View Campaign Items",
+                      description: "Scroll to the Store section to redeem your credits",
+                    });
+                  }}
+                >
+                  <Gift className="w-4 h-4 mr-2" />
+                  Redeem
+                </Button>
+              </motion.div>
+            </div>
           </div>
-          <div className="text-sm text-muted-foreground">Total Points</div>
-          
-          {/* Quick breakdown */}
-          <div className="flex justify-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" />
-              {formatPoints(effectiveEarnedPoints)} earned
-            </span>
-            {(wallet.purchased_points ?? 0) > 0 && (
-              <span className="flex items-center gap-1">
-                <Wallet className="h-3 w-3" />
-                {formatPoints(wallet.purchased_points ?? 0)} purchased
-              </span>
+        </Card>
+      </motion.div>
+
+      {/* Status Progress Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
+        <Card className="bg-background border-border">
+          <CardContent className="p-6">
+            <h3 className="font-semibold text-foreground mb-4">Your Status</h3>
+            <StatusProgressSection 
+              currentStatus={status.current}
+              currentPoints={wallet.status_points ?? 0}
+              nextStatus={status.next_status}
+              pointsToNext={status.points_to_next}
+              progressPercentage={status.progress_to_next}
+            />
+            
+            {/* Tier Boost Info */}
+            {status.has_active_boost && (
+              <div className="text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 mt-4">
+                <div className="text-sm text-blue-400 font-medium mb-1">
+                  🚀 Active Tier Boost
+                </div>
+                <div className="text-xs text-blue-300/80">
+                  Your status is temporarily boosted
+                </div>
+              </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-        {/* Enhanced Status Progress - Matching Your Status Design */}
-        <StatusProgressSection 
-          currentStatus={status.current}
-          currentPoints={wallet.status_points ?? 0}
-          nextStatus={status.next_status}
-          pointsToNext={status.points_to_next}
-          progressPercentage={status.progress_to_next}
-        />
-
-        {/* Tier Boost Info */}
-        {status.has_active_boost && (
-          <div className="text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="text-sm text-blue-400 font-medium mb-1">
-              🚀 Active Tier Boost
+      {/* Campaign Credits Breakdown */}
+      {Object.keys(creditBalances).length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <Card className="bg-background border-border">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-foreground">Campaign Credits</h3>
+                <div className="text-sm text-muted-foreground">1 credit = $1</div>
+              </div>
+              <div className="space-y-3">
+                {Object.entries(creditBalances).map(([campaignId, data]) => (
+                  <motion.div
+                    key={campaignId}
+                    whileHover={{ scale: 1.02 }}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{data.campaign_title}</p>
+                        <p className="text-sm text-muted-foreground">Available to redeem</p>
+                      </div>
+                    </div>
+                    <div className="font-semibold text-green-600 dark:text-green-400 text-xl">
+                      {data.balance}
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
             </div>
-            <div className="text-xs text-blue-300/80">
-              Your status is temporarily boosted - tier boosts don't add points to your wallet
-            </div>
-          </div>
-        )}
-
-        {/* Action Button - Full Width */}
-        <div className="space-y-3">
-          {showPurchaseOptions && status?.next_status && (
-            <Button
-              type="button"
-              variant="default"
-              className="w-full"
-              disabled={isPurchasing}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleBuyPoints();
-              }}
-            >
-              <Zap className="h-4 w-4 mr-2" />
-              {isPurchasing ? 'Loading...' : 'Boost Status'}
-            </Button>
-          )}
-          
-          {/* Spend Points button hidden for now - doesn't work yet */}
-          {false && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowSpendModal(true);
-              }}
-              disabled={effectiveTotalBalance <= 0}
-            >
-              <ArrowUpRight className="h-4 w-4 mr-2" />
-              Spend Points
-            </Button>
-          )}
-
-          {showTransferOptions && (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowTransferModal(true);
-              }}
-              disabled={(spending_power.purchased_available ?? 0) <= 0}
-            >
-              <Users className="h-4 w-4 mr-2" />
-              Transfer
-            </Button>
-          )}
-        </div>
-      </CardContent>
+          </Card>
+        </motion.div>
+      )}
+      </div>
 
       {/* Spend Points Modal */}
       <SpendPointsModal
@@ -532,7 +602,7 @@ export default function UnifiedPointsWallet({
           setShowTransferModal(false);
         }}
       />
-    </Card>
+    </>
   );
 }
 

@@ -106,7 +106,7 @@ export function middleware(request: NextRequest) {
   }
   
   // If this is a main app route but we're on manager app, redirect to main
-  if (!isManagerRoute && appType === 'manager' && pathname !== '/' && pathname !== '/login' && pathname !== '/profile') {
+  if (!isManagerRoute && appType === 'manager' && pathname !== '/' && pathname !== '/profile') {
     const url = request.nextUrl.clone();
     url.hostname = 'superfan.one';
     url.port = ''; // Remove port for production
