@@ -9,6 +9,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const body = await request.json();
+    
+    // Validate request body
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    
+    const { notifications_opt_in } = body;
+
+    if (typeof notifications_opt_in !== 'boolean') {
+      return NextResponse.json({ error: "Invalid notifications_opt_in value" }, { status: 400 });
+    }
+
     const supabase = createServiceClient();
     
     // Get the user from our database
@@ -27,7 +40,7 @@ export async function POST(request: NextRequest) {
     const { data: updatedUser, error: updateError } = await supabase
       .from('users')
       .update({ 
-        notifications_opt_in: true,
+        notifications_opt_in,
         updated_at: new Date().toISOString()
       })
       .eq('id', user.id)
@@ -39,7 +52,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to update notifications preference" }, { status: 500 });
     }
 
-    console.log(`[Notifications Opt-in API] User ${auth.userId} opted into notifications`);
+    console.log(`[Notifications Opt-in API] User ${auth.userId} set notifications_opt_in to ${notifications_opt_in}`);
 
     return NextResponse.json({ 
       success: true, 

@@ -149,7 +149,8 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
               Settings
             </button>
             
-            {isAdmin && (
+            {/* Temporarily hide admin link */}
+            {/* {isAdmin && (
               <button
                 type="button"
                 role="menuitem"
@@ -163,7 +164,7 @@ const ProfileDropdown: React.FC<ProfileDropdownProps> = ({
                 <Star className="mr-2 h-4 w-4" />
                 Admin
               </button>
-            )}
+            )} */}
           </div>
           
           <div className="border-t border-[#1E1E32]/20 py-1">

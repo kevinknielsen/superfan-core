@@ -59,7 +59,7 @@ function getFarcasterUser(): string | null {
 }
 
 // Unified function to get authentication headers
-async function getAuthHeaders(): Promise<{ Authorization: string }> {
+export async function getAuthHeaders(): Promise<{ Authorization: string }> {
   const inWalletApp = isInWalletApp();
 
   console.log("[SDK] Auth context:", { inWalletApp });

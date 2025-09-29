@@ -338,7 +338,7 @@ export default function ClubDetailsModal({
                 e.preventDefault();
                 e.stopPropagation();
                 if (!club) return;
-                const url = `${window.location.origin}/clubs/${club.id}`;
+                const url = `${window.location.origin}/dashboard?club=${club.id}&view=details`;
                 try {
                   if (navigator.share) {
                     await navigator.share({ url, title: club.name });
