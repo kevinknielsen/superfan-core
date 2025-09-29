@@ -787,12 +787,9 @@ export default function UnlockRedemption({
                   {/* Enhanced info - Support both tier rewards and credit campaigns */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
                     {unlock.is_credit_campaign ? (
-                      // Credit campaign display (1 credit = $1)
+                      // Credit campaign display (credits only, no dollars)
                       <div className="flex items-center justify-between">
                         <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>
-                        {unlock.user_discount_eligible && (unlock.user_discount_percentage || 0) > 0 && (
-                          <span className="text-green-400 text-xs">{unlock.user_discount_percentage}% off</span>
-                        )}
                       </div>
                     ) : (
                       // Regular tier reward display
@@ -859,8 +856,7 @@ export default function UnlockRedemption({
                               if (userCredits >= creditCost) {
                                 return `Redeem ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
                               } else {
-                                // 1 credit = $1, so price is just the credit count
-                                return `Commit $${creditCost}`;
+                                return `Commit ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
                               }
                             }
                             
@@ -893,7 +889,7 @@ export default function UnlockRedemption({
       {/* Pre-Purchase Confirmation Modal */}
       <Dialog open={!!selectedUnlock} onOpenChange={(open) => { if (!open) setSelectedUnlock(null); }}>
         {selectedUnlock && (
-          <DialogContent className="sm:max-w-2xl">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {React.createElement(getUnlockIcon(selectedUnlock.type), { 
@@ -902,26 +898,28 @@ export default function UnlockRedemption({
                 Confirm Your Purchase
               </DialogTitle>
               <div className="text-sm text-muted-foreground">
-                Review the details below before proceeding to checkout
+                Review the details before proceeding to checkout
               </div>
             </DialogHeader>
             
-            <div className="px-4 py-6 space-y-6">
+            <div className="px-4 py-4 space-y-4">
               {/* Item Image and Basic Info */}
               <div className="flex gap-4">
                 {selectedUnlock.metadata?.image_url && (
                   <img
                     src={selectedUnlock.metadata.image_url}
                     alt={selectedUnlock.title}
-                    className="w-24 h-24 object-cover rounded-lg border"
+                    className="w-20 h-20 object-cover rounded-lg border"
                   />
                 )}
                 <div className="flex-1">
-                  <h3 className="text-xl font-semibold">{selectedUnlock.title}</h3>
-                  <Badge variant="secondary" className="mt-1">
-                    {selectedUnlock.campaign_title || 'Campaign Item'}
-                  </Badge>
-                  <p className="text-sm text-muted-foreground mt-2">
+                  <h3 className="text-lg font-semibold">{selectedUnlock.title}</h3>
+                  {selectedUnlock.campaign_title && (
+                    <Badge variant="secondary" className="mt-1 bg-primary/10 text-primary border-primary/20">
+                      {selectedUnlock.campaign_title}
+                    </Badge>
+                  )}
+                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
                     {selectedUnlock.description}
                   </p>
                 </div>
@@ -930,28 +928,12 @@ export default function UnlockRedemption({
               <div className="h-[1px] w-full bg-border" />
               
               
-              {/* Pricing */}
-              <div className="bg-muted/50 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <svg className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                    </svg>
-                    <span className="font-medium">Price</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-primary">
-                      {selectedUnlock.is_credit_campaign ? (
-                        `$${selectedUnlock.credit_cost}`
-                      ) : (
-                        `$${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)}`
-                      )}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {selectedUnlock.is_credit_campaign 
-                        ? `${selectedUnlock.credit_cost} credit${selectedUnlock.credit_cost !== 1 ? 's' : ''}` 
-                        : 'Campaign commitment'}
-                    </div>
+              {/* Pricing - Clean display */}
+              <div className="flex items-center justify-between py-2">
+                <span className="text-sm font-medium text-muted-foreground">Price</span>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-foreground">
+                    {selectedUnlock.credit_cost || 0} Credits
                   </div>
                 </div>
               </div>
@@ -960,36 +942,38 @@ export default function UnlockRedemption({
 
               {/* Delivery Information */}
               <div>
-                <h4 className="font-medium mb-3 flex items-center gap-2">
+                <h4 className="font-medium mb-3 flex items-center gap-2 text-sm">
                   <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   Delivery & Fulfillment
                 </h4>
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                  <div className="flex justify-between items-center py-2">
                     <span className="text-sm font-medium">Estimated Delivery</span>
-                    <Badge variant="outline">After campaign succeeds</Badge>
+                    <Badge variant="outline" className="font-normal">
+                      {selectedUnlock.reward_type === 'digital_product' ? 'Immediate' : '2 months'}
+                    </Badge>
                   </div>
                   
                   <div>
-                    <h5 className="text-sm font-medium mb-2">Fulfillment Instructions:</h5>
-                    <ul className="space-y-1">
-                      <li className="text-sm text-muted-foreground flex items-start gap-2">
+                    <h5 className="text-xs font-medium mb-2 text-muted-foreground">Fulfillment Instructions:</h5>
+                    <ul className="space-y-1.5">
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
                         <span className="text-primary font-bold mt-0.5">•</span>
-                        Your payment helps reach the campaign funding goal
+                        Your commitment helps reach the funding goal
                       </li>
-                      <li className="text-sm text-muted-foreground flex items-start gap-2">
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
                         <span className="text-primary font-bold mt-0.5">•</span>
-                        Items ship after campaign succeeds
+                        Items are ordered after campaign succeeds
                       </li>
-                      <li className="text-sm text-muted-foreground flex items-start gap-2">
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
                         <span className="text-primary font-bold mt-0.5">•</span>
                         Full refund if goal isn't met by deadline
                       </li>
-                      <li className="text-sm text-muted-foreground flex items-start gap-2">
+                      <li className="text-xs text-muted-foreground flex items-start gap-2">
                         <span className="text-primary font-bold mt-0.5">•</span>
-                        You'll receive delivery details via email
+                        You'll receive claim details via email
                       </li>
                     </ul>
                   </div>

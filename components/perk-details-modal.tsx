@@ -200,7 +200,7 @@ export default function PerkDetailsModal({
           <div className="flex-1 overflow-y-auto">
             <div className="p-6 space-y-6">
               {/* Item Image Display */}
-              <div className="relative aspect-square rounded-3xl overflow-hidden bg-gradient-to-br from-blue-500 to-teal-400">
+              <div className="relative aspect-square rounded-3xl overflow-hidden bg-black">
                 {perk.metadata?.image_url ? (
                   // Display campaign item image
                   <>
@@ -213,8 +213,8 @@ export default function PerkDetailsModal({
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
                   </>
                 ) : (
-                  // Fallback gradient if no image
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-teal-400" />
+                  // Fallback black background
+                  <div className="absolute inset-0 bg-black" />
                 )}
                 
                 {/* Overlay Text */}
@@ -320,7 +320,7 @@ export default function PerkDetailsModal({
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 text-gray-300">
                       <DollarSign className="h-5 w-5 text-green-400" />
-                      <span>Costs {perk.metadata.credit_cost} credit{perk.metadata.credit_cost !== 1 ? 's' : ''} (${perk.metadata.credit_cost})</span>
+                      <span>Costs {perk.metadata.credit_cost} credit{perk.metadata.credit_cost !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="text-xs text-gray-400 mt-2">
                       Items are fulfilled after campaign reaches its funding goal
@@ -409,7 +409,7 @@ export default function PerkDetailsModal({
                 className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
               >
                 {isCreditCampaignMetadata(perk.metadata) ? (
-                  `Commit ${formatCurrency(perk.metadata.credit_cost * 100)}`
+                  `Commit ${perk.metadata.credit_cost} Credit${perk.metadata.credit_cost !== 1 ? 's' : ''}`
                 ) : (
                   'Close Preview'
                 )}
