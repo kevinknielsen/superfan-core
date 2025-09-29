@@ -278,9 +278,9 @@ export default function UnlockRedemption({
           // Credit campaign fields
           credit_cost: reward.credit_cost,
           is_credit_campaign: reward.is_credit_campaign,
-          user_credit_balance: tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0
+          user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0
           // Note: cogs_cents excluded - sensitive commercial data
-        }));
+        }) as any);
         
         // Convert claimed rewards to redemption format
         const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: ClaimedReward) => ({
@@ -304,7 +304,7 @@ export default function UnlockRedemption({
         if (!isMounted || isMounted()) setRedemptions(convertedRedemptions);
         
         // Extract campaign data for parent component (support both tier campaigns and credit campaigns)
-        const campaignTier = convertedUnlocks.find((unlock: Unlock) => 
+        const campaignTier = convertedUnlocks.find((unlock: any) => 
           (unlock.is_campaign_tier || unlock.is_credit_campaign) && unlock.campaign_progress
         );
         
@@ -627,8 +627,8 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
-          const result = await response.json() as PurchaseResponse;
-          const url = result?.stripe_session_url;
+          const result = await response.json();
+          const url = (result as PurchaseResponse)?.stripe_session_url;
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
           }
@@ -643,8 +643,8 @@ export default function UnlockRedemption({
           
           window.location.href = url;
         } else {
-          const errorData = await response.json() as { error?: string };
-          throw new Error(errorData.error || 'Failed to start purchase');
+          const errorData = await response.json();
+          throw new Error((errorData as { error?: string }).error || 'Failed to start purchase');
         }
       } else {
         // Existing upgrade endpoint for backward compatibility
@@ -787,8 +787,8 @@ export default function UnlockRedemption({
                     {unlock.is_credit_campaign ? (
                       // Credit campaign display (1 credit = $1)
                       <div className="flex items-center justify-between">
-                        <span className="text-green-400">💵 {unlock.credit_cost} Credit{unlock.credit_cost > 1 ? 's' : ''}</span>
-                        {unlock.user_discount_eligible && unlock.user_discount_percentage > 0 && (
+                        <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>
+                        {unlock.user_discount_eligible && (unlock.user_discount_percentage || 0) > 0 && (
                           <span className="text-green-400 text-xs">{unlock.user_discount_percentage}% off</span>
                         )}
                       </div>
@@ -833,7 +833,7 @@ export default function UnlockRedemption({
                       } else if (unlock.is_credit_campaign) {
                         // Credit campaign logic (1 credit = $1)
                         const userCredits = (unlock as any).user_credit_balance || 0;
-                        if (userCredits >= unlock.credit_cost) {
+                        if (userCredits >= (unlock.credit_cost || 0)) {
                           // User has enough credits - handle redemption
                           handleCreditRedemption(unlock);
                         } else {

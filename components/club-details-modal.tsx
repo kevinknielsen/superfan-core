@@ -132,9 +132,9 @@ export default function ClubDetailsModal({
   }, [isOpen, autoOpenWallet, membership]);
 
   // Status calculations - use unified points data if available (now includes temporary boosts)
-  const currentStatus = breakdown?.status.current || membership?.current_status || 'cadet';
+  const currentStatus = (breakdown?.status.current || membership?.current_status || 'cadet') as ClubStatus;
   const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
-  const nextStatus = breakdown?.status.next_status || getNextStatus(currentStatus);
+  const nextStatus = (breakdown?.status.next_status || getNextStatus(currentStatus)) as ClubStatus | null;
   // Use unified points data if available, fallback to manual calculation
   const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
   const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
@@ -526,7 +526,7 @@ export default function ClubDetailsModal({
                 </div>
                 <div className="font-medium text-white">
                   {membership ? (
-                    <span className={STATUS_COLORS[currentStatus]}>
+                    <span className={STATUS_COLORS[currentStatus as ClubStatus]}>
                       {currentStatus.charAt(0).toUpperCase() + currentStatus.slice(1)}
                     </span>
                   ) : (
