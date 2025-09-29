@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate stable idempotency key
-    const idempotencyKey = `credit_purchase_${club_id}_${actualUserId}_${credit_amount}_${Date.now()}`;
+    const idempotencyKey = `credit_purchase_${club_id}_${actualUserId}_${credit_amount}`;
     
     // Create Stripe session for direct credit purchase
     const session = await stripe.checkout.sessions.create({
