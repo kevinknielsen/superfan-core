@@ -148,8 +148,9 @@ export async function POST(
       return NextResponse.json({ error: 'Final price too low - minimum $0.50 required' }, { status: 400 });
     }
     
-    // Generate stable idempotency key
-    const idempotencyKey = `tier_purchase_${tierRewardId}_${actualUserId}`;
+    // Generate unique idempotency key (include timestamp to avoid conflicts when pricing changes)
+    const timestamp = Date.now();
+    const idempotencyKey = `tier_purchase_${tierRewardId}_${actualUserId}_${timestamp}`;
     
     // Create Stripe session - charge discounted amount immediately
     const session = await stripe.checkout.sessions.create({
@@ -167,8 +168,8 @@ export async function POST(
         },
         quantity: 1
       }],
-      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/cancel`,
+      success_url: `${baseUrl}/dashboard?purchase_success=true&club_id=${tierReward.club_id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/dashboard?club_id=${tierReward.club_id}`,
       metadata: {
         type: isCreditCampaign ? 'credit_purchase' : 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,
