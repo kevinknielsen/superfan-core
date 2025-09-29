@@ -253,6 +253,21 @@ function StatusProgressSection({
 
 
 
+/**
+ * Render the Unified Points Wallet UI for a club, including balance display, credit purchase flow, and modals for spending and transferring points.
+ *
+ * Renders a wallet card with credits and status points, a three-option credit purchase grid that initiates a Stripe checkout, optional spend/transfer modals, loading and fallback states, and a Redeem action that calls `onCloseWallet`.
+ *
+ * @param clubId - The identifier of the club whose wallet is displayed.
+ * @param clubName - The display name of the club shown in the wallet header.
+ * @param showPurchaseOptions - When true, enables purchase-related UI (defaults to `false`).
+ * @param showTransferOptions - When true, enables transfer-related UI (defaults to `false`).
+ * @param className - Additional CSS class names applied to the top-level container.
+ * @param creditBalances - Map of campaign credit entries where each value contains `campaign_title` and `balance`; used to compute total campaign credits.
+ * @param onCloseWallet - Optional callback invoked when the wallet should be closed (for example when navigating to redeem items).
+ *
+ * @returns The React element tree for the unified points wallet UI.
+ */
 export default function UnifiedPointsWallet({ 
   clubId, 
   clubName, 

@@ -3,7 +3,15 @@ import { verifyUnifiedAuth } from "../../../auth";
 import { supabase } from "../../../supabase";
 import { stripe } from "@/lib/stripe";
 
-// Resilient base URL resolution
+/**
+ * Deterministically resolves the application's base URL for redirects and link generation.
+ *
+ * Prefers an explicit environment setting (BASE_URL or NEXT_PUBLIC_BASE_URL). If unset, returns
+ * a production-specific default (https://superfan.one) when NODE_ENV is 'production', uses a Vercel
+ * preview host when VERCEL_URL is present, and otherwise falls back to http://localhost:3000.
+ *
+ * @returns A base URL string selected from environment configuration or sensible defaults.
+ */
 function resolveBaseUrl() {
   // Prefer explicit BASE_URL for production
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
@@ -25,7 +33,25 @@ function resolveBaseUrl() {
 // Type assertion for enhanced tier rewards
 const supabaseAny = supabase as any;
 
-// Purchase a tier with instant discount
+/**
+ * Initiates a checkout flow for purchasing a tier reward: validates authentication, verifies user eligibility and duplicate claims, computes pricing (including tier discounts or credit-campaign pricing), enforces minimum price, and creates an idempotent Stripe Checkout session.
+ *
+ * @param request - Incoming Next.js request used for authentication and context
+ * @param params - Route parameters
+ * @param params.id - The tier reward id to purchase
+ * @returns On success, a JSON object containing:
+ *  - `stripe_session_url`: URL to complete Stripe Checkout
+ *  - `final_price_cents`: final charge amount in cents
+ *  - `discount_applied_cents`: discount amount applied in cents
+ *  - `discount_percentage`: discount percentage applied
+ *  - `original_price_cents`: original upgrade price in cents (or credit campaign price)
+ *  - `campaign_credit_cents`: campaign value in cents (equals original price cents)
+ *  - `is_credit_campaign`: `true` if this purchase is a credit campaign
+ *  - `credit_cost`: number of credits purchased (per campaign)
+ *  - `credits_purchased`: credits included in this purchase
+ *
+ * On failure, returns a JSON error object with an `error` message and an appropriate HTTP status code.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }

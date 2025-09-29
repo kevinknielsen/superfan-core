@@ -3,7 +3,11 @@ import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 import { stripe } from "@/lib/stripe";
 
-// Resilient base URL resolution
+/**
+ * Resolve the application's base URL based on environment configuration and deployment context.
+ *
+ * @returns The base URL to use: an explicit `BASE_URL`/`NEXT_PUBLIC_BASE_URL` if set; otherwise `https://superfan.one` when `NODE_ENV` is `production`; otherwise a Vercel preview URL `https://{VERCEL_URL}` if available; otherwise `http://localhost:3000`.
+ */
 function resolveBaseUrl() {
   // Prefer explicit BASE_URL for production
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
@@ -25,7 +29,14 @@ function resolveBaseUrl() {
 // Type assertion for enhanced features
 const supabaseAny = supabase as any;
 
-// Purchase credits directly
+/**
+ * Create a Stripe Checkout session to purchase credits for a club and return the session URL and purchase details.
+ *
+ * Validates the request body (club_id and credit_amount), ensures the requesting user and club exist, requires an active campaign
+ * for the club, enforces a minimum price, and creates an idempotent Stripe session with relevant metadata.
+ *
+ * @returns A JSON object containing `stripe_session_url`, `credit_amount`, `price_cents`, `price_dollars`, `campaign_id`, and `campaign_title` on success; on error returns a JSON object with an `error` message (and `details` for unexpected server errors) and an appropriate HTTP status code.
+ */
 export async function POST(request: NextRequest) {
   // Resolve base URL safely
   const baseUrl = resolveBaseUrl();
