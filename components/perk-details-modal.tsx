@@ -38,6 +38,7 @@ interface PerkDetailsModalProps {
     title: string;
     description: string;
     type: string;
+    reward_type?: string; // For determining delivery time
     rules?: {
       event_date?: string;
       location?: string;
@@ -318,9 +319,14 @@ export default function PerkDetailsModal({
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold text-white">Campaign Item Details</h3>
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3 text-gray-300">
-                      <DollarSign className="h-5 w-5 text-green-400" />
-                      <span>Costs {perk.metadata.credit_cost} credit{perk.metadata.credit_cost !== 1 ? 's' : ''}</span>
+                    <div className="text-gray-300">
+                      Costs {perk.metadata.credit_cost} credit{perk.metadata.credit_cost !== 1 ? 's' : ''}
+                    </div>
+                    <div className="flex justify-between items-center py-2">
+                      <span className="text-sm text-gray-400">Delivery</span>
+                      <span className="text-sm text-gray-300 font-medium">
+                        {perk.reward_type === 'digital_product' ? 'Immediate' : '2 months'}
+                      </span>
                     </div>
                     <div className="text-xs text-gray-400 mt-2">
                       Items are fulfilled after campaign reaches its funding goal

@@ -148,9 +148,9 @@ export async function POST(
       return NextResponse.json({ error: 'Final price too low - minimum $0.50 required' }, { status: 400 });
     }
     
-    // Generate unique idempotency key (include timestamp to avoid conflicts when pricing changes)
-    const timestamp = Date.now();
-    const idempotencyKey = `tier_purchase_${tierRewardId}_${actualUserId}_${timestamp}`;
+    // Generate stable idempotency key based on price to handle retries correctly
+    // Include price in key so pricing changes create new sessions, but retries reuse same session
+    const idempotencyKey = `tier_purchase_${tierRewardId}_${actualUserId}_${finalPriceCents}`;
     
     // Create Stripe session - charge discounted amount immediately
     const session = await stripe.checkout.sessions.create({

@@ -185,12 +185,17 @@ export default function UnlockRedemption({
   useEffect(() => {
     const ac = new AbortController();
     let mounted = true;
+    
     loadData(ac.signal, () => mounted).catch((error: unknown) => {
       if (error instanceof Error && error.name !== 'AbortError') {
         console.error('Error loading data:', error);
       }
     });
-    return () => { mounted = false; ac.abort(); };
+    
+    return () => { 
+      mounted = false; 
+      ac.abort(); 
+    };
   }, [clubId]);
 
   // Credit balances effect - always declare, but conditionally execute
@@ -309,20 +314,18 @@ export default function UnlockRedemption({
         );
         
         // Defer campaign data update to avoid setState during render
-        if (campaignTier && onCampaignDataChange) {
+        if (campaignTier && onCampaignDataChange && campaignTier.campaign_progress) {
           queueMicrotask(() => {
-            onCampaignDataChange({
-              campaign_id: campaignTier.campaign_id,
-              campaign_title: campaignTier.campaign_title,
-              campaign_description: campaignTier.campaign_description,
-              campaign_status: campaignTier.campaign_status,
-              campaign_progress: {
-                funding_percentage: campaignTier.campaign_progress?.funding_percentage || 0,
-                seconds_remaining: campaignTier.campaign_progress?.seconds_remaining || 0,
-                current_funding_cents: campaignTier.campaign_progress?.current_funding_cents || 0,
-                goal_funding_cents: campaignTier.campaign_progress?.goal_funding_cents || 0
-              }
-            });
+            // Check if still mounted before updating state
+            if (isMounted && isMounted()) {
+              onCampaignDataChange({
+                campaign_id: campaignTier.campaign_id,
+                campaign_title: campaignTier.campaign_title,
+                campaign_description: campaignTier.campaign_description,
+                campaign_status: campaignTier.campaign_status,
+                campaign_progress: campaignTier.campaign_progress
+              });
+            }
           });
         }
       } else {
@@ -535,10 +538,11 @@ export default function UnlockRedemption({
 
   // Handle credit redemption for campaign items (1 credit = $1)
   const handleCreditRedemption = async (unlock: Unlock) => {
-    // Double-submit protection: return early if already processing
+    // Double-submit protection: check and set flag atomically
     if (isRedeeming) {
       return;
     }
+    setIsRedeeming(true);
 
     try {
       // Input validation
@@ -556,8 +560,6 @@ export default function UnlockRedemption({
       if (!accessToken) {
         throw new Error('User not authenticated');
       }
-
-      setIsRedeeming(true);
 
       // Redeem credits for the item using validated integer value
       const response = await fetch(`/api/campaigns/${unlock.campaign_id}/items/${unlock.id}/redeem`, {
@@ -991,22 +993,18 @@ export default function UnlockRedemption({
                 Cancel
               </Button>
               <Button
-                onClick={() => handleRedeem(selectedUnlock)}
+                onClick={() => {
+                  // Credit campaigns use purchase flow, regular tiers use redeem flow
+                  if (selectedUnlock.is_credit_campaign) {
+                    handleUpgradePurchase(selectedUnlock);
+                  } else {
+                    handleRedeem(selectedUnlock);
+                  }
+                }}
                 disabled={isRedeeming || !isUnlockAvailable(selectedUnlock)}
                 className="min-w-[140px] sm:w-auto w-full"
               >
-                {isRedeeming ? 'Processing...' : 
-                 (() => {
-                   // Credit campaigns: 1 credit = $1
-                   if (selectedUnlock.is_credit_campaign) {
-                     const creditCost = selectedUnlock.credit_cost || 0;
-                     return `Proceed to Checkout`;
-                   }
-                   
-                   // Regular tier rewards
-                   return 'Proceed to Checkout';
-                 })()
-                }
+                {isRedeeming ? 'Processing...' : 'Proceed to Checkout'}
               </Button>
             </div>
           </DialogContent>

@@ -222,8 +222,10 @@ export default function Dashboard() {
     
     // Handle campaign purchase success (credit purchases)
     if (clubParam && isCampaignPurchaseSuccess) {
+      console.log('[Dashboard] Campaign purchase success detected!', { clubParam });
       const club = allClubs.find(c => c.id === clubParam);
       if (club) {
+        console.log('[Dashboard] Opening club modal and wallet for:', club.name);
         setSelectedClubId(clubParam);
         setAutoOpenWallet(true); // Auto-open wallet to show new credits
         

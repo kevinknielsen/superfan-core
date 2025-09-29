@@ -280,8 +280,13 @@ export default function UnifiedPointsWallet({
     totalBalance
   } = useUnifiedPoints(clubId);
 
-
   const { getStatusInfo } = useStatusInfo();
+  
+  // Calculate total campaign credits (memoized for performance) - MUST be before early returns
+  const totalCampaignCredits = useMemo(
+    () => Object.values(creditBalances).reduce((sum, d) => sum + d.balance, 0),
+    [creditBalances]
+  );
 
   // Handle status boost flow - redirect to tier rewards system
   const handleBuyPoints = async () => {
@@ -409,12 +414,6 @@ export default function UnifiedPointsWallet({
   const effectiveEarnedPoints = status?.has_active_boost
     ? (wallet?.status_points ?? 0) // Use status points when boosted
     : (wallet?.earned_points ?? 0); // Use actual earned points when not boosted
-
-  // Calculate total campaign credits (memoized for performance)
-  const totalCampaignCredits = useMemo(
-    () => Object.values(creditBalances).reduce((sum, d) => sum + d.balance, 0),
-    [creditBalances]
-  );
 
   return (
     <>

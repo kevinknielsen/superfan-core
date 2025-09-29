@@ -124,7 +124,9 @@ export default function ClubDetailsModal({
   // Auto-open wallet after successful purchase
   useEffect(() => {
     if (isOpen && autoOpenWallet && membership) {
+      console.log('[ClubDetailsModal] Auto-opening wallet after purchase');
       const timer = setTimeout(() => {
+        console.log('[ClubDetailsModal] Opening wallet overlay now');
         setShowPurchaseOverlay(true);
       }, 800); // Wait for modal animation
       return () => clearTimeout(timer);
