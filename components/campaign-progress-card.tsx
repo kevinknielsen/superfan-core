@@ -14,6 +14,15 @@ interface CampaignProgressCardProps {
   clubId?: string;
 }
 
+/**
+ * Renders a campaign progress card showing current funding, goal status, and an animated progress bar.
+ *
+ * When `clubId` is provided the card also displays credit purchase controls that can start a checkout flow.
+ *
+ * @param campaignData - Campaign data used to compute funding percentage, formatted amounts, and progress state.
+ * @param clubId - Optional club identifier; when present enables the credit purchase UI and is included in purchase requests.
+ * @returns The campaign progress card React element.
+ */
 export function CampaignProgressCard({ campaignData, clubId }: CampaignProgressCardProps) {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const { toast } = useToast();

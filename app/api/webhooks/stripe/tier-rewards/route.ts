@@ -142,7 +142,14 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
   }
 }
 
-// Process campaign tier purchases (new for campaigns MVP)
+/**
+ * Process a Stripe Checkout Session for a campaign tier or direct credit purchase, create the corresponding reward claim, and update campaign progress/status as applicable.
+ *
+ * Creates a new `reward_claims` row (idempotently), grants or pending access based on purchase type, and updates campaign funding/ticket progress and campaign status when relevant.
+ *
+ * @param session - The Stripe Checkout Session produced by Checkout; expected to include metadata fields such as `user_id`, `campaign_id`, `tier_reward_id`, pricing fields (`price_cents`, `final_price_cents`, `original_price_cents`), purchase type indicators (`type`, `is_credit_campaign`, `credit_amount`, `credits_purchased`, `tickets_purchased`), and `idempotency_key`.
+ * @returns An object with `success: true` when processing completed (or was already processed). On failure returns `success: false` and an `error` string describing the failure.
+ */
 async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Promise<{ success: boolean; error?: string }> {
   try {
     console.log(`[Tier Rewards Webhook] Processing campaign tier purchase: ${session.id}`);
@@ -444,7 +451,14 @@ async function processCampaignFailureRefunds(campaignId: string): Promise<{ succ
   }
 }
 
-// Process checkout.session.completed events (enhanced for campaigns)
+/**
+ * Handle a Stripe `checkout.session.completed` event by routing campaign or direct-credit purchases to the campaign processor or finalizing a tier upgrade transaction for the session.
+ *
+ * Processes campaign-related sessions (campaign_tier_purchase or direct_credit_purchase) via the campaign handler; for other sessions it ensures a payment intent exists, verifies the session amount against the stored upgrade transaction, updates the transaction with the payment intent if needed, and invokes the database RPC to complete the upgrade.
+ *
+ * @param event - The Stripe event object for a `checkout.session.completed` webhook
+ * @returns `true` if the session was processed successfully, `false` otherwise. When `false`, `error` contains a human-readable failure message. 
+ */
 async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ success: boolean; error?: string }> {
   try {
     const session = event.data.object as Stripe.Checkout.Session;

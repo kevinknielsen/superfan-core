@@ -71,6 +71,17 @@ function renderClubImages(club: Club) {
   );
 }
 
+/**
+ * Render a detailed club modal including club info, store perks, status progression, wallet interactions, and perk details.
+ *
+ * @param club - Club data to display (profile, images, description, metadata).
+ * @param membership - Optional membership record to derive status and points; if omitted the component will attempt to use the authenticated user's membership.
+ * @param onClose - Callback invoked to close the modal.
+ * @param isOpen - Whether the modal is currently open.
+ * @param scrollToRewards - If true, scrolls the view to the rewards section after opening when a membership exists.
+ * @param autoOpenWallet - If true and a membership exists, automatically opens the wallet overlay shortly after the modal opens.
+ * @returns The modal element when `isOpen` is true, otherwise `null`.
+ */
 export default function ClubDetailsModal({
   club,
   membership: propMembership,
