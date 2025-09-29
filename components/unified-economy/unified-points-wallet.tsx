@@ -34,6 +34,7 @@ interface UnifiedPointsWalletProps {
   showTransferOptions?: boolean;
   className?: string;
   creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
+  onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
 }
 
 // Enhanced status icons mapping
@@ -258,7 +259,8 @@ export default function UnifiedPointsWallet({
   showPurchaseOptions = false,
   showTransferOptions = false,
   className = "",
-  creditBalances = {}
+  creditBalances = {},
+  onCloseWallet
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -408,8 +410,11 @@ export default function UnifiedPointsWallet({
     ? (wallet?.status_points ?? 0) // Use status points when boosted
     : (wallet?.earned_points ?? 0); // Use actual earned points when not boosted
 
-  // Calculate total campaign credits
-  const totalCampaignCredits = Object.values(creditBalances).reduce((sum, data) => sum + data.balance, 0);
+  // Calculate total campaign credits (memoized for performance)
+  const totalCampaignCredits = useMemo(
+    () => Object.values(creditBalances).reduce((sum, d) => sum + d.balance, 0),
+    [creditBalances]
+  );
 
   return (
     <>
@@ -483,6 +488,15 @@ export default function UnifiedPointsWallet({
                   variant="outline" 
                   className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
                   disabled={totalCampaignCredits === 0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Close wallet and scroll to campaign items to redeem
+                    onCloseWallet?.();
+                    toast({
+                      title: "View Campaign Items",
+                      description: "Scroll to the Store section to redeem your credits",
+                    });
+                  }}
                 >
                   <Gift className="w-4 h-4 mr-2" />
                   Redeem

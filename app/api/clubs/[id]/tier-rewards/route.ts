@@ -359,7 +359,7 @@ export async function GET(
         // Credit campaign fields (1 credit = $1)
         credit_cost: reward.ticket_cost, // Map DB field to credit_cost for frontend
         is_credit_campaign: reward.is_ticket_campaign, // Map DB field
-        cogs_cents: reward.cogs_cents,
+        // Note: cogs_cents excluded - sensitive commercial data
         
         // Club information (for modals)
         clubs: reward.clubs,

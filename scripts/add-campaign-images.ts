@@ -6,9 +6,13 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
+
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('Missing SUPABASE env vars. Check .env.local');
+}
 
 // ============================================================================
 // UPDATE THESE URLS AFTER UPLOADING TO SUPABASE STORAGE
@@ -30,23 +34,35 @@ async function addImages() {
   console.log('📸 Adding images to campaign items...\n');
   
   for (const [title, imageData] of Object.entries(ITEM_IMAGES)) {
-    const { data, error } = await supabase
+    // Find all items with this title (titles may not be unique)
+    const { data: items, error: fetchErr } = await supabase
       .from('tier_rewards')
-      .update({
-        metadata: {
-          image_url: imageData.image_url,
-          image_alt: imageData.image_alt
-        }
-      })
-      .eq('title', title)
       .select('id, title')
-      .single();
+      .eq('title', title);
       
-    if (error) {
-      console.log(`❌ ${title}:`, error.message);
-    } else {
-      console.log(`✅ ${title}: Image added`);
-      console.log(`   ${imageData.image_url.substring(0, 80)}...`);
+    if (fetchErr) {
+      console.log(`❌ ${title}:`, fetchErr.message);
+      continue;
+    }
+    
+    if (!items || items.length === 0) {
+      console.log(`⚠️  ${title}: no matching items found`);
+      continue;
+    }
+    
+    for (const item of items) {
+      const { error: rpcErr } = await supabase.rpc('update_campaign_item_image', {
+        p_item_id: item.id,
+        p_image_url: imageData.image_url,
+        p_image_alt: imageData.image_alt,
+      });
+      
+      if (rpcErr) {
+        console.log(`❌ ${title} (${item.id}):`, rpcErr.message);
+      } else {
+        console.log(`✅ ${title} (${item.id}): Image added`);
+        console.log(`   ${imageData.image_url.substring(0, 80)}...`);
+      }
     }
   }
   

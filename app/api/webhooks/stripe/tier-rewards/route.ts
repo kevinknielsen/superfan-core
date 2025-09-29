@@ -176,10 +176,14 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       return normalized === 'true' || normalized === '1' || normalized === 'yes';
     };
 
-    // NEW: Detect ticket campaign purchase with robust parsing
+    // Detect credit/ticket campaign purchase with robust parsing
     const normalizedType = metadata.type?.trim().toLowerCase();
-    const isTicketPurchase = normalizedType === 'ticket_purchase' || toBool(metadata.is_ticket_campaign);
-    const ticketsPurchased = isTicketPurchase ? Math.max(0, toInt(metadata.tickets_purchased)) : 0;
+    const isCreditPurchase =
+      normalizedType === 'credit_purchase' || toBool(metadata.is_credit_campaign);
+    // Back-compat: accept both credits_purchased and tickets_purchased
+    const unitsPurchased = isCreditPurchase
+      ? Math.max(0, toInt(metadata.credits_purchased) || toInt(metadata.tickets_purchased))
+      : 0;
     
     // Generate secure access code using crypto
     const generateAccessCode = (): string => {
@@ -191,7 +195,7 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       user_id: metadata.user_id,
       reward_id: metadata.tier_reward_id,
       campaign_id: metadata.campaign_id || null,
-      claim_method: isTicketPurchase ? 'ticket_purchase' : 'upgrade_purchased',
+      claim_method: isCreditPurchase ? 'ticket_purchase' : 'upgrade_purchased',
       user_tier_at_claim: metadata.user_tier,
       user_points_at_claim: 0, // TODO: Get actual points if needed
       original_price_cents: toInt(metadata.original_price_cents),
@@ -199,13 +203,14 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       discount_applied_cents: toInt(metadata.discount_cents),
       stripe_payment_intent_id: session.payment_intent as string,
       refund_status: 'none',
-      access_status: 'granted', // Use standard DB-allowed status for both types
+      // Gate access until campaign is funded for credit/ticket purchases
+      access_status: isCreditPurchase ? 'pending' : 'granted',
       access_code: generateAccessCode(),
       claimed_at: new Date().toISOString(),
-      // NEW: Ticket tracking fields
-      is_ticket_claim: isTicketPurchase,
-      tickets_purchased: ticketsPurchased,
-      tickets_available: ticketsPurchased, // Initially all tickets are available
+      // Credit/ticket tracking fields (1 credit = $1)
+      is_ticket_claim: isCreditPurchase,
+      tickets_purchased: unitsPurchased, // DB uses tickets_purchased for credits too
+      tickets_available: unitsPurchased, // Initially all available
       tickets_redeemed: 0
     });
     
@@ -228,14 +233,14 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       } else {
         console.log(`[Tier Rewards Webhook] Updated campaign ${metadata.campaign_id} progress by $${toInt(metadata.campaign_credit_cents)/100}`);
         
-        // NEW: Also update campaigns table if this is a ticket campaign using atomic RPC
-        if (isTicketPurchase) {
+        // Also update campaigns table if this is a credit campaign using atomic RPC
+        if (isCreditPurchase) {
           const { error: campaignUpdateError } = await supabaseAny
             .rpc('increment_campaigns_ticket_progress', {
               p_campaign_id: metadata.campaign_id,
               p_increment_current_funding_cents: toInt(metadata.campaign_credit_cents),
               p_increment_stripe_received_cents: toInt(metadata.final_price_cents),
-              p_increment_total_tickets_sold: ticketsPurchased
+              p_increment_total_tickets_sold: unitsPurchased
             });
             
           if (campaignUpdateError) {

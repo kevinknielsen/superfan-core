@@ -1,6 +1,7 @@
 export interface CampaignData {
   campaign_id: string;
   campaign_title: string;
+  campaign_description?: string;
   campaign_status: string;
   campaign_progress: {
     funding_percentage: number;
@@ -45,10 +46,13 @@ export interface TierReward {
     city?: string | null;
     image_url?: string | null;
   };
-  // NEW: Ticket campaign fields
+  // Credit campaign fields (1 credit = $1)
+  credit_cost?: number;
+  is_credit_campaign?: boolean;
+  /** @deprecated DB field - use credit_cost for clarity */
   ticket_cost?: number;
+  /** @deprecated DB field - use is_credit_campaign for clarity */
   is_ticket_campaign?: boolean;
-  cogs_cents?: number;
 }
 
 export interface ClaimOption {
@@ -69,7 +73,9 @@ export interface ClaimedReward {
 export interface TierRewardsResponse {
   available_rewards: TierReward[];
   claimed_rewards: ClaimedReward[];
-  // NEW: User's ticket balances by campaign
+  // User's credit balances by campaign (1 credit = $1)
+  user_credit_balances?: Record<string, number>;
+  /** @deprecated Use user_credit_balances */
   user_ticket_balances?: Record<string, number>;
 }
 
@@ -78,8 +84,14 @@ export interface PurchaseResponse {
   final_price_cents: number;
   discount_applied_cents: number;
   discount_percentage: number;
-  // NEW: Ticket campaign fields
+  // Credit campaign fields (1 credit = $1)
+  is_credit_campaign?: boolean;
+  credit_cost?: number;
+  credits_purchased?: number;
+  /** @deprecated Use is_credit_campaign */
   is_ticket_campaign?: boolean;
+  /** @deprecated Use credit_cost */
   ticket_cost?: number;
+  /** @deprecated Use credits_purchased */
   tickets_purchased?: number;
 }

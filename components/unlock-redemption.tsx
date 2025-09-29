@@ -185,8 +185,8 @@ export default function UnlockRedemption({
   useEffect(() => {
     const ac = new AbortController();
     let mounted = true;
-    loadData(ac.signal, () => mounted).catch((error) => {
-      if (error.name !== 'AbortError') {
+    loadData(ac.signal, () => mounted).catch((error: unknown) => {
+      if (error instanceof Error && error.name !== 'AbortError') {
         console.error('Error loading data:', error);
       }
     });
@@ -198,15 +198,12 @@ export default function UnlockRedemption({
     if (!onCreditBalancesChange) return;
     
     const creditBalances = unlocks
-      .filter(unlock => unlock.is_credit_campaign && unlock.campaign_id)
-      .reduce((balances, unlock) => {
-        const campaignId = unlock.campaign_id!;
-        if (!balances[campaignId]) {
-          balances[campaignId] = {
-            campaign_title: unlock.campaign_title || 'Campaign',
-            balance: unlock.user_credit_balance || 0
-          };
-        }
+      .filter(u => u.is_credit_campaign && u.campaign_id)
+      .reduce((balances, u) => {
+        const id = u.campaign_id!;
+        const title = balances[id]?.campaign_title || u.campaign_title || 'Campaign';
+        const balance = Math.max(balances[id]?.balance ?? 0, u.user_credit_balance ?? 0);
+        balances[id] = { campaign_title: title, balance };
         return balances;
       }, {} as Record<string, { campaign_title: string; balance: number }>);
     
@@ -246,8 +243,8 @@ export default function UnlockRedemption({
             redemption_instructions: reward.metadata?.instructions,
             // Add credit campaign metadata for perk-details-modal
             is_credit_campaign: reward.is_credit_campaign,
-            credit_cost: reward.credit_cost,
-            cogs_cents: reward.cogs_cents
+            credit_cost: reward.credit_cost
+            // Note: cogs_cents excluded - sensitive commercial data
           },
           
           // Enhanced with campaign and discount fields
@@ -281,8 +278,8 @@ export default function UnlockRedemption({
           // Credit campaign fields
           credit_cost: reward.credit_cost,
           is_credit_campaign: reward.is_credit_campaign,
-          cogs_cents: reward.cogs_cents,
           user_credit_balance: tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0
+          // Note: cogs_cents excluded - sensitive commercial data
         }));
         
         // Convert claimed rewards to redemption format
@@ -1009,7 +1006,7 @@ export default function UnlockRedemption({
               </Button>
               <Button
                 onClick={() => handleRedeem(selectedUnlock)}
-                disabled={!isUnlockAvailable(selectedUnlock) || isRedeeming}
+                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock)}
                 className="min-w-[140px] sm:w-auto w-full"
               >
                 {isRedeeming ? 'Processing...' : 

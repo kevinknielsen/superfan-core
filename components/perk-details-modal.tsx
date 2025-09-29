@@ -201,12 +201,12 @@ export default function PerkDetailsModal({
             <div className="p-6 space-y-6">
               {/* Item Image Display */}
               <div className="relative aspect-square rounded-3xl overflow-hidden bg-gradient-to-br from-blue-500 to-teal-400">
-                {(perk.metadata as any)?.image_url ? (
+                {perk.metadata?.image_url ? (
                   // Display campaign item image
                   <>
                     <img 
-                      src={(perk.metadata as any).image_url}
-                      alt={(perk.metadata as any)?.image_alt || perk.title}
+                      src={perk.metadata.image_url}
+                      alt={perk.metadata.image_alt || perk.title}
                       className="w-full h-full object-cover"
                     />
                     {/* Dark overlay for text readability */}
@@ -409,7 +409,7 @@ export default function PerkDetailsModal({
                 className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
               >
                 {isCreditCampaignMetadata(perk.metadata) ? (
-                  `Commit $${perk.metadata.credit_cost}`
+                  `Commit ${formatCurrency(perk.metadata.credit_cost * 100)}`
                 ) : (
                   'Close Preview'
                 )}

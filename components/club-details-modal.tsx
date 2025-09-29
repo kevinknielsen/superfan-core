@@ -42,6 +42,7 @@ interface ClubDetailsModalProps {
   onClose: () => void;
   isOpen: boolean;
   scrollToRewards?: boolean;
+  autoOpenWallet?: boolean;
 }
 
 // Status icon mapping
@@ -76,6 +77,7 @@ export default function ClubDetailsModal({
   onClose,
   isOpen,
   scrollToRewards = false,
+  autoOpenWallet = false,
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { toast } = useToast();
@@ -119,6 +121,16 @@ export default function ClubDetailsModal({
     setCampaignData(null); 
   }, [club.id]);
 
+  // Auto-open wallet after successful purchase
+  useEffect(() => {
+    if (isOpen && autoOpenWallet && membership) {
+      const timer = setTimeout(() => {
+        setShowPurchaseOverlay(true);
+      }, 800); // Wait for modal animation
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, autoOpenWallet, membership]);
+
   // Status calculations - use unified points data if available (now includes temporary boosts)
   const currentStatus = breakdown?.status.current || membership?.current_status || 'cadet';
   const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
@@ -128,7 +140,7 @@ export default function ClubDetailsModal({
   const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
 
   
-  const StatusIcon = STATUS_ICONS[currentStatus];
+  const StatusIcon = STATUS_ICONS[currentStatus as keyof typeof STATUS_ICONS] ?? Users;
 
 
   const handleJoinClub = async () => {
@@ -326,21 +338,25 @@ export default function ClubDetailsModal({
                 if (!club) return;
                 const url = `${window.location.origin}/clubs/${club.id}`;
                 try {
-                  await navigator.clipboard.writeText(url);
-                  toast({
-                    title: "Link copied!",
-                    description: "Share this club with others.",
-                  });
+                  if (navigator.share) {
+                    await navigator.share({ url, title: club.name });
+                  } else {
+                    await navigator.clipboard.writeText(url);
+                    toast({
+                      title: "Link copied!",
+                      description: "Share this club with others.",
+                    });
+                  }
                 } catch (err) {
+                  // User cancel or api failure; provide gentle fallback message only on clipboard failure
                   toast({
                     variant: "destructive",
-                    title: "Failed to copy",
-                    description:
-                      "Your browser blocked clipboard access. You can still copy the URL from the address bar.",
+                    title: "Could not share",
+                    description: "Try again or copy the URL from the address bar.",
                   });
                 }
               }}
-              title="Copy shareable link"
+              title="Share club link"
             >
               <Share2 className="h-5 w-5" />
             </button>
@@ -594,11 +610,8 @@ export default function ClubDetailsModal({
           <div 
             key="purchase-overlay"
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            setShowPurchaseOverlay(false); 
-          }}
-        >
+            onClick={() => setShowPurchaseOverlay(false)}
+          >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -621,6 +634,13 @@ export default function ClubDetailsModal({
                 showPurchaseOptions={true}
                 showTransferOptions={false}
                 creditBalances={creditBalances}
+                onCloseWallet={() => {
+                  setShowPurchaseOverlay(false);
+                  // Scroll to campaign items
+                  setTimeout(() => {
+                    rewardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 300);
+                }}
               />
             </div>
           </motion.div>
