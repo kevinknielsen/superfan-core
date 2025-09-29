@@ -106,30 +106,42 @@ export async function POST(
       return NextResponse.json({ error: 'You have already claimed this tier' }, { status: 400 });
     }
 
-    // Validate upgrade_price_cents is valid
-    const upgradePriceCents = Number(tierReward.upgrade_price_cents);
-    if (!upgradePriceCents || upgradePriceCents <= 0 || !isFinite(upgradePriceCents)) {
-      return NextResponse.json({ error: 'Invalid tier pricing - upgrade price not set' }, { status: 400 });
-    }
-
-    // NEW: Detect if this is a ticket campaign purchase
-    const isTicketCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
+    // Detect if this is a credit campaign purchase (1 credit = $1 = 100 cents)
+    const isCreditCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
     
-    // Validate ticket_cost for ticket campaigns
-    let ticketCost = 0;
-    if (isTicketCampaign) {
+    // Calculate pricing based on campaign type
+    let upgradePriceCents: number;
+    let discountPercentage = 0;
+    let discountCents = 0;
+    let finalPriceCents: number;
+    let creditCost = 0;
+    
+    if (isCreditCampaign) {
+      // Validate credit_cost for credit campaigns
       if (!tierReward.ticket_cost || !Number.isInteger(tierReward.ticket_cost) || tierReward.ticket_cost <= 0) {
         return NextResponse.json({ 
-          error: 'Invalid ticket campaign: ticket_cost must be a positive integer' 
+          error: 'Invalid credit campaign: credit_cost must be a positive integer' 
         }, { status: 400 });
       }
-      ticketCost = tierReward.ticket_cost;
+      creditCost = tierReward.ticket_cost; // DB field ticket_cost maps to credit_cost
+      
+      // Credit campaign pricing: 1 credit = $1 = 100 cents (no discounts)
+      upgradePriceCents = creditCost * 100; // e.g., 9 credits = 900 cents = $9.00
+      discountPercentage = 0;
+      discountCents = 0;
+      finalPriceCents = upgradePriceCents;
+    } else {
+      // Regular tier reward pricing with discounts
+      upgradePriceCents = Number(tierReward.upgrade_price_cents);
+      if (!upgradePriceCents || upgradePriceCents <= 0 || !isFinite(upgradePriceCents)) {
+        return NextResponse.json({ error: 'Invalid tier pricing - upgrade price not set' }, { status: 400 });
+      }
+      
+      // Calculate percentage-based discount
+      discountPercentage = getDiscountPercentage(userTier, tierReward);
+      discountCents = Math.round(upgradePriceCents * discountPercentage / 100);
+      finalPriceCents = Math.max(0, upgradePriceCents - discountCents);
     }
-    
-    // Calculate percentage-based discount
-    const discountPercentage = getDiscountPercentage(userTier, tierReward);
-    const discountCents = Math.round(upgradePriceCents * discountPercentage / 100);
-    const finalPriceCents = Math.max(0, upgradePriceCents - discountCents);
     
     // Validate final price meets Stripe minimum (50 cents)
     if (finalPriceCents < 50) {
@@ -158,21 +170,21 @@ export async function POST(
       success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/cancel`,
       metadata: {
-        type: isTicketCampaign ? 'ticket_purchase' : 'campaign_tier_purchase',
+        type: isCreditCampaign ? 'credit_purchase' : 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,
         campaign_id: tierReward.campaign_id || '',
         user_id: actualUserId,
         user_tier: userTier,
-        original_price_cents: tierReward.upgrade_price_cents.toString(),
+        original_price_cents: upgradePriceCents.toString(),
         discount_cents: discountCents.toString(),
         final_price_cents: finalPriceCents.toString(),
-        campaign_credit_cents: tierReward.upgrade_price_cents.toString(), // Campaign gets full value
+        campaign_credit_cents: upgradePriceCents.toString(), // Campaign gets full value
         idempotency_key: idempotencyKey,
         club_name: tierReward.clubs.name,
-        // NEW: Ticket campaign metadata
-        is_ticket_campaign: isTicketCampaign.toString(),
-        ticket_cost: ticketCost.toString(),
-        tickets_purchased: isTicketCampaign ? ticketCost.toString() : '0'
+        // Credit campaign metadata (1 credit = $1)
+        is_credit_campaign: isCreditCampaign.toString(),
+        credit_cost: creditCost.toString(),
+        credits_purchased: isCreditCampaign ? creditCost.toString() : '0'
       }
     }, {
       idempotencyKey // Pass to Stripe for true idempotency
@@ -183,12 +195,12 @@ export async function POST(
       final_price_cents: finalPriceCents,
       discount_applied_cents: discountCents,
       discount_percentage: discountPercentage,
-      original_price_cents: tierReward.upgrade_price_cents,
-      campaign_credit_cents: tierReward.upgrade_price_cents,
-      // NEW: Ticket campaign information
-      is_ticket_campaign: isTicketCampaign,
-      ticket_cost: ticketCost,
-      tickets_purchased: isTicketCampaign ? ticketCost : 0
+      original_price_cents: upgradePriceCents,
+      campaign_credit_cents: upgradePriceCents,
+      // Credit campaign information (1 credit = $1)
+      is_credit_campaign: isCreditCampaign,
+      credit_cost: creditCost,
+      credits_purchased: isCreditCampaign ? creditCost : 0
     });
 
   } catch (error) {

@@ -43,6 +43,7 @@ export interface TierReward {
     name: string;
     description?: string | null;
     city?: string | null;
+    image_url?: string | null;
   };
   // NEW: Ticket campaign fields
   ticket_cost?: number;

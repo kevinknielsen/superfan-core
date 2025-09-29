@@ -2,25 +2,23 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { Ticket, Info } from "lucide-react";
+import { DollarSign, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency } from "@/lib/points";
 
-interface TicketBalanceProps {
+interface CreditBalanceProps {
   campaignTitle: string;
-  ticketBalance: number;
-  ticketPrice: number; // Price per ticket in cents
+  creditBalance: number; // 1 credit = $1
   className?: string;
 }
 
-export default function TicketBalance({ 
+export default function CreditBalance({ 
   campaignTitle, 
-  ticketBalance, 
-  ticketPrice,
+  creditBalance,
   className = ""
-}: TicketBalanceProps) {
-  const ticketValue = ticketBalance * ticketPrice;
+}: CreditBalanceProps) {
+  // 1 credit = $1, so value is just the balance
+  const creditValue = creditBalance;
 
   return (
     <motion.div 
@@ -29,11 +27,11 @@ export default function TicketBalance({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <Card className="bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-800">
+      <Card className="bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
-            <Ticket className="h-5 w-5" />
-            <span>Your Tickets</span>
+          <CardTitle className="flex items-center gap-2 text-green-900 dark:text-green-100">
+            <DollarSign className="h-5 w-5" />
+            <span>Your Credits</span>
             <Badge variant="secondary" className="ml-auto">
               {campaignTitle}
             </Badge>
@@ -42,20 +40,20 @@ export default function TicketBalance({
         <CardContent className="pt-0">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {ticketBalance} Ticket{ticketBalance !== 1 ? 's' : ''}
+              <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                {creditBalance} Credit{creditBalance !== 1 ? 's' : ''}
               </div>
-              <div className="text-sm text-blue-700 dark:text-blue-300">
-                Campaign value: {formatCurrency(ticketValue)}
+              <div className="text-sm text-green-700 dark:text-green-300">
+                = ${creditValue}.00 campaign value
               </div>
             </div>
             
-            {ticketBalance > 0 && (
+            {creditBalance > 0 && (
               <div className="text-right">
-                <div className="text-xs text-blue-600 dark:text-blue-400 mb-1">
+                <div className="text-xs text-green-600 dark:text-green-400 mb-1">
                   Available for redemption
                 </div>
-                <div className="flex items-center gap-1 text-xs text-blue-700 dark:text-blue-300">
+                <div className="flex items-center gap-1 text-xs text-green-700 dark:text-green-300">
                   <Info className="h-3 w-3" />
                   <span>Click items to redeem</span>
                 </div>
@@ -63,9 +61,9 @@ export default function TicketBalance({
             )}
           </div>
           
-          {ticketBalance === 0 && (
-            <div className="text-xs text-blue-600 dark:text-blue-400 mt-2 text-center">
-              Purchase tickets to redeem campaign items
+          {creditBalance === 0 && (
+            <div className="text-xs text-green-600 dark:text-green-400 mt-2 text-center">
+              Purchase credits to redeem campaign items
             </div>
           )}
         </CardContent>

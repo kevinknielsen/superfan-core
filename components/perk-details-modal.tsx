@@ -2,29 +2,33 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, Ticket } from "lucide-react";
+import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/points";
 
 // TypeScript interfaces for perk metadata
-interface TicketCampaignMetadata {
-  is_ticket_campaign: true;
-  ticket_cost: number;
-  upgrade_price_cents?: number;
+interface CreditCampaignMetadata {
+  is_credit_campaign: true;
+  credit_cost: number; // 1 credit = $1
   cogs_cents?: number;
-}
-
-interface RegularPerkMetadata {
-  is_ticket_campaign?: false;
+  image_url?: string;
+  image_alt?: string;
   [key: string]: unknown;
 }
 
-type PerkMetadata = TicketCampaignMetadata | RegularPerkMetadata;
+interface RegularPerkMetadata {
+  is_credit_campaign?: false;
+  image_url?: string;
+  image_alt?: string;
+  [key: string]: unknown;
+}
+
+type PerkMetadata = CreditCampaignMetadata | RegularPerkMetadata;
 
 // Type guard functions for safe metadata access
-function isTicketCampaignMetadata(metadata: PerkMetadata | undefined): metadata is TicketCampaignMetadata {
-  return !!metadata && metadata.is_ticket_campaign === true && typeof metadata.ticket_cost === 'number';
+function isCreditCampaignMetadata(metadata: PerkMetadata | undefined): metadata is CreditCampaignMetadata {
+  return !!metadata && metadata.is_credit_campaign === true && typeof metadata.credit_cost === 'number';
 }
 
 interface PerkDetailsModalProps {
@@ -43,6 +47,11 @@ interface PerkDetailsModalProps {
       external_link?: string;
     };
     metadata?: PerkMetadata;
+    club_info?: {
+      id: string;
+      name: string;
+      image_url?: string | null;
+    };
   } | null;
   redemption: {
     id: string;
@@ -54,6 +63,7 @@ interface PerkDetailsModalProps {
     } & Record<string, unknown>;
   } | null;
   clubName: string;
+  onPurchase?: () => void;
 }
 
 export default function PerkDetailsModal({
@@ -62,6 +72,7 @@ export default function PerkDetailsModal({
   perk,
   redemption,
   clubName,
+  onPurchase
 }: PerkDetailsModalProps) {
   const { toast } = useToast();
   const [isResending, setIsResending] = useState(false);
@@ -188,20 +199,31 @@ export default function PerkDetailsModal({
           {/* Scrollable Content */}
           <div className="flex-1 overflow-y-auto">
             <div className="p-6 space-y-6">
-              {/* Event Image Placeholder - Similar to screenshot */}
+              {/* Item Image Display */}
               <div className="relative aspect-square rounded-3xl overflow-hidden bg-gradient-to-br from-blue-500 to-teal-400">
+                {(perk.metadata as any)?.image_url ? (
+                  // Display campaign item image
+                  <>
+                    <img 
+                      src={(perk.metadata as any).image_url}
+                      alt={(perk.metadata as any)?.image_alt || perk.title}
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Dark overlay for text readability */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+                  </>
+                ) : (
+                  // Fallback gradient if no image
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-teal-400" />
+                )}
+                
+                {/* Overlay Text */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center text-white">
-                    <div className="text-4xl font-bold mb-2">{perk.title}</div>
-                    {/* NEW: Show ticket cost for campaign items */}
-                    {isTicketCampaignMetadata(perk.metadata) && (
-                      <div className="text-lg opacity-90 flex items-center justify-center gap-2">
-                        <Ticket className="h-5 w-5" />
-                        <span>{perk.metadata.ticket_cost} Ticket{perk.metadata.ticket_cost > 1 ? 's' : ''}</span>
-                      </div>
-                    )}
+                    <div className="text-4xl font-bold mb-2 drop-shadow-lg">{perk.title}</div>
+                    {/* Only show date/location for events, not credit cost (redundant) */}
                     {hasValidDate && (
-                      <div className="text-lg opacity-90">
+                      <div className="text-lg opacity-90 drop-shadow-lg">
                         {eventDateObj!.toLocaleDateString('en-US', {
                           month: 'numeric',
                           day: 'numeric',
@@ -210,11 +232,11 @@ export default function PerkDetailsModal({
                       </div>
                     )}
                     {location && (
-                      <div className="text-sm opacity-80 mt-2">{location}</div>
+                      <div className="text-sm opacity-80 mt-2 drop-shadow-lg">{location}</div>
                     )}
                   </div>
                 </div>
-                <div className="absolute bottom-4 right-4 bg-black/20 rounded-lg px-2 py-1 text-xs text-white">
+                <div className="absolute bottom-4 right-4 bg-black/40 backdrop-blur-sm rounded-lg px-2 py-1 text-xs text-white">
                   1 of 1
                 </div>
               </div>
@@ -236,14 +258,22 @@ export default function PerkDetailsModal({
 
               {/* Club Info */}
               <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                  <span className="text-white font-semibold text-sm">
-                    {clubName.charAt(0)}
-                  </span>
+                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center overflow-hidden">
+                  {perk.club_info?.image_url ? (
+                    <img 
+                      src={perk.club_info.image_url} 
+                      alt={clubName}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-white font-semibold text-sm">
+                      {clubName.charAt(0)}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <p className="font-medium text-white">{clubName}</p>
-                  <p className="text-sm text-gray-400">Event Host</p>
+                  <p className="text-sm text-gray-400">Club</p>
                 </div>
               </div>
 
@@ -283,25 +313,15 @@ export default function PerkDetailsModal({
                 </div>
               )}
 
-              {/* NEW: Ticket Campaign Information */}
-              {isTicketCampaignMetadata(perk.metadata) && (
+              {/* Credit Campaign Information (1 credit = $1) */}
+              {isCreditCampaignMetadata(perk.metadata) && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold text-white">Campaign Item Details</h3>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 text-gray-300">
-                      <Ticket className="h-5 w-5 text-blue-400" />
-                      <span>Costs {perk.metadata.ticket_cost} ticket{perk.metadata.ticket_cost > 1 ? 's' : ''}</span>
+                      <DollarSign className="h-5 w-5 text-green-400" />
+                      <span>Costs {perk.metadata.credit_cost} credit{perk.metadata.credit_cost !== 1 ? 's' : ''} (${perk.metadata.credit_cost})</span>
                     </div>
-                    <div className="flex items-center gap-3 text-gray-300">
-                      <span className="text-blue-400">💰</span>
-                      <span>Campaign value: {formatCurrency(perk.metadata.upgrade_price_cents || 0)}</span>
-                    </div>
-                    {perk.metadata.cogs_cents && perk.metadata.cogs_cents > 0 && (
-                      <div className="flex items-center gap-3 text-gray-300">
-                        <span className="text-green-400">🏭</span>
-                        <span>Production cost: {formatCurrency(perk.metadata.cogs_cents)}</span>
-                      </div>
-                    )}
                     <div className="text-xs text-gray-400 mt-2">
                       Items are fulfilled after campaign reaches its funding goal
                     </div>
@@ -356,14 +376,16 @@ export default function PerkDetailsModal({
                 )}
               </div>
 
-              {/* Comments Section Header - Like Screenshot */}
-              <div className="border-t border-gray-800 pt-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Comments</h3>
-                <div className="flex items-center gap-3 text-gray-400">
-                  <MessageSquare className="h-5 w-5" />
-                  <span className="text-sm">No comments yet</span>
+              {/* Comments Section - Placeholder for future */}
+              {false && (
+                <div className="border-t border-gray-800 pt-6">
+                  <h3 className="text-lg font-semibold text-white mb-4">Comments</h3>
+                  <div className="flex items-center gap-3 text-gray-400">
+                    <MessageSquare className="h-5 w-5" />
+                    <span className="text-sm">No comments yet</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Bottom spacing for fixed button */}
               <div className="h-20" />
@@ -373,18 +395,21 @@ export default function PerkDetailsModal({
           {/* Enhanced Action Button - Support both preview and redemption modes */}
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent">
             {isPreviewMode ? (
-              // Preview mode - show action button for ticket campaigns or close for regular perks
+              // Preview mode - trigger purchase for credit campaigns
               <Button
                 onClick={() => {
-                  onClose();
-                  // For ticket campaigns, we could trigger purchase/redemption flow here
-                  // For now, just close and let the user interact with the main card
+                  if (isCreditCampaignMetadata(perk.metadata) && onPurchase) {
+                    onClose();
+                    onPurchase(); // Trigger purchase flow
+                  } else {
+                    onClose();
+                  }
                 }}
                 size="lg"
                 className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
               >
-                {isTicketCampaignMetadata(perk.metadata) ? (
-                  'Got It - Back to Campaign'
+                {isCreditCampaignMetadata(perk.metadata) ? (
+                  `Commit $${perk.metadata.credit_cost}`
                 ) : (
                   'Close Preview'
                 )}

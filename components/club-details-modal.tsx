@@ -82,6 +82,7 @@ export default function ClubDetailsModal({
   
   // Clear campaign data on club change to avoid stale UI
   const [campaignData, setCampaignData] = useState<CampaignData | null>(null);
+  const [creditBalances, setCreditBalances] = useState<Record<string, { campaign_title: string; balance: number }>>({});
   
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
@@ -94,10 +95,12 @@ export default function ClubDetailsModal({
     isOpen: boolean;
     unlock: UnlockData | null;
     redemption: RedemptionData | null;
+    onPurchase?: () => void;
   }>({
     isOpen: false,
     unlock: null,
     redemption: null,
+    onPurchase: undefined
   });
   
   // Get complete club data including unlocks
@@ -411,15 +414,23 @@ export default function ClubDetailsModal({
             </div>
 
 
-            {/* Campaign Rewards Section - Moved to Top */}
+            {/* Store Section */}
             {membership && (
               <div className="mb-8" ref={rewardsRef}>
-                {/* Campaign Title as Header */}
+                {/* Main Section Header */}
+                <h3 className="mb-4 text-xl font-semibold">Store</h3>
+                
+                {/* Campaign Name and Description */}
                 {campaignData && (
-                  <h3 className="mb-4 text-xl font-semibold">{campaignData.campaign_title}</h3>
+                  <div className="mb-4">
+                    <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
+                    {campaignData.campaign_description && (
+                      <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
+                    )}
+                  </div>
                 )}
                 
-                {/* Campaign Progress Card - Below Campaign Title */}
+                {/* Campaign Progress Card */}
                 {campaignData && (
                   <CampaignProgressCard campaignData={campaignData} />
                 )}
@@ -430,6 +441,7 @@ export default function ClubDetailsModal({
                   userStatus={currentStatus}
                   userPoints={currentPoints}
                   onCampaignDataChange={setCampaignData}
+                  onCreditBalancesChange={setCreditBalances}
                   onRedemption={async () => {
                     await refetch();
                     toast({
@@ -440,8 +452,8 @@ export default function ClubDetailsModal({
                   onShowRedemptionConfirmation={(redemption, unlock) => {
                     setRedemptionConfirmation({ redemption, unlock });
                   }}
-                  onShowPerkDetails={(unlock, redemption) => {
-                    setPerkDetails({ isOpen: true, unlock, redemption });
+                  onShowPerkDetails={(unlock, redemption, onPurchase) => {
+                    setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
                   }}
                 />
               </div>
@@ -608,6 +620,7 @@ export default function ClubDetailsModal({
                 clubName={club.name}
                 showPurchaseOptions={true}
                 showTransferOptions={false}
+                creditBalances={creditBalances}
               />
             </div>
           </motion.div>
@@ -630,10 +643,11 @@ export default function ClubDetailsModal({
       <PerkDetailsModal
         key="perk-details"
         isOpen={perkDetails.isOpen}
-        onClose={() => setPerkDetails({ isOpen: false, unlock: null, redemption: null })}
+        onClose={() => setPerkDetails({ isOpen: false, unlock: null, redemption: null, onPurchase: undefined })}
         perk={perkDetails.unlock}
         redemption={perkDetails.redemption}
         clubName={club.name}
+        onPurchase={perkDetails.onPurchase}
       />
     </AnimatePresence>
   );

@@ -61,10 +61,6 @@ export async function GET(
       quarterly_free_used: false
     };
     
-    // Debug logging for user qualification (development only)
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[User Qualification Debug] User: ${actualUserId}, Club: ${clubId}, Earned Tier: ${userQualification.earned_tier}, Effective Tier: ${userQualification.effective_tier}, Points: ${userQualification.current_points}`);
-    }
 
     // Get current quarter info
     const { data: currentQuarter, error: quarterError } = await supabaseAny
@@ -225,7 +221,7 @@ export async function GET(
         funding_percentage: Math.round(fundingPercentage * 100) / 100,
         seconds_remaining: secondsRemaining,
         current_funding_cents: currentFundingCents,
-        funding_goal_cents: goalFundingCents
+        goal_funding_cents: goalFundingCents // Match type definition
       };
     };
 
@@ -259,11 +255,32 @@ export async function GET(
       return { available: true };
     };
 
+    // Get campaign descriptions for all campaigns (separate query)
+    const campaignIds = [...new Set((availableRewards || [])
+      .filter(r => r.campaign_id)
+      .map(r => r.campaign_id)
+    )];
+    
+    let campaignDescriptions: Record<string, string> = {};
+    if (campaignIds.length > 0) {
+      const { data: campaigns } = await supabaseAny
+        .from('campaigns')
+        .select('id, description')
+        .in('id', campaignIds);
+        
+      if (campaigns) {
+        campaignDescriptions = campaigns.reduce((acc: Record<string, string>, campaign: any) => {
+          acc[campaign.id] = campaign.description;
+          return acc;
+        }, {});
+      }
+    }
+
     // Process rewards with user-specific information
-    const processedRewards = (availableRewards || []).map(reward => {
+    const processedRewards = (availableRewards || []).map((reward: any) => {
       const userTierRank = getTierRank(userQualification.effective_tier);
       const rewardTierRank = getTierRank(reward.tier);
-      const alreadyClaimed = userClaims?.some(claim => claim.reward_id === reward.id);
+      const alreadyClaimed = userClaims?.some((claim: any) => claim.reward_id === reward.id);
       const availability = checkRewardAvailability(reward);
       
       // TODO: Re-enable free claims post-MVP based on quarterly allowance
@@ -297,9 +314,9 @@ export async function GET(
       }
 
       // Calculate current status
-      let currentStatus = 'available';
+      let currentStatus: string = 'available';
       if (!availability.available) {
-        currentStatus = availability.reason;
+        currentStatus = availability.reason || 'unavailable';
       }
 
       // Calculate discount for this user - use effective_tier for discounts
@@ -307,11 +324,6 @@ export async function GET(
       const finalPrice = Math.max(0, reward.upgrade_price_cents - userDiscount);
       const discountPercentage = userDiscount > 0 ? 
         Math.round((userDiscount / reward.upgrade_price_cents) * 100) : 0;
-      
-      // Debug logging for discount calculation (development only)
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[Discount Debug] Reward: ${reward.title}, Earned Tier: ${userQualification.earned_tier}, Effective Tier: ${userQualification.effective_tier}, Reward Tier: ${reward.tier}, Discount: ${userDiscount}, Percentage: ${discountPercentage}`);
-      }
       
       // Get campaign progress if applicable
       const campaignProgress = getCampaignProgress(reward);
@@ -339,14 +351,18 @@ export async function GET(
         // Campaign context
         campaign_id: reward.campaign_id,
         campaign_title: reward.campaign_title,
+        campaign_description: reward.campaign_id ? campaignDescriptions[reward.campaign_id] : undefined,
         campaign_status: reward.campaign_status,
         is_campaign_tier: reward.is_campaign_tier,
         campaign_progress: campaignProgress,
         
-        // NEW: Ticket campaign fields
-        ticket_cost: reward.ticket_cost,
-        is_ticket_campaign: reward.is_ticket_campaign,
+        // Credit campaign fields (1 credit = $1)
+        credit_cost: reward.ticket_cost, // Map DB field to credit_cost for frontend
+        is_credit_campaign: reward.is_ticket_campaign, // Map DB field
         cogs_cents: reward.cogs_cents,
+        
+        // Club information (for modals)
+        clubs: reward.clubs,
         
         // Existing fields
         inventory_status: inventoryStatus,
@@ -357,8 +373,8 @@ export async function GET(
       };
     });
 
-    // Format claimed rewards (including ticket information)
-    const claimedRewards = (userClaims || []).map(claim => ({
+    // Format claimed rewards (including credit information)
+    const claimedRewards = (userClaims || []).map((claim: any) => ({
       id: claim.id,
       reward_id: claim.reward_id,
       title: claim.tier_rewards?.title,
@@ -374,20 +390,20 @@ export async function GET(
       is_ticket_claim: claim.is_ticket_claim
     }));
 
-    // Calculate ticket balances by campaign for this club
-    const ticketBalancesByCampaign = new Map();
+    // Calculate credit balances by campaign for this club (1 credit = $1)
+    const creditBalancesByCampaign = new Map();
     if (userClaims) {
-      userClaims.forEach(claim => {
+      userClaims.forEach((claim: any) => {
         if (claim.campaign_id && claim.is_ticket_claim) {
-          const balance = ticketBalancesByCampaign.get(claim.campaign_id) || 0;
-          ticketBalancesByCampaign.set(claim.campaign_id, 
+          const balance = creditBalancesByCampaign.get(claim.campaign_id) || 0;
+          creditBalancesByCampaign.set(claim.campaign_id, 
             balance + (claim.tickets_purchased || 0) - (claim.tickets_redeemed || 0)
           );
         }
       });
     }
 
-    // Compile response (enhanced with ticket information)
+    // Compile response (enhanced with credit information)
     const response = {
       user_earned_tier: userQualification.earned_tier,
       user_effective_tier: userQualification.effective_tier,
@@ -398,8 +414,8 @@ export async function GET(
       current_quarter: quarter,
       available_rewards: processedRewards,
       claimed_rewards: claimedRewards,
-      // NEW: User's ticket balances by campaign
-      user_ticket_balances: Object.fromEntries(ticketBalancesByCampaign)
+      // User's credit balances by campaign (1 credit = $1)
+      user_credit_balances: Object.fromEntries(creditBalancesByCampaign)
     };
 
     return NextResponse.json(response);
