@@ -451,7 +451,7 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        const result = await response.json();
+        const resultData = await response.json() as any;
         
         // Close current modal
         setSelectedUnlock(null);
@@ -460,15 +460,16 @@ export default function UnlockRedemption({
         await loadData();
         
         // Show full-screen confirmation
-        const payload = (result && typeof result === 'object' && 'redemption' in result)
-          ? (result as any).redemption
-          : result;
+        const payload = (resultData && typeof resultData === 'object' && 'redemption' in resultData)
+          ? resultData.redemption
+          : resultData;
         onShowRedemptionConfirmation?.(payload, unlock);
         
         // Callback for parent component
         onRedemption?.();
       } else {
-        const errorData = await response.json() as { error?: string };
+        const errorData = await response.json();
+        const errorMsg = errorData as { error?: string };
         
         // Handle specific error cases
         if (response.status === 409) {
@@ -482,7 +483,7 @@ export default function UnlockRedemption({
           return;
         }
         
-        throw new Error(errorData.error || 'Failed to redeem unlock');
+        throw new Error(errorMsg.error || 'Failed to redeem unlock');
       }
     } catch (error) {
       toast({
@@ -571,7 +572,7 @@ export default function UnlockRedemption({
       });
 
       if (response.ok) {
-        const result = await response.json();
+        const result = await response.json() as { message?: string };
         
         toast({
           title: "Item Redeemed! 🎉",
@@ -590,7 +591,7 @@ export default function UnlockRedemption({
           variant: "destructive",
         });
       } else {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string };
         throw new Error(errorData.error || 'Failed to redeem credits');
       }
 
@@ -634,17 +635,18 @@ export default function UnlockRedemption({
           }
           
           // Show discount confirmation if applicable
-          if ((result?.discount_applied_cents ?? 0) > 0) {
+          const purchaseResult = result as PurchaseResponse;
+          if ((purchaseResult?.discount_applied_cents ?? 0) > 0) {
             toast({
               title: "Discount Applied!",
-              description: `You're saving $${(result.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
+              description: `You're saving $${(purchaseResult.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
             });
           }
           
           window.location.href = url;
         } else {
-          const errorData = await response.json();
-          throw new Error((errorData as { error?: string }).error || 'Failed to start purchase');
+          const errorData = await response.json() as { error?: string };
+          throw new Error(errorData.error || 'Failed to start purchase');
         }
       } else {
         // Existing upgrade endpoint for backward compatibility

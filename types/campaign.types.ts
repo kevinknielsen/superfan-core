@@ -21,6 +21,7 @@ export interface TierReward {
   metadata?: Record<string, any>;
   campaign_id?: string;
   campaign_title?: string;
+  campaign_description?: string;
   campaign_status?: string;
   is_campaign_tier?: boolean;
   campaign_progress?: {
