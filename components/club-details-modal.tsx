@@ -452,7 +452,7 @@ export default function ClubDetailsModal({
                 
                 {/* Campaign Progress Card */}
                 {campaignData && (
-                  <CampaignProgressCard campaignData={campaignData} />
+                  <CampaignProgressCard campaignData={campaignData} clubId={club.id} />
                 )}
                 
                 <UnlockRedemption
