@@ -99,6 +99,48 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Find or create a generic "Credit Purchase" tier_reward for this campaign
+    let { data: creditReward, error: creditRewardError } = await supabaseAny
+      .from('tier_rewards')
+      .select('id')
+      .eq('campaign_id', activeCampaign.id)
+      .eq('title', 'Direct Credit Purchase')
+      .eq('is_ticket_campaign', true)
+      .single();
+
+    // Create generic credit reward if it doesn't exist
+    if (creditRewardError || !creditReward) {
+      const { data: newCreditReward, error: createError } = await supabaseAny
+        .from('tier_rewards')
+        .insert({
+          club_id: club_id,
+          campaign_id: activeCampaign.id,
+          title: 'Direct Credit Purchase',
+          description: 'Direct credit purchase for campaign',
+          tier: 'cadet',
+          reward_type: 'credit_purchase',
+          upgrade_price_cents: 100, // Base price for 1 credit
+          ticket_cost: 1,
+          is_ticket_campaign: true,
+          is_active: true,
+          metadata: {
+            is_generic_credit_purchase: true,
+            created_for_direct_purchases: true
+          }
+        })
+        .select('id')
+        .single();
+
+      if (createError || !newCreditReward) {
+        console.error('Failed to create generic credit reward:', createError);
+        return NextResponse.json({ 
+          error: 'Failed to set up credit purchase system' 
+        }, { status: 500 });
+      }
+      
+      creditReward = newCreditReward;
+    }
+
     // Calculate price: credits in cents
     const priceCents = credit_amount * 100;
 
@@ -131,8 +173,13 @@ export async function POST(request: NextRequest) {
         club_id: club_id,
         campaign_id: activeCampaign.id,
         user_id: actualUserId,
+        tier_reward_id: creditReward.id, // Reference to generic credit purchase reward
         credit_amount: credit_amount.toString(),
         price_cents: priceCents.toString(),
+        original_price_cents: priceCents.toString(),
+        final_price_cents: priceCents.toString(),
+        campaign_credit_cents: priceCents.toString(),
+        credits_purchased: credit_amount.toString(),
         idempotency_key: idempotencyKey,
         club_name: club.name,
         campaign_title: activeCampaign.title,
