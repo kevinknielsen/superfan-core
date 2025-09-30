@@ -91,7 +91,6 @@ export default function ClubDetailsModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
-  const [hasTriggeredLogin, setHasTriggeredLogin] = useState(false);
   const [redemptionConfirmation, setRedemptionConfirmation] = useState<{
     redemption: RedemptionData;
     unlock: UnlockData;
@@ -134,23 +133,8 @@ export default function ClubDetailsModal({
     }
   }, [isOpen, autoOpenWallet, membership]);
 
-  // Auto-trigger login popup for unauthenticated users (only once)
-  useEffect(() => {
-    if (isOpen && !isAuthenticated && !hasTriggeredLogin) {
-      const timer = setTimeout(() => {
-        login();
-        setHasTriggeredLogin(true);
-      }, 1000); // Wait for modal animation to complete
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen, isAuthenticated, hasTriggeredLogin, login]);
-
-  // Reset login trigger flag when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      setHasTriggeredLogin(false);
-    }
-  }, [isOpen]);
+  // REMOVED: Auto-trigger login (we now only prompt on interaction)
+  // Login is triggered when user clicks items or purchase buttons
 
   // Status calculations - use unified points data if available (now includes temporary boosts)
   const currentStatus = (breakdown?.status.current || membership?.current_status || 'cadet') as ClubStatus;
@@ -308,6 +292,33 @@ export default function ClubDetailsModal({
     };
   }, [isOpen, scrollToRewards, membership]);
 
+  // Smart auto-scroll: When campaign is active, auto-scroll everyone to purchase section
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    
+    if (isOpen && campaignData && !scrollToRewards) {
+      // Auto-scroll to campaign section for everyone when campaign is active
+      timer = setTimeout(() => {
+        if (rewardsRef.current) {
+          try {
+            rewardsRef.current.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start' 
+            });
+          } catch (error) {
+            console.error('Failed to auto-scroll to campaign:', error);
+          }
+        }
+      }, 600); // Slightly delayed to let modal fully render
+    }
+    
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [isOpen, campaignData, scrollToRewards]);
+
   // Early return after all hooks
   if (!isOpen) return null;
 
@@ -419,67 +430,71 @@ export default function ClubDetailsModal({
               </p>
             </div>
 
-            {/* Store Section - Always visible even for non-members */}
+            {/* Store Section - Always visible to everyone (login prompt on interaction) */}
             <div className="mb-8" ref={rewardsRef}>
-                {/* Main Section Header */}
-                <h3 className="mb-4 text-xl font-semibold">Releases</h3>
-                
-                {!isAuthenticated ? (
-                  // Show login prompt for unauthenticated users
-                  <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
-                    <div className="mb-4">
-                      <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <h4 className="font-semibold text-white mb-2">Log In To View Campaigns</h4>
-                      <p className="text-gray-400 text-sm">
-                        Access exclusive campaigns, earn points, and unlock limited-time perks available only to club members
-                      </p>
+                {/* Main Section Header with Live Indicator */}
+                <div className="flex items-center gap-3 mb-4">
+                  <h3 className="text-xl font-semibold">Releases</h3>
+                  {!isAuthenticated && campaignData && (
+                    <div className="relative flex items-center">
+                      <span className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                      </span>
                     </div>
-                    <button
-                      onClick={() => login()}
-                      className="w-full rounded-lg bg-primary px-4 py-3 font-semibold text-white hover:bg-primary/90"
-                    >
-                      Log In
-                    </button>
+                  )}
+                </div>
+                
+                {/* Explanatory subtitle when campaign is active */}
+                {campaignData && (
+                  <p className="text-sm text-gray-400 mb-6 leading-relaxed">
+                    Pre-order items below using credits; if the funding goal isn't reached, you'll receive a full refund.
+                  </p>
+                )}
+                
+                {/* Always show items and campaign - no login wall */}
+                <UnlockRedemption
+                  clubId={club.id}
+                  clubName={club.name}
+                  userStatus={currentStatus}
+                  userPoints={currentPoints}
+                  isAuthenticated={isAuthenticated}
+                  onLoginRequired={() => login()}
+                  onCampaignDataChange={setCampaignData}
+                  onCreditBalancesChange={setCreditBalances}
+                  onRedemption={async () => {
+                    await refetch();
+                    toast({
+                      title: "Perk Redeemed!",
+                      description: "Wallet and status updated",
+                    });
+                  }}
+                  onShowRedemptionConfirmation={(redemption, unlock) => {
+                    setRedemptionConfirmation({ redemption, unlock });
+                  }}
+                  onShowPerkDetails={(unlock, redemption, onPurchase) => {
+                    setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
+                  }}
+                />
+                
+                {/* Campaign Name and Description */}
+                {campaignData && (
+                  <div className="mt-6 mb-4">
+                    <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
+                    {campaignData.campaign_description && (
+                      <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
+                    )}
                   </div>
-                ) : (
-                  <>
-                    <UnlockRedemption
-                      clubId={club.id}
-                      clubName={club.name}
-                      userStatus={currentStatus}
-                      userPoints={currentPoints}
-                      onCampaignDataChange={setCampaignData}
-                      onCreditBalancesChange={setCreditBalances}
-                      onRedemption={async () => {
-                        await refetch();
-                        toast({
-                          title: "Perk Redeemed!",
-                          description: "Wallet and status updated",
-                        });
-                      }}
-                      onShowRedemptionConfirmation={(redemption, unlock) => {
-                        setRedemptionConfirmation({ redemption, unlock });
-                      }}
-                      onShowPerkDetails={(unlock, redemption, onPurchase) => {
-                        setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
-                      }}
-                    />
-                    
-                    {/* Campaign Name and Description */}
-                    {campaignData && (
-                      <div className="mt-6 mb-4">
-                        <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
-                        {campaignData.campaign_description && (
-                          <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Campaign Progress Card */}
-                    {campaignData && (
-                      <CampaignProgressCard campaignData={campaignData} clubId={club.id} />
-                    )}
-                  </>
+                )}
+                
+                {/* Campaign Progress Card - Always visible to create urgency */}
+                {campaignData && (
+                  <CampaignProgressCard 
+                    campaignData={campaignData} 
+                    clubId={club.id}
+                    isAuthenticated={isAuthenticated}
+                    onLoginRequired={() => login()}
+                  />
                 )}
               </div>
 

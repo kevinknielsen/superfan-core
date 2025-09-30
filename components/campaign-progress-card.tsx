@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Play, CheckCircle, ArrowRight, CreditCard } from "lucide-react";
+import { Play, CheckCircle, ArrowRight, CreditCard, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAccessToken } from "@privy-io/react-auth";
 import type { CampaignData } from "@/types/campaign.types";
@@ -12,9 +12,11 @@ import { useState } from "react";
 interface CampaignProgressCardProps {
   campaignData: CampaignData;
   clubId?: string;
+  isAuthenticated?: boolean;
+  onLoginRequired?: () => void;
 }
 
-export function CampaignProgressCard({ campaignData, clubId }: CampaignProgressCardProps) {
+export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = false, onLoginRequired }: CampaignProgressCardProps) {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const { toast } = useToast();
   
@@ -29,6 +31,12 @@ export function CampaignProgressCard({ campaignData, clubId }: CampaignProgressC
 
   // Handle credit purchase flow
   const handleCreditPurchase = async (creditAmount: number) => {
+    // Prompt login if not authenticated
+    if (!isAuthenticated && onLoginRequired) {
+      onLoginRequired();
+      return;
+    }
+    
     if (!clubId) {
       toast({
         title: "Error",
@@ -97,6 +105,19 @@ export function CampaignProgressCard({ campaignData, clubId }: CampaignProgressC
       transition={{ duration: 0.5 }}
     >
       <Card className="relative bg-gray-900/80 border-gray-700/50 p-6 overflow-hidden">
+        {/* Social Proof Badge - Hidden for now */}
+        {/* <div className="absolute top-4 right-4 z-10">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.3, type: "spring" }}
+            className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-1.5 rounded-full text-xs font-bold shadow-lg flex items-center gap-1.5"
+          >
+            <Users className="w-3 h-3" />
+            {Math.floor(campaignData.campaign_progress.current_funding_cents / 2500)} backers
+          </motion.div>
+        </div> */}
+
         {/* Side-by-side tier comparison */}
         <div className="flex items-center justify-between mb-6">
           {/* Current Tier - Live */}
