@@ -248,8 +248,13 @@ export async function POST(
       ? `Temporary ${reward.tier.charAt(0).toUpperCase() + reward.tier.slice(1)} access for one free claim this quarter`
       : `Unlock "${reward.title}" in ${club.name}`;
 
-    // Create Stripe checkout session
+    // Create Stripe checkout session with idempotency key
     const stripe = getStripe();
+    
+    // Generate idempotency key with random suffix to prevent conflicts during testing
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const idempotencyKey = `tier_upgrade_${rewardId}_${actualUserId}_${relevantPrice}_${randomSuffix}`;
+    
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [{
@@ -283,8 +288,11 @@ export async function POST(
         target_tier: reward.tier,
         purchase_type: upgradeData.purchase_type,
         quarter_year: quarter.year.toString(),
-        quarter_number: quarter.quarter.toString()
+        quarter_number: quarter.quarter.toString(),
+        idempotency_key: idempotencyKey
       }
+    }, {
+      idempotencyKey // Pass to Stripe for true idempotency
     });
 
     // Store pending transaction using session ID (payment intent comes later)
