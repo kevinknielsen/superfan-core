@@ -262,8 +262,8 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
         upgrade_transaction_id: session.payment_intent as string,
         upgrade_amount_cents: toInt(metadata.final_price_cents || metadata.price_cents),
         refund_status: 'none',
-        // Grant access - pending until campaign funded
-        access_status: isCreditPurchase ? 'pending' : 'granted',
+        // Grant access immediately (constraint only allows 'granted' or 'revoked')
+        access_status: 'granted',
         access_code: generateAccessCode(),
         claimed_at: new Date().toISOString(),
         // Credit/ticket tracking fields

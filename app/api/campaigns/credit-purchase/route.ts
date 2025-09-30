@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
           title: 'Direct Credit Purchase',
           description: 'Direct credit purchase for campaign',
           tier: 'cadet',
-          reward_type: 'credit_purchase',
+          reward_type: 'digital_product', // Use allowed value
           upgrade_price_cents: 100, // Base price for 1 credit
           ticket_cost: 1,
           is_ticket_campaign: true,
