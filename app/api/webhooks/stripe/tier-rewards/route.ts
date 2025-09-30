@@ -551,6 +551,7 @@ async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ s
 
 // Main webhook handler with idempotency and error handling
 export async function POST(request: NextRequest) {
+  console.log('[Tier Rewards Webhook] Received request');
   try {
     // Get raw body for signature verification
     const rawBody = await request.text();
@@ -562,10 +563,13 @@ export async function POST(request: NextRequest) {
     }
     
     // Verify webhook signature
+    console.log('[Tier Rewards Webhook] Verifying signature...');
     const event = await verifyWebhookEvent(rawBody, signature);
     if (!event) {
+      console.log('[Tier Rewards Webhook] Invalid signature');
       return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
     }
+    console.log('[Tier Rewards Webhook] Signature verified, event type:', event.type);
     
     console.log(`[Tier Rewards Webhook] Received event: ${event.type} (${event.id})`);
     
@@ -645,7 +649,9 @@ export async function POST(request: NextRequest) {
         break;
         
       case 'checkout.session.completed':
+        console.log('[Tier Rewards Webhook] Processing checkout.session.completed event');
         processingResult = await processCheckoutSessionCompleted(event);
+        console.log('[Tier Rewards Webhook] Checkout processing result:', processingResult);
         break;
         
       default:
