@@ -104,9 +104,6 @@ export async function GET(
         created_at,
         campaign_id,
         campaign_title,
-        campaign_funding_goal_cents,
-        campaign_current_funding_cents,
-        campaign_deadline,
         campaign_status,
         is_campaign_tier,
         resident_discount_percentage,
@@ -131,6 +128,21 @@ export async function GET(
     if (rewardsError) {
       console.error('Error fetching tier rewards:', rewardsError);
       return NextResponse.json({ error: "Failed to fetch tier rewards" }, { status: 500 });
+    }
+
+    // Fetch campaign data from campaigns table (single source of truth)
+    const campaignIds = (availableRewards || []).map((r: any) => r.campaign_id).filter(Boolean);
+    const campaignsMap = new Map<string, any>();
+    
+    if (campaignIds.length > 0) {
+      const { data: campaignsData } = await supabaseAny
+        .from('campaigns')
+        .select('id, current_funding_cents, funding_goal_cents, deadline')
+        .in('id', campaignIds);
+      
+      campaignsData?.forEach((campaign: any) => {
+        campaignsMap.set(campaign.id, campaign);
+      });
     }
 
     // Get user's existing claims for this club (including ticket tracking)
@@ -201,27 +213,30 @@ export async function GET(
       return 0;
     };
 
-    // Helper function to get campaign progress
+    // Helper function to get campaign progress from campaigns table
     const getCampaignProgress = (reward: any) => {
-      if (!reward.campaign_id || !reward.campaign_funding_goal_cents) return null;
+      if (!reward.campaign_id) return null;
       
-      // Coerce numeric inputs to numbers, defaulting to 0 for null/undefined
-      const currentFundingCents = Number(reward.campaign_current_funding_cents) || 0;
-      const goalFundingCents = Number(reward.campaign_funding_goal_cents) || 0;
+      const campaign = campaignsMap.get(reward.campaign_id);
+      if (!campaign) return null;
+      
+      // Use data from campaigns table (single source of truth)
+      const currentFundingCents = Number(campaign.current_funding_cents) || 0;
+      const goalFundingCents = Number(campaign.funding_goal_cents) || 0;
       
       // Guard the percentage calculation - only divide when goal > 0
       const fundingPercentage = goalFundingCents > 0 ? 
         (currentFundingCents / goalFundingCents * 100) : 0;
         
       // Only compute seconds_remaining if campaign_deadline exists
-      const secondsRemaining = reward.campaign_deadline ? 
-        Math.max(0, Math.floor((new Date(reward.campaign_deadline).getTime() - Date.now()) / 1000)) : 0;
+      const secondsRemaining = campaign.deadline ? 
+        Math.max(0, Math.floor((new Date(campaign.deadline).getTime() - Date.now()) / 1000)) : 0;
         
       return {
         funding_percentage: Math.round(fundingPercentage * 100) / 100,
         seconds_remaining: secondsRemaining,
         current_funding_cents: currentFundingCents,
-        goal_funding_cents: goalFundingCents // Match type definition
+        goal_funding_cents: goalFundingCents
       };
     };
 
@@ -256,17 +271,17 @@ export async function GET(
     };
 
     // Get campaign descriptions for all campaigns (separate query)
-    const campaignIds = [...new Set((availableRewards || [])
-      .filter(r => r.campaign_id)
-      .map(r => r.campaign_id)
+    const campaignIdsForDescriptions = [...new Set((availableRewards || [])
+      .filter((r: any) => r.campaign_id)
+      .map((r: any) => r.campaign_id)
     )];
     
     let campaignDescriptions: Record<string, string> = {};
-    if (campaignIds.length > 0) {
+    if (campaignIdsForDescriptions.length > 0) {
       const { data: campaigns } = await supabaseAny
         .from('campaigns')
         .select('id, description')
-        .in('id', campaignIds);
+        .in('id', campaignIdsForDescriptions);
         
       if (campaigns) {
         campaignDescriptions = campaigns.reduce((acc: Record<string, string>, campaign: any) => {
