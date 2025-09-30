@@ -106,7 +106,7 @@ export default function Dashboard() {
 
   // Handle URL parameters (Stripe redirects and club details navigation)
   useEffect(() => {
-    const clubParam = searchParams.get('club');
+    const clubParam = searchParams.get('club') || searchParams.get('club_id');
     const purchaseParam = searchParams.get('purchase');
     const viewParam = searchParams.get('view');
     
@@ -131,6 +131,7 @@ export default function Dashboard() {
       // Clean up URL parameters
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.delete('club');
+      newUrl.searchParams.delete('club_id');
       newUrl.searchParams.delete('view');
       router.replace(newUrl.pathname + newUrl.search);
       return;
