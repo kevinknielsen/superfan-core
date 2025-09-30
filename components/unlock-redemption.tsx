@@ -348,6 +348,13 @@ export default function UnlockRedemption({
   };
 
   const isUnlockAvailable = (unlock: Unlock) => {
+    // Campaign items are ALWAYS available (never locked)
+    if (unlock.is_credit_campaign) {
+      const notSoldOut = unlock.inventory_status !== 'sold_out' && unlock.inventory_status !== 'unavailable';
+      const isActive = unlock.is_active !== false;
+      return isActive && notSoldOut;
+    }
+    
     // Campaign MVP: Check if user has upgrade options (no free claims)
     if (unlock.user_can_claim_free !== undefined) {
       const notSoldOut = unlock.inventory_status !== 'sold_out' && unlock.inventory_status !== 'unavailable';
@@ -766,24 +773,26 @@ export default function UnlockRedemption({
                   {/* Top badges */}
                   <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
                     
-                    {/* Status badge */}
-                    <div className="flex flex-col gap-1 items-end">
-                      {isUnlockRedeemed(unlock) ? (
-                        <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
-                      ) : (
-                        <Badge 
-                          variant="secondary" 
-                          className={`${getStatusBgColor(unlock.min_status as any)} ${getStatusBorderColor(unlock.min_status as any)} ${getStatusTextColor(unlock.min_status as any)} backdrop-blur-sm border font-medium ${!isAvailable ? 'opacity-75' : ''} flex items-center gap-1`}
-                        >
-                          {!isAvailable && <Lock className="h-3 w-3" />}
-                          {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
-                        </Badge>
-                      )}
-                    </div>
+                    {/* Status badge - Hide tier requirements for campaign items */}
+                    {!unlock.is_credit_campaign && (
+                      <div className="flex flex-col gap-1 items-end">
+                        {isUnlockRedeemed(unlock) ? (
+                          <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
+                        ) : (
+                          <Badge 
+                            variant="secondary" 
+                            className={`${getStatusBgColor(unlock.min_status as any)} ${getStatusBorderColor(unlock.min_status as any)} ${getStatusTextColor(unlock.min_status as any)} backdrop-blur-sm border font-medium ${!isAvailable ? 'opacity-75' : ''} flex items-center gap-1`}
+                          >
+                            {!isAvailable && <Lock className="h-3 w-3" />}
+                            {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
                   
-                  {/* Progress bar for locked items */}
-                  {!isAvailable && (
+                  {/* Progress bar for locked items - not shown for campaign items */}
+                  {!unlock.is_credit_campaign && !isAvailable && (
                     <div className="absolute top-14 left-3 right-3">
                       <div className="w-full bg-gray-800/70 rounded-full h-1">
                         <div 

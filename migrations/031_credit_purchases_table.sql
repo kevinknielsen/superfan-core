@@ -70,20 +70,27 @@ STABLE
 SECURITY DEFINER
 AS $$
 DECLARE
-  purchased_credits INTEGER;
+  direct_purchase_credits INTEGER;
+  item_purchase_credits INTEGER;
   redeemed_credits INTEGER;
 BEGIN
-  -- Sum all completed credit purchases from credit_purchases table
+  -- Sum all completed credit purchases from credit_purchases table (direct buys)
   SELECT COALESCE(SUM(credits_purchased), 0)
-  INTO purchased_credits
+  INTO direct_purchase_credits
   FROM credit_purchases
   WHERE user_id = p_user_id
     AND campaign_id = p_campaign_id
     AND status = 'completed';
     
-  -- Subtract credits spent on campaign items
-  -- tickets_redeemed tracks how many credits were spent from reward_claims
-  -- Only count credits actually redeemed, not just purchased items
+  -- Add credits from item purchases (buying items gives credits tied to that purchase)
+  SELECT COALESCE(SUM(tickets_purchased), 0)
+  INTO item_purchase_credits
+  FROM reward_claims
+  WHERE user_id = p_user_id
+    AND campaign_id = p_campaign_id
+    AND is_ticket_claim = true;
+    
+  -- Subtract credits actually redeemed/spent
   SELECT COALESCE(SUM(tickets_redeemed), 0)
   INTO redeemed_credits
   FROM reward_claims
@@ -91,7 +98,7 @@ BEGIN
     AND campaign_id = p_campaign_id
     AND is_ticket_claim = true;
     
-  RETURN GREATEST(0, purchased_credits - redeemed_credits);
+  RETURN GREATEST(0, direct_purchase_credits + item_purchase_credits - redeemed_credits);
 END;
 $$;
 
