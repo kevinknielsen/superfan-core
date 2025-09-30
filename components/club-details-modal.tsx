@@ -400,42 +400,8 @@ export default function ClubDetailsModal({
               </p>
             </div>
 
-            {/* Latest Section - Club Media */}
-            <div className="mb-8">
-              <h3 className="mb-4 text-xl font-semibold">Latest</h3>
-              {/* Container with responsive sizing - Desktop: video left, Mobile: centered */}
-              <div className="flex justify-center md:justify-start">
-                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl md:max-w-lg">
-                  <div className="relative aspect-video md:aspect-[4/3]">
-                    <ClubMediaDisplay
-                      clubId={club.id}
-                      className="w-full h-full"
-                      showControls={true}
-                      autoPlay={false}
-                      fallbackImage="/placeholder.svg?height=400&width=600&query=music club"
-                    />
-                  {/* Subtle overlay for better text contrast */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                </div>
-                
-                {/* Enhanced content section */}
-                <div className="p-5 bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-sm">
-                  <h4 className="font-bold text-white text-lg mb-3">Recent Updates from {club.name}</h4>
-                  
-                  {/* Cool accent line */}
-                  <div className="w-12 h-0.5 bg-gradient-to-r from-primary to-purple-400 rounded-full"></div>
-                </div>
-                
-                {/* Subtle glow effect */}
-                <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-primary/10 via-transparent to-purple-500/10 pointer-events-none"></div>
-                </div>
-              </div>
-            </div>
-
-
-            {/* Store Section */}
-            {membership && (
-              <div className="mb-8" ref={rewardsRef}>
+            {/* Store Section - Always visible even for non-members */}
+            <div className="mb-8" ref={rewardsRef}>
                 {/* Main Section Header */}
                 <h3 className="mb-4 text-xl font-semibold">Store</h3>
                 
@@ -476,7 +442,6 @@ export default function ClubDetailsModal({
                   }}
                 />
               </div>
-            )}
 
             {/* Your Status Section - Moved Below Campaign Rewards */}
             {membership != null ? (
@@ -506,7 +471,37 @@ export default function ClubDetailsModal({
               </div>
             )}
 
-
+            {/* Latest Section - Club Media */}
+            <div className="mb-8">
+              <h3 className="mb-4 text-xl font-semibold">Latest</h3>
+              {/* Container with responsive sizing - Desktop: video left, Mobile: centered */}
+              <div className="flex justify-center md:justify-start">
+                <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 shadow-2xl backdrop-blur-sm w-full max-w-2xl md:max-w-lg">
+                  <div className="relative aspect-video md:aspect-[4/3]">
+                    <ClubMediaDisplay
+                      clubId={club.id}
+                      className="w-full h-full"
+                      showControls={true}
+                      autoPlay={false}
+                      fallbackImage="/placeholder.svg?height=400&width=600&query=music club"
+                    />
+                  {/* Subtle overlay for better text contrast */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                </div>
+                
+                {/* Enhanced content section */}
+                <div className="p-5 bg-gradient-to-r from-gray-900/90 to-gray-800/90 backdrop-blur-sm">
+                  <h4 className="font-bold text-white text-lg mb-3">Recent Updates from {club.name}</h4>
+                  
+                  {/* Cool accent line */}
+                  <div className="w-12 h-0.5 bg-gradient-to-r from-primary to-purple-400 rounded-full"></div>
+                </div>
+                
+                {/* Subtle glow effect */}
+                <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-primary/10 via-transparent to-purple-500/10 pointer-events-none"></div>
+                </div>
+              </div>
+            </div>
 
             {/* Club Details Grid - Moved to Bottom */}
             <div className="mb-8">
