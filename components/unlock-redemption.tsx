@@ -118,6 +118,8 @@ interface UnlockRedemptionProps {
   clubName: string;
   userStatus: string;
   userPoints: number;
+  isAuthenticated?: boolean;
+  onLoginRequired?: () => void;
   onRedemption?: () => void;
   onShowRedemptionConfirmation?: (redemption: any, unlock: Unlock) => void;
   onShowPerkDetails?: (unlock: Unlock, redemption: any, onPurchase?: () => void) => void;
@@ -167,7 +169,9 @@ export default function UnlockRedemption({
   clubId, 
   clubName,
   userStatus, 
-  userPoints, 
+  userPoints,
+  isAuthenticated = false,
+  onLoginRequired,
   onRedemption,
   onShowRedemptionConfirmation,
   onShowPerkDetails,
@@ -219,15 +223,17 @@ export default function UnlockRedemption({
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
       if (!isMounted || isMounted()) setIsLoading(true);
-      // Get auth token
+      // Get auth token (optional for public preview)
       const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('User not authenticated');
+      
+      // Load tier rewards data using new API (works with or without auth)
+      const headers: HeadersInit = {};
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
       }
-
-      // Load tier rewards data using new API
+      
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` },
+        headers,
         signal
       });
 
@@ -299,12 +305,7 @@ export default function UnlockRedemption({
           metadata: {
             access_code: claim.access_code
           },
-          redeemed_at: claim.claimed_at,
-          // Include ticket/credit tracking for campaign items
-          tickets_purchased: claim.tickets_purchased,
-          tickets_available: claim.tickets_available,
-          tickets_redeemed: claim.tickets_redeemed,
-          is_ticket_claim: claim.is_ticket_claim
+          redeemed_at: claim.claimed_at
         }));
 
         // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
@@ -381,16 +382,16 @@ export default function UnlockRedemption({
     const redemption = getUnlockRedemption(unlock);
     if (!redemption) return false;
     
-    // For campaign items, only show as "redeemed" if campaign is funded
+    // For campaign items, only show as "redeemed" if campaign is funded AND access granted
     // Having a purchase record doesn't mean it's redeemed yet
     if (unlock.is_credit_campaign) {
       const isCampaignFunded = unlock.campaign_status === 'funded' || 
         (unlock.campaign_progress?.funding_percentage || 0) >= 100;
-      return isCampaignFunded && redemption.tickets_redeemed > 0;
+      return isCampaignFunded && redemption.status === 'confirmed';
     }
     
-    // For regular tier rewards, having a claim means it's redeemed
-    return true;
+    // For regular tier rewards, having a confirmed claim means it's redeemed
+    return redemption.status === 'confirmed';
   };
 
   const getStatusProgress = (requiredStatus: string) => {
@@ -735,10 +736,20 @@ export default function UnlockRedemption({
               className="flex-shrink-0"
             >
               <div 
-                className={`relative w-48 rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border border-gray-700/50 cursor-pointer transition-all hover:border-gray-600 shadow-xl backdrop-blur-sm ${
-                  !isAvailable ? 'opacity-75' : ''
+                className={`relative w-48 rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900/80 to-gray-900/40 border-2 cursor-pointer transition-all shadow-xl backdrop-blur-sm ${
+                  !isAvailable 
+                    ? 'opacity-75 border-gray-700/50' 
+                    : !isAuthenticated
+                      ? 'border-primary/30 hover:border-primary/50 animate-pulse-border'
+                      : 'border-gray-700/50 hover:border-gray-600'
                 }`}
                 onClick={() => {
+                  // Prompt login if not authenticated
+                  if (!isAuthenticated && onLoginRequired) {
+                    onLoginRequired();
+                    return;
+                  }
+                  
                   const redemption = getUnlockRedemption(unlock);
                   if (redemption) {
                     // Already redeemed - show persistent details modal
@@ -761,7 +772,7 @@ export default function UnlockRedemption({
                       <img 
                         src={unlock.metadata.image_url} 
                         alt={unlock.metadata?.image_alt || unlock.title}
-                        className="w-full h-full object-cover opacity-30"
+                        className="w-full h-full object-cover opacity-60"
                       />
                       {/* Gradient overlay for text readability */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/20" />
@@ -859,20 +870,29 @@ export default function UnlockRedemption({
                     className={`w-full py-2.5 px-4 rounded-full text-sm font-semibold transition-colors ${
                       isUnlockRedeemed(unlock)
                         ? 'bg-green-600 text-white hover:bg-green-700'
+                        : !isAuthenticated
+                          ? 'bg-primary text-white hover:bg-primary/90'
                         : isAvailable 
                           ? 'bg-white text-gray-900 hover:bg-gray-100' 
                           : 'bg-gray-700/80 text-gray-400 cursor-not-allowed'
                     }`}
-                    disabled={!isAvailable && !isUnlockRedeemed(unlock)}
+                    disabled={isAuthenticated && !isAvailable && !isUnlockRedeemed(unlock)}
                     onClick={(e) => {
                       e.stopPropagation();
+                      
+                      // Prompt login if not authenticated
+                      if (!isAuthenticated && onLoginRequired) {
+                        onLoginRequired();
+                        return;
+                      }
+                      
                       const redemption = getUnlockRedemption(unlock);
                       
-                      // For campaign items, only show details if actually redeemed (tickets_redeemed > 0)
+                      // For campaign items, only show details if actually redeemed (access granted)
                       // Having a purchase doesn't prevent buying more!
                       const showDetails = redemption && (
                         !unlock.is_credit_campaign || 
-                        (redemption as any)?.tickets_redeemed > 0
+                        redemption.status === 'confirmed'
                       );
                       
                       if (showDetails) {
@@ -898,9 +918,11 @@ export default function UnlockRedemption({
                       }
                     }}
                   >
-                    {isUnlockRedeemed(unlock) 
+                    {!isAuthenticated
+                      ? 'Log In to Preorder'
+                      : isUnlockRedeemed(unlock) 
                       ? 'Open Details' 
-                      :                       isAvailable 
+                      : isAvailable 
                         ? (() => {
                             // Credit campaign button text (1 credit = $1)
                             if (unlock.is_credit_campaign) {
@@ -1010,7 +1032,7 @@ export default function UnlockRedemption({
                   <div className="flex justify-between items-center py-2">
                     <span className="text-sm font-medium">Estimated Delivery</span>
                     <Badge variant="outline" className="font-normal">
-                      {selectedUnlock.type === 'digital_product' ? 'Immediate' : '2 months'}
+                      2 months
                     </Badge>
                   </div>
                   

@@ -12,45 +12,44 @@ export async function GET(
 ) {
   const { id: clubId } = await params;
 
+  // Support both authenticated and unauthenticated (public preview) modes
   const auth = await verifyUnifiedAuth(request);
-  if (!auth) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const isPublicMode = !auth;
+  
+  let actualUserId: string | null = null;
+  
+  if (auth) {
+    // Authenticated mode - get user info
+    try {
+      console.log('[Club Tier Rewards API] Starting request for auth:', auth);
+      
+      // Get the user from our database (support both auth types) - same pattern as existing APIs
+      const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+      const { data: user, error: userError } = await supabaseAny
+        .from('users')
+        .select('id')
+        .eq(userColumn, auth.userId)
+        .single();
+
+      if (userError || !user) {
+        console.error('[Club Tier Rewards API] User not found:', userError);
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      actualUserId = user.id;
+      console.log('[Club Tier Rewards API] Found user UUID:', actualUserId, 'for auth:', auth);
+    } catch (authError) {
+      console.error('[Club Tier Rewards API] Auth error:', authError);
+      // Fall back to public mode if auth fails
+    }
+  } else {
+    console.log('[Club Tier Rewards API] Public preview mode - no user auth');
   }
 
   try {
-    console.log('[Club Tier Rewards API] Starting request for auth:', auth);
-    
-    // Get the user from our database (support both auth types) - same pattern as existing APIs
-    const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabaseAny
-      .from('users')
-      .select('id')
-      .eq(userColumn, auth.userId)
-      .single();
 
-    if (userError || !user) {
-      console.error('[Club Tier Rewards API] User not found:', userError);
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    const actualUserId = user.id;
-    console.log('[Club Tier Rewards API] Found user UUID:', actualUserId, 'for auth:', auth);
-
-    // Get user's tier qualification for this club
-    const { data: qualification, error: qualificationError } = await supabaseAny
-      .rpc('check_tier_qualification', {
-        p_user_id: actualUserId,
-        p_club_id: clubId,
-        p_target_tier: 'superfan', // Check highest tier to get all info
-        p_rolling_window_days: 60
-      });
-
-    if (qualificationError) {
-      console.error('Error checking tier qualification:', qualificationError);
-      return NextResponse.json({ error: "Failed to check tier qualification" }, { status: 500 });
-    }
-
-    const userQualification = qualification?.[0] || {
+    // Get user's tier qualification for this club (skip if public mode)
+    let userQualification = {
       qualified: false,
       earned_tier: 'cadet',
       effective_tier: 'cadet',
@@ -60,6 +59,23 @@ export async function GET(
       has_active_boost: false,
       quarterly_free_used: false
     };
+    
+    if (actualUserId) {
+      const { data: qualification, error: qualificationError } = await supabaseAny
+        .rpc('check_tier_qualification', {
+          p_user_id: actualUserId,
+          p_club_id: clubId,
+          p_target_tier: 'superfan', // Check highest tier to get all info
+          p_rolling_window_days: 60
+        });
+
+      if (qualificationError) {
+        console.error('Error checking tier qualification:', qualificationError);
+        // Don't fail - just use default values
+      } else {
+        userQualification = qualification?.[0] || userQualification;
+      }
+    }
     
 
     // Get current quarter info
@@ -146,29 +162,35 @@ export async function GET(
       });
     }
 
-    // Get user's existing claims for this club (including ticket tracking)
-    const { data: userClaims, error: claimsError } = await supabaseAny
-      .from('reward_claims')
-      .select(`
-        id,
-        reward_id,
-        claim_method,
-        claimed_at,
-        access_status,
-        access_code,
-        campaign_id,
-        tickets_purchased,
-        tickets_available,
-        tickets_redeemed,
-        is_ticket_claim,
-        tier_rewards!inner(title)
-      `)
-      .eq('user_id', actualUserId)
-      .eq('club_id', clubId);
+    // Get user's existing claims for this club (skip if public mode)
+    let userClaims: any[] = [];
+    
+    if (actualUserId) {
+      const { data: claims, error: claimsError } = await supabaseAny
+        .from('reward_claims')
+        .select(`
+          id,
+          reward_id,
+          claim_method,
+          claimed_at,
+          access_status,
+          access_code,
+          campaign_id,
+          tickets_purchased,
+          tickets_available,
+          tickets_redeemed,
+          is_ticket_claim,
+          tier_rewards!inner(title)
+        `)
+        .eq('user_id', actualUserId)
+        .eq('club_id', clubId);
 
-    if (claimsError) {
-      console.error('Error fetching user claims:', claimsError);
-      return NextResponse.json({ error: "Failed to fetch user claims" }, { status: 500 });
+      if (claimsError) {
+        console.error('Error fetching user claims:', claimsError);
+        // Don't fail - just use empty array
+      } else {
+        userClaims = claims || [];
+      }
     }
 
     // Helper function to get tier rank for comparison
@@ -406,32 +428,34 @@ export async function GET(
       is_ticket_claim: claim.is_ticket_claim
     }));
 
-    // Calculate credit balances by campaign for this club using new helper function
+    // Calculate credit balances by campaign for this club (skip if public mode)
     const creditBalancesByCampaign = new Map();
     
-    // Get unique campaign IDs from rewards
-    const uniqueCampaignIds = [...new Set(
-      (availableRewards || [])
-        .filter((r: any) => r.campaign_id)
-        .map((r: any) => r.campaign_id)
-    )];
-    
-    // Get credit balance for each campaign using the new function
-    for (const campaignId of uniqueCampaignIds) {
-      const { data: balanceData, error: balanceError } = await supabaseAny
-        .rpc('get_user_campaign_credits', {
-          p_user_id: actualUserId,
-          p_campaign_id: campaignId
-        });
+    if (actualUserId) {
+      // Get unique campaign IDs from rewards
+      const uniqueCampaignIds = [...new Set(
+        (availableRewards || [])
+          .filter((r: any) => r.campaign_id)
+          .map((r: any) => r.campaign_id)
+      )];
       
-      if (balanceError) {
-        console.error(`[Club Tier Rewards API] Error fetching credit balance for campaign ${campaignId}:`, balanceError);
-        // Continue processing other campaigns
-        continue;
-      }
-      
-      if (balanceData !== null && balanceData !== undefined) {
-        creditBalancesByCampaign.set(campaignId, balanceData);
+      // Get credit balance for each campaign using the new function
+      for (const campaignId of uniqueCampaignIds) {
+        const { data: balanceData, error: balanceError } = await supabaseAny
+          .rpc('get_user_campaign_credits', {
+            p_user_id: actualUserId,
+            p_campaign_id: campaignId
+          });
+        
+        if (balanceError) {
+          console.error(`[Club Tier Rewards API] Error fetching credit balance for campaign ${campaignId}:`, balanceError);
+          // Continue processing other campaigns
+          continue;
+        }
+        
+        if (balanceData !== null && balanceData !== undefined) {
+          creditBalancesByCampaign.set(campaignId, balanceData);
+        }
       }
     }
 
