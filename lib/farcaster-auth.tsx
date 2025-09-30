@@ -89,17 +89,11 @@ function FarcasterAuthModal() {
   const { isAuthPromptOpen, hideAuthPrompt, authAction } = useFarcasterAuth();
   const { isInWalletApp, user } = useFarcaster();
   
-  // Only use Privy for web context
-  let login = null;
-  let authenticated = false;
-  try {
-    const privyAuth = usePrivy();
-    login = privyAuth?.login || null;
-    authenticated = privyAuth?.authenticated || false;
-  } catch (error) {
-    // Privy might not be available in wallet app context
-    console.warn('[FarcasterAuthModal] Privy not available:', error);
-  }
+  // Always call the hook at the top level (Rules of Hooks)
+  // Privy is available for both contexts, just used differently
+  const privyAuth = usePrivy();
+  const login = privyAuth?.login || null;
+  const authenticated = privyAuth?.authenticated || false;
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -415,10 +409,14 @@ function FarcasterAuthModal() {
 export function useFarcasterAuthAction() {
   const { showAuthPrompt } = useFarcasterAuth();
   const { isInWalletApp, user } = useFarcaster();
-  const { authenticated } = usePrivy();
+  
+  // Always call the hook at the top level (Rules of Hooks)
+  const privyAuth = usePrivy();
+  const authenticated = privyAuth?.authenticated || false;
 
   const requireAuth = (action: "fund" | "profile", callback?: () => void) => {
     if (isInWalletApp) {
+      // Wallet app: check for Farcaster user
       if (user) {
         callback?.();
         return true;
