@@ -460,8 +460,9 @@ async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ s
     
     console.log(`[Tier Rewards Webhook] Processing checkout.session.completed: ${session.id}`);
     
-    // Check if this is a campaign tier purchase or direct credit purchase
-    if (session.metadata?.type === 'campaign_tier_purchase' || session.metadata?.type === 'direct_credit_purchase') {
+    // Check if this is a campaign purchase (all types)
+    const sessionType = session.metadata?.type;
+    if (sessionType === 'credit_purchase' || sessionType === 'direct_credit_purchase' || sessionType === 'campaign_tier_purchase') {
       return await processCampaignTierPurchase(session);
     }
     
