@@ -99,20 +99,22 @@ export async function POST(
     
     const userTier = userTierData?.[0]?.effective_tier || userTierData?.[0]?.earned_tier || 'cadet';
 
-    // Check if user already claimed this reward
-    const { data: existingClaim } = await supabaseAny
-      .from('reward_claims')
-      .select('id')
-      .eq('user_id', actualUserId)
-      .eq('reward_id', tierRewardId)
-      .single();
-
-    if (existingClaim) {
-      return NextResponse.json({ error: 'You have already claimed this tier' }, { status: 400 });
-    }
-
     // Detect if this is a credit campaign purchase
     const isCreditCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
+    
+    // Only check for existing claims on non-campaign items (campaign items allow repeat purchases)
+    if (!isCreditCampaign) {
+      const { data: existingClaim } = await supabaseAny
+        .from('reward_claims')
+        .select('id')
+        .eq('user_id', actualUserId)
+        .eq('reward_id', tierRewardId)
+        .single();
+
+      if (existingClaim) {
+        return NextResponse.json({ error: 'You have already claimed this tier' }, { status: 400 });
+      }
+    }
     
     // Calculate pricing based on campaign type
     let upgradePriceCents: number;

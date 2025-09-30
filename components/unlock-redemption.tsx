@@ -778,10 +778,22 @@ export default function UnlockRedemption({
                   {/* Top badges */}
                   <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
                     
-                    {/* Status badge - Hide tier requirements for campaign items */}
-                    {!unlock.is_credit_campaign && (
-                      <div className="flex flex-col gap-1 items-end">
-                        {isUnlockRedeemed(unlock) ? (
+                    {/* Top left badge */}
+                    <div className="flex flex-col gap-1 items-start">
+                      {unlock.is_credit_campaign ? (
+                        // Campaign items - show ownership count (number of times purchased)
+                        (() => {
+                          // Count how many times user purchased this specific item
+                          const purchaseCount = redemptions.filter(r => r.unlock_id === unlock.id).length;
+                          
+                          if (purchaseCount > 0) {
+                            return <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">🎁 You own {purchaseCount}</Badge>;
+                          }
+                          return null;
+                        })()
+                      ) : (
+                        // Regular tier rewards - show tier badge or redeemed status
+                        isUnlockRedeemed(unlock) ? (
                           <Badge variant="default" className="bg-blue-600/90 backdrop-blur-sm">Redeemed</Badge>
                         ) : (
                           <Badge 
@@ -791,9 +803,9 @@ export default function UnlockRedemption({
                             {!isAvailable && <Lock className="h-3 w-3" />}
                             {unlock.min_status.charAt(0).toUpperCase() + unlock.min_status.slice(1)}
                           </Badge>
-                        )}
-                      </div>
-                    )}
+                        )
+                      )}
+                    </div>
                   </div>
                   
                   {/* Progress bar for locked items - not shown for campaign items */}
@@ -819,17 +831,8 @@ export default function UnlockRedemption({
                   {/* Enhanced info - Support both tier rewards and credit campaigns */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
                     {unlock.is_credit_campaign ? (
-                      // Credit campaign display
-                      (() => {
-                        const redemption = getUnlockRedemption(unlock);
-                        const ownedCount = redemption?.tickets_purchased || 0;
-                        
-                        if (ownedCount > 0) {
-                          return <span className="text-blue-400">🎁 You own {ownedCount}</span>;
-                        } else {
-                          return <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>;
-                        }
-                      })()
+                      // Credit campaign display - always show credit cost
+                      <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>
                     ) : (
                       // Regular tier reward display
                       unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
