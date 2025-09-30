@@ -48,6 +48,14 @@ async function processPaymentIntentSucceeded(event: Stripe.Event): Promise<{ suc
     
     console.log(`[Tier Rewards Webhook] Processing payment_intent.succeeded: ${paymentIntent.id}`);
     
+    // Skip campaign purchases - they're handled by checkout.session.completed
+    const metadata = paymentIntent.metadata || {};
+    const purchaseType = (metadata.type || '').toLowerCase();
+    if (purchaseType === 'credit_purchase' || purchaseType === 'direct_credit_purchase' || purchaseType === 'campaign_tier_purchase') {
+      console.log(`[Tier Rewards Webhook] Skipping ${purchaseType} - will be handled by checkout.session.completed`);
+      return { success: true };
+    }
+    
     // Find the upgrade transaction - try by payment intent first, then by session ID
     let { data: transaction, error: transactionError } = await supabaseAny
       .from('upgrade_transactions')
