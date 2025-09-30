@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
+import { usePrivy } from "@privy-io/react-auth";
 import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import type { CampaignData } from "@/types/campaign.types";
 import { getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
@@ -80,6 +81,7 @@ export default function ClubDetailsModal({
   autoOpenWallet = false,
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
+  const { login } = usePrivy();
   const { toast } = useToast();
   
   // Clear campaign data on club change to avoid stale UI
@@ -145,11 +147,8 @@ export default function ClubDetailsModal({
 
   const handleJoinClub = async () => {
     if (!isAuthenticated || !user?.id) {
-      toast({
-        title: "Sign in required",
-        description: "Please sign in to add memberships",
-        variant: "destructive",
-      });
+      // Open Privy login modal instead of showing error toast
+      login();
       return;
     }
 
@@ -585,15 +584,10 @@ export default function ClubDetailsModal({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      handleJoinClub();
+                      handleJoinClub(); // Opens login modal if not authenticated
                     }}
-                    disabled={joinClubMutation.isPending || !isAuthenticated}
+                    disabled={joinClubMutation.isPending}
                     className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    aria-label={
-                      !isAuthenticated
-                        ? "Sign in required to add memberships"
-                        : undefined
-                    }
                   >
                     {joinClubMutation.isPending ? (
                       <Spinner size="sm" />
