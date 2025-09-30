@@ -91,6 +91,7 @@ export default function ClubDetailsModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
   const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
+  const [hasTriggeredLogin, setHasTriggeredLogin] = useState(false);
   const [redemptionConfirmation, setRedemptionConfirmation] = useState<{
     redemption: RedemptionData;
     unlock: UnlockData;
@@ -132,6 +133,24 @@ export default function ClubDetailsModal({
       return () => clearTimeout(timer);
     }
   }, [isOpen, autoOpenWallet, membership]);
+
+  // Auto-trigger login popup for unauthenticated users (only once)
+  useEffect(() => {
+    if (isOpen && !isAuthenticated && !hasTriggeredLogin) {
+      const timer = setTimeout(() => {
+        login();
+        setHasTriggeredLogin(true);
+      }, 1000); // Wait for modal animation to complete
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, isAuthenticated, hasTriggeredLogin, login]);
+
+  // Reset login trigger flag when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setHasTriggeredLogin(false);
+    }
+  }, [isOpen]);
 
   // Status calculations - use unified points data if available (now includes temporary boosts)
   const currentStatus = (breakdown?.status.current || membership?.current_status || 'cadet') as ClubStatus;
@@ -405,42 +424,63 @@ export default function ClubDetailsModal({
                 {/* Main Section Header */}
                 <h3 className="mb-4 text-xl font-semibold">Store</h3>
                 
-                {/* Campaign Name and Description */}
-                {campaignData && (
-                  <div className="mb-4">
-                    <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
-                    {campaignData.campaign_description && (
-                      <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
-                    )}
+                {!isAuthenticated ? (
+                  // Show login prompt for unauthenticated users
+                  <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+                    <div className="mb-4">
+                      <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                      <h4 className="font-semibold text-white mb-2">Log In To View Campaigns</h4>
+                      <p className="text-gray-400 text-sm">
+                        Access exclusive campaigns, earn points, and unlock limited-time perks available only to club members
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => login()}
+                      className="w-full rounded-lg bg-primary px-4 py-3 font-semibold text-white hover:bg-primary/90"
+                    >
+                      Log In
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    {/* Campaign Name and Description */}
+                    {campaignData && (
+                      <div className="mb-4">
+                        <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
+                        {campaignData.campaign_description && (
+                          <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Campaign Progress Card */}
+                    {campaignData && (
+                      <CampaignProgressCard campaignData={campaignData} clubId={club.id} />
+                    )}
+                    
+                    <UnlockRedemption
+                      clubId={club.id}
+                      clubName={club.name}
+                      userStatus={currentStatus}
+                      userPoints={currentPoints}
+                      onCampaignDataChange={setCampaignData}
+                      onCreditBalancesChange={setCreditBalances}
+                      onRedemption={async () => {
+                        await refetch();
+                        toast({
+                          title: "Perk Redeemed!",
+                          description: "Wallet and status updated",
+                        });
+                      }}
+                      onShowRedemptionConfirmation={(redemption, unlock) => {
+                        setRedemptionConfirmation({ redemption, unlock });
+                      }}
+                      onShowPerkDetails={(unlock, redemption, onPurchase) => {
+                        setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
+                      }}
+                    />
+                  </>
                 )}
-                
-                {/* Campaign Progress Card */}
-                {campaignData && (
-                  <CampaignProgressCard campaignData={campaignData} clubId={club.id} />
-                )}
-                
-                <UnlockRedemption
-                  clubId={club.id}
-                  clubName={club.name}
-                  userStatus={currentStatus}
-                  userPoints={currentPoints}
-                  onCampaignDataChange={setCampaignData}
-                  onCreditBalancesChange={setCreditBalances}
-                  onRedemption={async () => {
-                    await refetch();
-                    toast({
-                      title: "Perk Redeemed!",
-                      description: "Wallet and status updated",
-                    });
-                  }}
-                  onShowRedemptionConfirmation={(redemption, unlock) => {
-                    setRedemptionConfirmation({ redemption, unlock });
-                  }}
-                  onShowPerkDetails={(unlock, redemption, onPurchase) => {
-                    setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
-                  }}
-                />
               </div>
 
             {/* Your Status Section - Moved Below Campaign Rewards */}
