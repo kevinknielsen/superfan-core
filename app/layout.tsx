@@ -25,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
     (process.env.VERCEL_ENV || process.env.NEXT_PUBLIC_VERCEL_ENV) === 'production';
   
   const baseUrl = isRealProduction 
-    ? (process.env.NEXT_PUBLIC_APP_URL || 'https://www.superfan.one')
+    ? (process.env.NEXT_PUBLIC_APP_URL || 'https://superfan.one')
     : computedBaseUrl;
   
   // Mini App embed configuration
