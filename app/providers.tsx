@@ -44,7 +44,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* FarcasterProvider: Detects if running in Farcaster/Coinbase Wallet context */}
       <FarcasterProvider>
+        {/* PrivyProvider: Used for web authentication (email/sms/google) 
+            Not used for Farcaster mini app users - they authenticate via SDK */}
         <PrivyProvider
           appId={privyAppId}
           config={{
@@ -71,9 +74,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
             })
           }}
         >
+          {/* FarcasterAuthProvider: Manages auth prompts
+              For mini apps: uses Farcaster SDK directly
+              For web: delegates to Privy */}
           <FarcasterAuthProvider>
+            {/* FarcasterWagmiProvider: Provides wallet connection for both contexts */}
             <FarcasterWagmiProvider>
+              {/* UnifiedAuthProvider: Provides unified auth state for the app
+                  Returns isAuthenticated, user, walletAddress for both contexts */}
               <UnifiedAuthProvider>
+                {/* UniversalAuthProvider: Manages auth modals and actions */}
                 <UniversalAuthProvider>
                   {children}
                   <Toaster />

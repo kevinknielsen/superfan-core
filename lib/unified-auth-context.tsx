@@ -82,15 +82,16 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const currentPoints = userStatus?.currentPoints || 0;
   const statusName = userStatus?.statusName || 'Cadet';
 
-  // Sync user to Supabase when authenticated via Privy (not needed for Farcaster users)
+  // Sync user to Supabase when authenticated via Privy
+  // Skip for Farcaster users - they authenticate differently
   useEffect(() => {
     if (!privyAuthenticated || !privyUser || hasTriedSync || isInWalletApp) {
       return;
     }
 
-    // Run user sync immediately without timeout to prevent race conditions
+    // Only sync web users authenticated via Privy
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[UnifiedAuth] Syncing Privy user to Supabase', { id: privyUser.id });
+      console.log('[UnifiedAuth] Syncing Privy web user to Supabase', { id: privyUser.id });
     }
     setHasTriedSync(true);
 
@@ -134,8 +135,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         // Wallet app: use Farcaster authentication
         const farcasterUserId = farcasterUser?.fid?.toString();
         if (!farcasterUserId) {
+          console.error('[UnifiedAuth] Farcaster user not found in wallet app context');
           throw new Error("Farcaster user not found in wallet app");
         }
+        console.log('[UnifiedAuth] Using Farcaster auth for admin check:', { fid: farcasterUserId });
         return {
           'Content-Type': 'application/json',
           'Authorization': `Farcaster farcaster:${farcasterUserId}`,
@@ -145,8 +148,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         const { getAccessToken } = await import('@privy-io/react-auth');
         const accessToken = await getAccessToken();
         if (!accessToken) {
+          console.error('[UnifiedAuth] Privy access token not available for web user');
           throw new Error("User not logged in");
         }
+        console.log('[UnifiedAuth] Using Privy auth for admin check');
         return {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`,

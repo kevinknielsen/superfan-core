@@ -11,8 +11,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, User, Wallet, AlertCircle } from "lucide-react";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { usePrivy } from "@/lib/auth-context";
-import frameSdk from "@farcaster/miniapp-sdk";
-import { useLoginToFrame } from "@privy-io/react-auth/farcaster";
 
 interface FarcasterAuthContextType {
   showAuthPrompt: (action: "fund" | "profile", callback?: () => void) => void;
@@ -30,41 +28,21 @@ export function FarcasterAuthProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { ready, authenticated } = usePrivy();
-  const { initLoginToFrame, loginToFrame } = useLoginToFrame();
-  const { isInWalletApp } = useFarcaster();
+  const { isInWalletApp, user: farcasterUser } = useFarcaster();
   const [isAuthPromptOpen, setIsAuthPromptOpen] = useState(false);
   const [authAction, setAuthAction] = useState<"fund" | "profile" | null>(null);
   const [authCallback, setAuthCallback] = useState<(() => void) | undefined>(undefined);
 
-  // Login to Wallet App with Privy automatically
+  // For wallet app users, authentication is handled by the Farcaster SDK
+  // No need for Privy login flow - the farcasterUser from context is our auth
   useEffect(() => {
-    if (isInWalletApp && ready && !authenticated) {
-      const login = async () => {
-        try {
-          // Initialize a new login attempt to get a nonce for the Farcaster wallet to sign
-          const { nonce } = await initLoginToFrame();
-          // Request a signature from Farcaster
-          const result = await frameSdk.actions.signIn({ nonce: nonce });
-          // Send the received signature from Farcaster to Privy for authentication
-          await loginToFrame({
-            message: result.message,
-            signature: result.signature,
-          });
-        } catch (error) {
-          console.error("Failed to authenticate with Farcaster:", error);
-          // Check if it's an origin error and provide helpful feedback
-          if (error instanceof Error && (error.message.includes('Origin not allowed') || error.message.includes('403'))) {
-            console.error('⚠️  Privy Configuration Issue:');
-            console.error('Current origin needs to be added to Privy dashboard allowed origins:');
-            console.error(`Add this URL: ${window.location.origin}`);
-            console.error('Go to: https://dashboard.privy.io → Your App → Settings → Allowed Origins');
-          }
-        }
-      };
-      login();
+    if (isInWalletApp && farcasterUser) {
+      console.log('[FarcasterAuth] Wallet app user authenticated via Farcaster SDK:', {
+        fid: farcasterUser.fid,
+        username: farcasterUser.username
+      });
     }
-  }, [isInWalletApp, ready, authenticated, initLoginToFrame, loginToFrame]);
+  }, [isInWalletApp, farcasterUser]);
 
   const showAuthPrompt = (action: "fund" | "profile", callback?: () => void) => {
     setAuthAction(action);
@@ -110,7 +88,19 @@ export function useFarcasterAuth() {
 function FarcasterAuthModal() {
   const { isAuthPromptOpen, hideAuthPrompt, authAction } = useFarcasterAuth();
   const { isInWalletApp, user } = useFarcaster();
-  const { login, authenticated } = usePrivy();
+  
+  // Only use Privy for web context
+  let login = null;
+  let authenticated = false;
+  try {
+    const privyAuth = usePrivy();
+    login = privyAuth?.login || null;
+    authenticated = privyAuth?.authenticated || false;
+  } catch (error) {
+    // Privy might not be available in wallet app context
+    console.warn('[FarcasterAuthModal] Privy not available:', error);
+  }
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -187,30 +177,34 @@ function FarcasterAuthModal() {
       setError(null);
 
       if (isInWalletApp) {
-        // In Wallet App context - we already have the Farcaster user
+        // In Wallet App context - we already have the Farcaster user from SDK
         if (!user) {
           setError(
-            "Please make sure you are logged into Farcaster and try again. You need a Farcaster account to use Superfan in Wallet App mode."
+            "Unable to detect your Farcaster account. Please make sure you're using the app within Farcaster or Coinbase Wallet."
           );
           setIsLoading(false);
           return;
         }
 
-        // In Wallet App, the "Connect Wallet" action is more of a confirmation/proceed action
-        // The actual wallet connection will happen during the funding flow
+        // Farcaster user is authenticated via SDK - just proceed
+        console.log('[FarcasterAuthModal] Wallet app user confirmed:', user.fid);
         hideAuthPrompt();
         return;
       }
 
-      // Only use Privy for web context
-      if (!authenticated) {
+      // Web context - use Privy authentication
+      if (!authenticated && login) {
         await login();
+      } else if (!login) {
+        setError("Authentication is not configured. Please contact support.");
+        setIsLoading(false);
+        return;
       }
 
       hideAuthPrompt();
     } catch (error) {
-      console.error("Failed to connect wallet:", error);
-      setError("Failed to connect wallet. Please try again.");
+      console.error("Failed to authenticate:", error);
+      setError("Failed to authenticate. Please try again.");
       setIsLoading(false);
     }
   };
