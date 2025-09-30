@@ -1042,13 +1042,6 @@ export default function UnlockRedemption({
             {/* Footer Actions */}
             <div className="flex flex-col gap-2 rounded-b-lg border-t px-4 py-3 sm:flex-row sm:justify-end bg-muted/30">
               <Button
-                variant="outline"
-                onClick={() => setSelectedUnlock(null)}
-                className="sm:w-auto w-full"
-              >
-                Cancel
-              </Button>
-              <Button
                 onClick={() => {
                   // Credit campaigns use purchase flow, regular tiers use redeem flow
                   if (selectedUnlock.is_credit_campaign) {
@@ -1061,6 +1054,13 @@ export default function UnlockRedemption({
                 className="min-w-[140px] sm:w-auto w-full"
               >
                 {isRedeeming ? 'Processing...' : 'Proceed to Checkout'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setSelectedUnlock(null)}
+                className="sm:w-auto w-full"
+              >
+                Cancel
               </Button>
             </div>
           </DialogContent>
