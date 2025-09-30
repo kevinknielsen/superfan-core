@@ -577,7 +577,7 @@ export default function ClubDetailsModal({
                     }}
                     className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
                   >
-                    View Current Status
+                    Your Stuff
                   </button>
                 ) : (
                   <button

@@ -122,6 +122,7 @@ export async function GET(
       `)
       .eq('club_id', clubId)
       .eq('is_active', true)
+      .is('metadata->is_generic_credit_purchase', null) // Exclude generic credit purchase rewards
       .order('tier')
       .order('created_at', { ascending: false });
 

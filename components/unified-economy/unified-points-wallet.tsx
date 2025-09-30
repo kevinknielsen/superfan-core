@@ -496,7 +496,7 @@ export default function UnifiedPointsWallet({
                     }}
                   >
                     <Gift className="w-4 h-4 mr-2" />
-                    Redeem Credits ({totalCampaignCredits})
+                    Redeem Items
                   </Button>
                 </motion.div>
               )}

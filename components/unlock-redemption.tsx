@@ -793,10 +793,17 @@ export default function UnlockRedemption({
                   {/* Enhanced info - Support both tier rewards and credit campaigns */}
                   <div className={`text-sm font-medium mb-2 ${getStatusTextColor(unlock.min_status as any)}`}>
                     {unlock.is_credit_campaign ? (
-                      // Credit campaign display (credits only, no dollars)
-                      <div className="flex items-center justify-between">
-                        <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>
-                      </div>
+                      // Credit campaign display
+                      (() => {
+                        const redemption = getUnlockRedemption(unlock);
+                        const ownedCount = redemption?.tickets_purchased || 0;
+                        
+                        if (ownedCount > 0) {
+                          return <span className="text-blue-400">🎁 You own {ownedCount}</span>;
+                        } else {
+                          return <span className="text-green-400">💵 {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) > 1 ? 's' : ''}</span>;
+                        }
+                      })()
                     ) : (
                       // Regular tier reward display
                       unlock.user_discount_eligible && (unlock.user_discount_amount_cents ?? 0) > 0
@@ -838,11 +845,15 @@ export default function UnlockRedemption({
                       } else if (unlock.is_credit_campaign) {
                         // Credit campaign logic (1 credit = $1)
                         const userCredits = (unlock as any).user_credit_balance || 0;
-                        if (userCredits >= (unlock.credit_cost || 0)) {
-                          // User has enough credits - handle redemption
+                        const isCampaignFunded = unlock.campaign_status === 'funded' || 
+                          (unlock.campaign_progress?.funding_percentage || 0) >= 100;
+                        
+                        // Only allow redemption if campaign is funded
+                        if (isCampaignFunded && userCredits >= (unlock.credit_cost || 0)) {
+                          // Campaign funded AND user has enough credits - handle redemption
                           handleCreditRedemption(unlock);
                         } else {
-                          // User needs more credits - show purchase flow
+                          // Campaign not funded OR user needs more credits - show purchase flow
                           setSelectedUnlock(unlock);
                         }
                       } else if (isAvailable) {
@@ -859,9 +870,14 @@ export default function UnlockRedemption({
                             if (unlock.is_credit_campaign) {
                               const userCredits = (unlock as any).user_credit_balance || 0;
                               const creditCost = unlock.credit_cost || 0;
-                              if (userCredits >= creditCost) {
+                              const isCampaignFunded = unlock.campaign_status === 'funded' || 
+                                (unlock.campaign_progress?.funding_percentage || 0) >= 100;
+                              
+                              // Only show "Redeem" if campaign is funded AND user has credits
+                              if (isCampaignFunded && userCredits >= creditCost) {
                                 return `Redeem ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
                               } else {
+                                // Show "Commit" for buying/contributing to campaign
                                 return `Commit ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
                               }
                             }
