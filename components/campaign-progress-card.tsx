@@ -61,7 +61,7 @@ export function CampaignProgressCard({ campaignData, clubId }: CampaignProgressC
         body: JSON.stringify({
           club_id: clubId,
           credit_amount: creditAmount,
-          success_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_success=true`,
+          success_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&purchase_success=true`,
           cancel_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_cancelled=true`
         })
       });
