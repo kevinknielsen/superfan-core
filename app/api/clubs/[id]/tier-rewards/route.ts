@@ -32,15 +32,17 @@ export async function GET(
         .single();
 
       if (userError || !user) {
-        console.error('[Club Tier Rewards API] User not found:', userError);
-        return NextResponse.json({ error: "User not found" }, { status: 404 });
+        // User record not found - gracefully fall back to public mode instead of failing
+        console.warn('[Club Tier Rewards API] User record not found in database, continuing in public mode:', userError);
+        actualUserId = null;
+      } else {
+        actualUserId = user.id;
+        console.log('[Club Tier Rewards API] Found user UUID:', actualUserId, 'for auth:', auth);
       }
-
-      actualUserId = user.id;
-      console.log('[Club Tier Rewards API] Found user UUID:', actualUserId, 'for auth:', auth);
     } catch (authError) {
       console.error('[Club Tier Rewards API] Auth error:', authError);
       // Fall back to public mode if auth fails
+      actualUserId = null;
     }
   } else {
     console.log('[Club Tier Rewards API] Public preview mode - no user auth');
