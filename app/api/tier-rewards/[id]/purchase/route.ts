@@ -194,6 +194,14 @@ export async function POST(
         is_credit_campaign: isCreditCampaign.toString(),
         credit_cost: creditCost.toString(),
         credits_purchased: isCreditCampaign ? creditCost.toString() : '0'
+      },
+      payment_intent_data: {
+        metadata: {
+          type: isCreditCampaign ? 'credit_purchase' : 'campaign_tier_purchase',
+          tier_reward_id: tierRewardId,
+          club_id: tierReward.club_id,
+          campaign_id: tierReward.campaign_id || ''
+        }
       }
     }, {
       idempotencyKey // Pass to Stripe for true idempotency

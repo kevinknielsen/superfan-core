@@ -366,7 +366,19 @@ export default function UnlockRedemption({
   };
 
   const isUnlockRedeemed = (unlock: Unlock) => {
-    return !!getUnlockRedemption(unlock);
+    const redemption = getUnlockRedemption(unlock);
+    if (!redemption) return false;
+    
+    // For campaign items, only show as "redeemed" if campaign is funded
+    // Having a purchase record doesn't mean it's redeemed yet
+    if (unlock.is_credit_campaign) {
+      const isCampaignFunded = unlock.campaign_status === 'funded' || 
+        (unlock.campaign_progress?.funding_percentage || 0) >= 100;
+      return isCampaignFunded && redemption.tickets_redeemed > 0;
+    }
+    
+    // For regular tier rewards, having a claim means it's redeemed
+    return true;
   };
 
   const getStatusProgress = (requiredStatus: string) => {
@@ -875,10 +887,10 @@ export default function UnlockRedemption({
                               
                               // Only show "Redeem" if campaign is funded AND user has credits
                               if (isCampaignFunded && userCredits >= creditCost) {
-                                return `Redeem ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
+                                return 'Redeem';
                               } else {
                                 // Show "Commit" for buying/contributing to campaign
-                                return `Commit ${creditCost} Credit${creditCost !== 1 ? 's' : ''}`;
+                                return 'Commit';
                               }
                             }
                             

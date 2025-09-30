@@ -185,6 +185,13 @@ export async function POST(request: NextRequest) {
         campaign_title: activeCampaign.title,
         // Preserve deterministic data for correlation
         correlation_key: `${club_id}_${actualUserId}_${credit_amount}`
+      },
+      payment_intent_data: {
+        metadata: {
+          type: 'direct_credit_purchase',
+          club_id: club_id,
+          campaign_id: activeCampaign.id
+        }
       }
     }, {
       idempotencyKey // Pass to Stripe for true idempotency

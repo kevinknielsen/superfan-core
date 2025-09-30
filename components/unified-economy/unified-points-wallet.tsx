@@ -491,7 +491,7 @@ export default function UnifiedPointsWallet({
                       onCloseWallet?.();
                       toast({
                         title: "View Items",
-                        description: "Scroll to the Store section to redeem your credits",
+                        description: "You can claim items when the campaign reaches its goal",
                       });
                     }}
                   >

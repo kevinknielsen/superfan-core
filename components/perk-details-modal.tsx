@@ -89,7 +89,15 @@ export default function PerkDetailsModal({
   const hasValidDate = !!(eventDateObj && !isNaN(eventDateObj.getTime()));
   const location = perk.rules?.location || redemption?.metadata?.location;
   const capacity = perk.rules?.capacity;
-  const accessCode = redemption?.metadata?.access_code;
+  
+  // Access code only shows when item is actually redeemed (campaign funded + tickets_redeemed > 0)
+  // For campaign items, just purchasing doesn't grant access yet
+  const isCampaignItem = isCreditCampaignMetadata(perk.metadata);
+  const isActuallyRedeemed = isCampaignItem 
+    ? (redemption as any)?.tickets_redeemed > 0 
+    : !!redemption;
+  const accessCode = isActuallyRedeemed ? redemption?.metadata?.access_code : undefined;
+  
   const instructions = perk.rules?.instructions || perk.description;
   const contactEmail = perk.rules?.contact_email;
   const externalLink = perk.rules?.external_link;
