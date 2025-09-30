@@ -422,7 +422,7 @@ export default function ClubDetailsModal({
             {/* Store Section - Always visible even for non-members */}
             <div className="mb-8" ref={rewardsRef}>
                 {/* Main Section Header */}
-                <h3 className="mb-4 text-xl font-semibold">Store</h3>
+                <h3 className="mb-4 text-xl font-semibold">Releases</h3>
                 
                 {!isAuthenticated ? (
                   // Show login prompt for unauthenticated users
@@ -443,21 +443,6 @@ export default function ClubDetailsModal({
                   </div>
                 ) : (
                   <>
-                    {/* Campaign Name and Description */}
-                    {campaignData && (
-                      <div className="mb-4">
-                        <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
-                        {campaignData.campaign_description && (
-                          <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Campaign Progress Card */}
-                    {campaignData && (
-                      <CampaignProgressCard campaignData={campaignData} clubId={club.id} />
-                    )}
-                    
                     <UnlockRedemption
                       clubId={club.id}
                       clubName={club.name}
@@ -479,6 +464,21 @@ export default function ClubDetailsModal({
                         setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
                       }}
                     />
+                    
+                    {/* Campaign Name and Description */}
+                    {campaignData && (
+                      <div className="mt-6 mb-4">
+                        <h4 className="text-lg font-semibold text-white">{campaignData.campaign_title}</h4>
+                        {campaignData.campaign_description && (
+                          <p className="text-sm text-gray-400 mt-1">{campaignData.campaign_description}</p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Campaign Progress Card */}
+                    {campaignData && (
+                      <CampaignProgressCard campaignData={campaignData} clubId={club.id} />
+                    )}
                   </>
                 )}
               </div>
