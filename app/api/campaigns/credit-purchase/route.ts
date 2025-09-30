@@ -166,8 +166,8 @@ export async function POST(request: NextRequest) {
         },
         quantity: 1
       }],
-      success_url: success_url || `${baseUrl}/dashboard?credit_purchase_success=true&club_id=${club_id}`,
-      cancel_url: cancel_url || `${baseUrl}/dashboard?club_id=${club_id}`,
+      success_url: success_url || `${baseUrl.replace(/\/$/, '')}/dashboard?credit_purchase_success=true&club_id=${club_id}`,
+      cancel_url: cancel_url || `${baseUrl.replace(/\/$/, '')}/dashboard?club_id=${club_id}`,
       metadata: {
         type: 'direct_credit_purchase',
         club_id: club_id,

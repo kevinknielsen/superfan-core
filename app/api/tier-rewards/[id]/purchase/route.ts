@@ -175,8 +175,8 @@ export async function POST(
         },
         quantity: 1
       }],
-      success_url: `${baseUrl}/dashboard?purchase_success=true&club_id=${tierReward.club_id}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/dashboard?club_id=${tierReward.club_id}`,
+      success_url: `${baseUrl.replace(/\/$/, '')}/dashboard?purchase_success=true&club_id=${tierReward.club_id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl.replace(/\/$/, '')}/dashboard?club_id=${tierReward.club_id}`,
       metadata: {
         type: isCreditCampaign ? 'credit_purchase' : 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,

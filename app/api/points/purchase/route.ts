@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
     // Create Stripe checkout session
     const baseUrl = resolveAppUrl(request);
     // Redirect back to dashboard with modal state to preserve UX context
-    const successUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=success`;
-    const cancelUrl = `${baseUrl}/dashboard?club=${communityId}&purchase=canceled`;
+    const successUrl = `${baseUrl.replace(/\/$/, '')}/dashboard?club=${communityId}&purchase=success`;
+    const cancelUrl = `${baseUrl.replace(/\/$/, '')}/dashboard?club=${communityId}&purchase=canceled`;
 
     const session = await createPointsPurchaseSession({
       communityId: community.id,
