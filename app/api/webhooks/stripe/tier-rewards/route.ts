@@ -251,16 +251,16 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
         club_id: metadata.club_id,
         reward_id: metadata.tier_reward_id, // Required NOT NULL field
         campaign_id: metadata.campaign_id || null,
-        claim_method: 'upgrade_purchased', // Use allowed value per database constraint
+        claim_method: 'tier_qualified', // Campaign purchases don't use upgrade_transactions
         user_tier_at_claim: metadata.user_tier || 'cadet',
         user_points_at_claim: 0,
         original_price_cents: toInt(metadata.original_price_cents || metadata.price_cents),
         paid_price_cents: toInt(metadata.final_price_cents || metadata.price_cents),
         discount_applied_cents: toInt(metadata.discount_cents),
         stripe_payment_intent_id: session.payment_intent as string,
-        // Required for upgrade_purchased constraint
-        upgrade_transaction_id: session.payment_intent as string,
-        upgrade_amount_cents: toInt(metadata.final_price_cents || metadata.price_cents),
+        // Campaign purchases don't have upgrade_transaction_id (no FK constraint issue)
+        upgrade_transaction_id: null,
+        upgrade_amount_cents: null,
         refund_status: 'none',
         // Grant access immediately (constraint only allows 'granted' or 'revoked')
         access_status: 'granted',
