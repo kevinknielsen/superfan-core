@@ -182,6 +182,8 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       normalizedType === 'credit_purchase' || 
       normalizedType === 'direct_credit_purchase' || 
       toBool(metadata.is_credit_campaign);
+    
+    console.log(`[Tier Rewards Webhook] Processing ${normalizedType} purchase, isCreditPurchase: ${isCreditPurchase}`);
     // For direct credit purchases, get credit amount from metadata
     const directCreditAmount = toInt(metadata.credit_amount);
     // Back-compat: accept both credits_purchased and tickets_purchased with safe fallback
@@ -550,6 +552,7 @@ async function processCheckoutSessionCompleted(event: Stripe.Event): Promise<{ s
 
 // Main webhook handler with idempotency and error handling
 export async function POST(request: NextRequest) {
+  console.log('[Tier Rewards Webhook] Received webhook request');
   try {
     // Get raw body for signature verification
     const rawBody = await request.text();
