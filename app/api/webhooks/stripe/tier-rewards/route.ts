@@ -208,6 +208,7 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     // Create reward claim with campaign and discount tracking (enhanced for tickets)
     const claimData: any = {
       user_id: metadata.user_id,
+      club_id: metadata.club_id,
       campaign_id: metadata.campaign_id || null,
       claim_method: isCreditPurchase ? 'credit_purchase' : 'upgrade_purchased',
       user_tier_at_claim: metadata.user_tier || 'cadet',

@@ -180,6 +180,7 @@ export async function POST(
       metadata: {
         type: isCreditCampaign ? 'credit_purchase' : 'campaign_tier_purchase',
         tier_reward_id: tierRewardId,
+        club_id: tierReward.club_id,
         campaign_id: tierReward.campaign_id || '',
         user_id: actualUserId,
         user_tier: userTier,
