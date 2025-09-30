@@ -105,8 +105,8 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
       transition={{ duration: 0.5 }}
     >
       <Card className="relative bg-gray-900/80 border-gray-700/50 p-6 overflow-hidden">
-        {/* Social Proof Badge - Add urgency */}
-        <div className="absolute top-4 right-4 z-10">
+        {/* Social Proof Badge - Hidden for now */}
+        {/* <div className="absolute top-4 right-4 z-10">
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -116,7 +116,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
             <Users className="w-3 h-3" />
             {Math.floor(campaignData.campaign_progress.current_funding_cents / 2500)} backers
           </motion.div>
-        </div>
+        </div> */}
 
         {/* Side-by-side tier comparison */}
         <div className="flex items-center justify-between mb-6">
