@@ -417,11 +417,17 @@ export async function GET(
     
     // Get credit balance for each campaign using the new function
     for (const campaignId of uniqueCampaignIds) {
-      const { data: balanceData } = await supabaseAny
+      const { data: balanceData, error: balanceError } = await supabaseAny
         .rpc('get_user_campaign_credits', {
           p_user_id: actualUserId,
           p_campaign_id: campaignId
         });
+      
+      if (balanceError) {
+        console.error(`[Club Tier Rewards API] Error fetching credit balance for campaign ${campaignId}:`, balanceError);
+        // Continue processing other campaigns
+        continue;
+      }
       
       if (balanceData !== null && balanceData !== undefined) {
         creditBalancesByCampaign.set(campaignId, balanceData);

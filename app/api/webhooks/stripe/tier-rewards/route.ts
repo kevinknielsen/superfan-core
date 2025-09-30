@@ -207,6 +207,18 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
 
     // Direct credit purchases go to separate table (no reward_id, allows repeat purchases)
     if (normalizedType === 'direct_credit_purchase') {
+      // Check if already processed (idempotency protection)
+      const { data: existingPurchase } = await supabaseAny
+        .from('credit_purchases')
+        .select('id')
+        .eq('stripe_payment_intent_id', session.payment_intent as string)
+        .single();
+        
+      if (existingPurchase) {
+        console.log(`[Tier Rewards Webhook] Credit purchase already processed, skipping: ${session.payment_intent}`);
+        return { success: true };
+      }
+      
       const creditPurchaseData = {
         user_id: metadata.user_id,
         club_id: metadata.club_id,

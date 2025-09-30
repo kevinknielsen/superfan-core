@@ -12,7 +12,7 @@ CREATE TABLE credit_purchases (
   
   -- Purchase details
   credits_purchased INTEGER NOT NULL CHECK (credits_purchased > 0),
-  price_paid_cents INTEGER NOT NULL CHECK (price_paid_cents >= 0),
+  price_paid_cents INTEGER NOT NULL CHECK (price_paid_cents > 0),
   
   -- Stripe integration
   stripe_payment_intent_id TEXT NOT NULL UNIQUE,
@@ -23,6 +23,12 @@ CREATE TABLE credit_purchases (
   status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed', 'refunded', 'failed')),
   refund_status TEXT NOT NULL DEFAULT 'none' CHECK (refund_status IN ('none', 'partial', 'full')),
   refunded_amount_cents INTEGER DEFAULT 0,
+  
+  -- Ensure refund_status consistency with status
+  CONSTRAINT check_refund_consistency CHECK (
+    (status = 'refunded' AND refund_status IN ('partial', 'full')) OR
+    (status != 'refunded' AND refund_status = 'none')
+  ),
   
   -- Timestamps
   purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -64,25 +70,28 @@ STABLE
 SECURITY DEFINER
 AS $$
 DECLARE
-  total_credits INTEGER;
+  purchased_credits INTEGER;
+  redeemed_credits INTEGER;
 BEGIN
-  -- Sum all completed credit purchases for this user and campaign
+  -- Sum all completed credit purchases from credit_purchases table
   SELECT COALESCE(SUM(credits_purchased), 0)
-  INTO total_credits
+  INTO purchased_credits
   FROM credit_purchases
   WHERE user_id = p_user_id
     AND campaign_id = p_campaign_id
     AND status = 'completed';
     
-  -- Subtract credits spent (from reward_claims where tickets_redeemed > 0)
-  SELECT total_credits - COALESCE(SUM(tickets_redeemed), 0)
-  INTO total_credits
+  -- Subtract credits spent on campaign items
+  -- tickets_redeemed tracks how many credits were spent from reward_claims
+  -- Only count credits actually redeemed, not just purchased items
+  SELECT COALESCE(SUM(tickets_redeemed), 0)
+  INTO redeemed_credits
   FROM reward_claims
   WHERE user_id = p_user_id
     AND campaign_id = p_campaign_id
     AND is_ticket_claim = true;
     
-  RETURN GREATEST(0, total_credits);
+  RETURN GREATEST(0, purchased_credits - redeemed_credits);
 END;
 $$;
 
