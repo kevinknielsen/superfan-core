@@ -205,39 +205,70 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       return 'AC' + crypto.randomBytes(8).toString('hex').toUpperCase();
     };
 
-    // Create reward claim with campaign and discount tracking (enhanced for tickets)
-    const claimData: any = {
-      user_id: metadata.user_id,
-      club_id: metadata.club_id,
-      reward_id: metadata.tier_reward_id, // Required NOT NULL field
-      campaign_id: metadata.campaign_id || null,
-      claim_method: 'upgrade_purchased', // Use allowed value per database constraint
-      user_tier_at_claim: metadata.user_tier || 'cadet',
-      user_points_at_claim: 0, // TODO: Get actual points if needed
-      original_price_cents: toInt(metadata.original_price_cents || metadata.price_cents),
-      paid_price_cents: toInt(metadata.final_price_cents || metadata.price_cents),
-      discount_applied_cents: toInt(metadata.discount_cents),
-      stripe_payment_intent_id: session.payment_intent as string,
-      // Required for upgrade_purchased constraint
-      upgrade_transaction_id: session.payment_intent as string, // Use payment intent as transaction reference
-      upgrade_amount_cents: toInt(metadata.final_price_cents || metadata.price_cents),
-      refund_status: 'none',
-      // Grant access immediately for direct credit purchases
-      access_status: normalizedType === 'direct_credit_purchase' ? 'granted' : (isCreditPurchase ? 'pending' : 'granted'),
-      access_code: generateAccessCode(),
-      claimed_at: new Date().toISOString(),
-      // Credit/ticket tracking fields
-      is_ticket_claim: isCreditPurchase,
-      tickets_purchased: unitsPurchased, // DB uses tickets_purchased for credits too
-      tickets_available: unitsPurchased, // Initially all available
-      tickets_redeemed: 0
-    };
+    // Direct credit purchases go to separate table (no reward_id, allows repeat purchases)
+    if (normalizedType === 'direct_credit_purchase') {
+      const creditPurchaseData = {
+        user_id: metadata.user_id,
+        club_id: metadata.club_id,
+        campaign_id: metadata.campaign_id,
+        credits_purchased: unitsPurchased,
+        price_paid_cents: toInt(metadata.final_price_cents || metadata.price_cents),
+        stripe_payment_intent_id: session.payment_intent as string,
+        stripe_session_id: session.id,
+        idempotency_key: metadata.idempotency_key,
+        status: 'completed',
+        purchased_at: new Date().toISOString(),
+        metadata: {
+          campaign_title: metadata.campaign_title,
+          club_name: metadata.club_name
+        }
+      };
+      
+      const { error: insertError } = await supabaseAny.from('credit_purchases').insert(creditPurchaseData);
+      
+      if (insertError) {
+        console.error('[Tier Rewards Webhook] Failed to create credit purchase:', insertError);
+        return { success: false, error: `Failed to create credit purchase: ${insertError.message}` };
+      }
+      
+      console.log(`[Tier Rewards Webhook] Created credit purchase: ${unitsPurchased} credits for user ${metadata.user_id}`);
+    } else {
+      // Campaign item purchases go to reward_claims
+      const claimData: any = {
+        user_id: metadata.user_id,
+        club_id: metadata.club_id,
+        reward_id: metadata.tier_reward_id, // Required NOT NULL field
+        campaign_id: metadata.campaign_id || null,
+        claim_method: 'upgrade_purchased', // Use allowed value per database constraint
+        user_tier_at_claim: metadata.user_tier || 'cadet',
+        user_points_at_claim: 0,
+        original_price_cents: toInt(metadata.original_price_cents || metadata.price_cents),
+        paid_price_cents: toInt(metadata.final_price_cents || metadata.price_cents),
+        discount_applied_cents: toInt(metadata.discount_cents),
+        stripe_payment_intent_id: session.payment_intent as string,
+        // Required for upgrade_purchased constraint
+        upgrade_transaction_id: session.payment_intent as string,
+        upgrade_amount_cents: toInt(metadata.final_price_cents || metadata.price_cents),
+        refund_status: 'none',
+        // Grant access - pending until campaign funded
+        access_status: isCreditPurchase ? 'pending' : 'granted',
+        access_code: generateAccessCode(),
+        claimed_at: new Date().toISOString(),
+        // Credit/ticket tracking fields
+        is_ticket_claim: isCreditPurchase,
+        tickets_purchased: unitsPurchased,
+        tickets_available: unitsPurchased,
+        tickets_redeemed: 0
+      };
 
-    const { error: insertError } = await supabaseAny.from('reward_claims').insert(claimData);
+      const { error: insertError } = await supabaseAny.from('reward_claims').insert(claimData);
     
-    if (insertError) {
-      console.error('[Tier Rewards Webhook] Failed to create reward claim:', insertError);
-      return { success: false, error: `Failed to create reward claim: ${insertError.message}` };
+      if (insertError) {
+        console.error('[Tier Rewards Webhook] Failed to create reward claim:', insertError);
+        return { success: false, error: `Failed to create reward claim: ${insertError.message}` };
+      }
+      
+      console.log(`[Tier Rewards Webhook] Created reward claim for ${metadata.tier_reward_id}`);
     }
     
     // Update campaign progress with FULL tier value (not discounted amount)

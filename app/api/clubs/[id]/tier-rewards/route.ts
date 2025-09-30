@@ -405,17 +405,27 @@ export async function GET(
       is_ticket_claim: claim.is_ticket_claim
     }));
 
-    // Calculate credit balances by campaign for this club (1 credit = $1)
+    // Calculate credit balances by campaign for this club using new helper function
     const creditBalancesByCampaign = new Map();
-    if (userClaims) {
-      userClaims.forEach((claim: any) => {
-        if (claim.campaign_id && claim.is_ticket_claim) {
-          const balance = creditBalancesByCampaign.get(claim.campaign_id) || 0;
-          creditBalancesByCampaign.set(claim.campaign_id, 
-            balance + (claim.tickets_purchased || 0) - (claim.tickets_redeemed || 0)
-          );
-        }
-      });
+    
+    // Get unique campaign IDs from rewards
+    const uniqueCampaignIds = [...new Set(
+      (availableRewards || [])
+        .filter((r: any) => r.campaign_id)
+        .map((r: any) => r.campaign_id)
+    )];
+    
+    // Get credit balance for each campaign using the new function
+    for (const campaignId of uniqueCampaignIds) {
+      const { data: balanceData } = await supabaseAny
+        .rpc('get_user_campaign_credits', {
+          p_user_id: actualUserId,
+          p_campaign_id: campaignId
+        });
+      
+      if (balanceData !== null && balanceData !== undefined) {
+        creditBalancesByCampaign.set(campaignId, balanceData);
+      }
     }
 
     // Compile response (enhanced with credit information)
