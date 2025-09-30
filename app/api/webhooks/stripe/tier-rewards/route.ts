@@ -209,14 +209,18 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
     const claimData: any = {
       user_id: metadata.user_id,
       club_id: metadata.club_id,
+      reward_id: metadata.tier_reward_id, // Required NOT NULL field
       campaign_id: metadata.campaign_id || null,
-      claim_method: isCreditPurchase ? 'credit_purchase' : 'upgrade_purchased',
+      claim_method: 'upgrade_purchased', // Use allowed value per database constraint
       user_tier_at_claim: metadata.user_tier || 'cadet',
       user_points_at_claim: 0, // TODO: Get actual points if needed
       original_price_cents: toInt(metadata.original_price_cents || metadata.price_cents),
       paid_price_cents: toInt(metadata.final_price_cents || metadata.price_cents),
       discount_applied_cents: toInt(metadata.discount_cents),
       stripe_payment_intent_id: session.payment_intent as string,
+      // Required for upgrade_purchased constraint
+      upgrade_transaction_id: session.payment_intent as string, // Use payment intent as transaction reference
+      upgrade_amount_cents: toInt(metadata.final_price_cents || metadata.price_cents),
       refund_status: 'none',
       // Grant access immediately for direct credit purchases
       access_status: normalizedType === 'direct_credit_purchase' ? 'granted' : (isCreditPurchase ? 'pending' : 'granted'),
@@ -228,11 +232,6 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
       tickets_available: unitsPurchased, // Initially all available
       tickets_redeemed: 0
     };
-
-    // Only set reward_id if it exists (direct credit purchases don't have specific reward_id)
-    if (metadata.tier_reward_id) {
-      claimData.reward_id = metadata.tier_reward_id;
-    }
 
     const { error: insertError } = await supabaseAny.from('reward_claims').insert(claimData);
     
