@@ -299,7 +299,12 @@ export default function UnlockRedemption({
           metadata: {
             access_code: claim.access_code
           },
-          redeemed_at: claim.claimed_at
+          redeemed_at: claim.claimed_at,
+          // Include ticket/credit tracking for campaign items
+          tickets_purchased: claim.tickets_purchased,
+          tickets_available: claim.tickets_available,
+          tickets_redeemed: claim.tickets_redeemed,
+          is_ticket_claim: claim.is_ticket_claim
         }));
 
         // Sort unlocks by price (cheapest first) - Campaign MVP: no free claims, only discounts
@@ -860,8 +865,15 @@ export default function UnlockRedemption({
                       e.stopPropagation();
                       const redemption = getUnlockRedemption(unlock);
                       
-                      if (redemption) {
-                        // Already redeemed - show details
+                      // For campaign items, only show details if actually redeemed (tickets_redeemed > 0)
+                      // Having a purchase doesn't prevent buying more!
+                      const showDetails = redemption && (
+                        !unlock.is_credit_campaign || 
+                        (redemption as any)?.tickets_redeemed > 0
+                      );
+                      
+                      if (showDetails) {
+                        // Actually redeemed - show details
                         onShowPerkDetails?.(unlock, redemption);
                       } else if (unlock.is_credit_campaign) {
                         // Credit campaign logic (1 credit = $1)
@@ -898,8 +910,8 @@ export default function UnlockRedemption({
                               if (isCampaignFunded && userCredits >= creditCost) {
                                 return 'Redeem';
                               } else {
-                                // Show "Commit" for buying/contributing to campaign
-                                return 'Commit';
+                                // Show "Commit Credits" for buying/contributing to campaign
+                                return 'Commit Credits';
                               }
                             }
                             

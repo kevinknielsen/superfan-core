@@ -408,7 +408,7 @@ export default function PerkDetailsModal({
 
           {/* Enhanced Action Button - Support both preview and redemption modes */}
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent">
-            {isPreviewMode ? (
+            {isPreviewMode || !isActuallyRedeemed ? (
               // Preview mode - trigger purchase for credit campaigns
               <Button
                 onClick={() => {
@@ -423,7 +423,7 @@ export default function PerkDetailsModal({
                 className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
               >
                 {isCreditCampaignMetadata(perk.metadata) ? (
-                  `Commit ${perk.metadata.credit_cost} Credit${perk.metadata.credit_cost !== 1 ? 's' : ''}`
+                  'Commit Credits'
                 ) : (
                   'Close Preview'
                 )}
