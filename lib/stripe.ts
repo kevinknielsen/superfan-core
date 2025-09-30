@@ -43,6 +43,10 @@ export async function createPointsPurchaseSession({
     ? `${points.toLocaleString()} Points + ${bonusPoints.toLocaleString()} Bonus`
     : `${points.toLocaleString()} Points`;
 
+  // Generate idempotency key with random suffix to prevent conflicts during testing
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const idempotencyKey = `points_purchase_${communityId}_${userId}_${usdCents}_${randomSuffix}`;
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     line_items: [{
@@ -80,8 +84,11 @@ export async function createPointsPurchaseSession({
         bonus_points: bonusPoints.toString(),
         unit_sell_cents: unitSellCents.toString(),
         unit_settle_cents: unitSettleCents.toString(),
+        idempotency_key: idempotencyKey,
       },
     },
+  }, {
+    idempotencyKey // Pass to Stripe for true idempotency
   });
 
   if (!session.url) {

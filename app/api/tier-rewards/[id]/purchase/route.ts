@@ -155,7 +155,9 @@ export async function POST(
     
     // Generate stable idempotency key based on price to handle retries correctly
     // Include price in key so pricing changes create new sessions, but retries reuse same session
-    const idempotencyKey = `tier_purchase_${tierRewardId}_${actualUserId}_${finalPriceCents}`;
+    // Add random component to ensure uniqueness during testing
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const idempotencyKey = `tier_purchase_${tierRewardId}_${actualUserId}_${finalPriceCents}_${randomSuffix}`;
     
     // Create Stripe session - charge discounted amount immediately
     const session = await stripe.checkout.sessions.create({
