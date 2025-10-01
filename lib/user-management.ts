@@ -207,12 +207,47 @@ export async function getOrCreateUserFromAuth(auth: { userId: string; type: 'pri
 }
 
 /**
+ * Convert camelCase keys to snake_case for Supabase
+ */
+function toSnakeCase(updates: Record<string, any>): Record<string, any> {
+  // Known field mappings
+  const fieldMap: Record<string, string> = {
+    walletAddress: 'wallet_address',
+    metalHolderId: 'metal_holder_id',
+  };
+
+  const snakeCaseUpdates: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    // Use known mapping if available
+    if (fieldMap[key]) {
+      snakeCaseUpdates[fieldMap[key]] = value;
+    } 
+    // If already snake_case (contains underscore), leave as-is
+    else if (key.includes('_')) {
+      snakeCaseUpdates[key] = value;
+    } 
+    // Convert camelCase to snake_case
+    else {
+      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      snakeCaseUpdates[snakeKey] = value;
+    }
+  }
+
+  return snakeCaseUpdates;
+}
+
+/**
  * Update user data (supports both Privy and Farcaster users)
+ * Accepts both camelCase and snake_case field names
  */
 export async function updateUser(userId: string, updates: UpdateUserParams): Promise<User> {
+  // Normalize to snake_case for Supabase
+  const snakeCaseUpdates = toSnakeCase(updates as Record<string, any>);
+  
   const { data: updatedUser, error } = await supabase
     .from('users')
-    .update(updates)
+    .update(snakeCaseUpdates)
     .eq('id', userId)
     .select()
     .single();
