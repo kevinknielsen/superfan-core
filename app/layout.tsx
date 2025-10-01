@@ -38,8 +38,8 @@ export async function generateMetadata(): Promise<Metadata> {
         type: "launch_miniapp",
         url: baseUrl,
         name: "Superfan",
-        splashImageUrl: `${baseUrl}/splash.png`,
-        splashBackgroundColor: "#9C26B0"
+        splashImageUrl: `${baseUrl}/splash-new.png`,
+        splashBackgroundColor: "#0E0E14"
       }
     }
   };
