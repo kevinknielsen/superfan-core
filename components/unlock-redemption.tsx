@@ -226,6 +226,56 @@ export default function UnlockRedemption({
     onCreditBalancesChange(creditBalances);
   }, [unlocks, onCreditBalancesChange]);
 
+  // Monitor USDC transaction completion (must be declared with other hooks)
+  useEffect(() => {
+    if (!isUSDCSuccess || !usdcTxHash || !selectedUnlock) return;
+    
+    // Transaction confirmed on blockchain - now verify and grant credits
+    const processUSDCPurchase = async () => {
+      try {
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const response = await fetch('/api/campaigns/usdc-purchase', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders
+          },
+          body: JSON.stringify({
+            tx_hash: usdcTxHash,
+            club_id: clubId,
+            credit_amount: selectedUnlock.credit_cost || 0,
+            campaign_id: selectedUnlock.campaign_id
+          })
+        });
+
+        if (response.ok) {
+          toast({
+            title: "Purchase Successful! 🎉",
+            description: `${selectedUnlock.credit_cost} credits added to your account`,
+          });
+          
+          // Close modal and reload data
+          setSelectedUnlock(null);
+          await loadData();
+          onRedemption?.();
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to process purchase');
+        }
+      } catch (error) {
+        toast({
+          title: "Purchase Failed",
+          description: error instanceof Error ? error.message : "Failed to process purchase",
+          variant: "destructive",
+        });
+      }
+    };
+    
+    processUSDCPurchase();
+  }, [isUSDCSuccess, usdcTxHash, selectedUnlock, clubId, onRedemption, toast]);
+
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
       if (!isMounted || isMounted()) setIsLoading(true);
@@ -682,55 +732,6 @@ export default function UnlockRedemption({
     }
   };
 
-  // Monitor USDC transaction completion
-  useEffect(() => {
-    if (isUSDCSuccess && usdcTxHash && selectedUnlock) {
-      // Transaction confirmed on blockchain - now verify and grant credits
-      const processUSDCPurchase = async () => {
-        try {
-          const { getAuthHeaders } = await import('@/app/api/sdk');
-          const authHeaders = await getAuthHeaders();
-          
-          const response = await fetch('/api/campaigns/usdc-purchase', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...authHeaders
-            },
-            body: JSON.stringify({
-              tx_hash: usdcTxHash,
-              club_id: clubId,
-              credit_amount: selectedUnlock.credit_cost || 0,
-              campaign_id: selectedUnlock.campaign_id
-            })
-          });
-
-          if (response.ok) {
-            toast({
-              title: "Purchase Successful! 🎉",
-              description: `${selectedUnlock.credit_cost} credits added to your account`,
-            });
-            
-            // Close modal and reload data
-            setSelectedUnlock(null);
-            await loadData();
-            onRedemption?.();
-          } else {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to process purchase');
-          }
-        } catch (error) {
-          toast({
-            title: "Purchase Failed",
-            description: error instanceof Error ? error.message : "Failed to process purchase",
-            variant: "destructive",
-          });
-        }
-      };
-      
-      processUSDCPurchase();
-    }
-  }, [isUSDCSuccess, usdcTxHash, selectedUnlock, clubId, onRedemption, toast]);
 
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
