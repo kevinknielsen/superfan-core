@@ -7,6 +7,7 @@ import { Play, CheckCircle, ArrowRight, CreditCard, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAccessToken } from "@privy-io/react-auth";
 import { useFarcaster } from "@/lib/farcaster-context";
+import { navigateToCheckout } from "@/lib/navigation-utils";
 import type { CampaignData } from "@/types/campaign.types";
 import { useState } from "react";
 
@@ -83,13 +84,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
           throw new Error('Missing checkout URL');
         }
         
-        // Wallet app: use Farcaster SDK to open in external browser (Stripe doesn't work in iframes)
-        // Web: use normal redirect
-        if (isInWalletApp) {
-          await openUrl(url);
-        } else {
-          window.location.href = url;
-        }
+        await navigateToCheckout(url, isInWalletApp, openUrl);
       } else {
         const errorData = await response.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');

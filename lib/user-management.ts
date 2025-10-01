@@ -228,8 +228,11 @@ function toSnakeCase(updates: Record<string, any>): Record<string, any> {
       snakeCaseUpdates[key] = value;
     } 
     // Convert camelCase to snake_case
+    // Handles consecutive capitals correctly (e.g., 'userID' -> 'user_id')
     else {
-      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      const snakeKey = key.replace(/[A-Z]/g, (letter, index) => 
+        index === 0 ? letter.toLowerCase() : `_${letter.toLowerCase()}`
+      );
       snakeCaseUpdates[snakeKey] = value;
     }
   }

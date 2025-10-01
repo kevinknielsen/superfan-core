@@ -26,12 +26,14 @@ export async function GET(request: NextRequest) {
 
     // Single query to get user ID and wallet data using a JOIN
     // Query by privy_id OR farcaster_id depending on auth type
+    // Note: auth.userId already includes 'farcaster:' prefix for Farcaster users (e.g., 'farcaster:1099164')
     // Whitelist column names for security
     const userIdColumn = auth.type === 'farcaster' ? 'users.farcaster_id' : 'users.privy_id';
     if (!['users.farcaster_id', 'users.privy_id'].includes(userIdColumn)) {
       return NextResponse.json({ error: 'Invalid auth type' }, { status: 400 });
     }
     
+    // auth.userId format: Farcaster = 'farcaster:1099164', Privy = 'did:privy:...'
     const { data: walletData, error: walletError } = await supabase
       .from('v_point_wallets')
       .select(`
@@ -53,12 +55,14 @@ export async function GET(request: NextRequest) {
       let userId = user?.id;
       if (!userId) {
         // Query by privy_id OR farcaster_id depending on auth type
+        // Note: auth.userId already includes 'farcaster:' prefix for Farcaster users
         // Whitelist column names for security
         const userIdColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
         if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
           return NextResponse.json({ error: 'Invalid auth type' }, { status: 400 });
         }
         
+        // auth.userId format: Farcaster = 'farcaster:1099164', Privy = 'did:privy:...'
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('id')
