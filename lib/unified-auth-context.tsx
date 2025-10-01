@@ -137,10 +137,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
     );
   }, [isInWalletApp, farcasterUser, hasTriedSync]);
 
-  // Reset sync state when user changes
+  // Reset sync state when user changes (either Privy or Farcaster)
   useEffect(() => {
     setHasTriedSync(false);
-  }, [privyUser?.id]);
+  }, [privyUser?.id, farcasterUser?.fid]);
 
   // Fetch admin status when user is authenticated
   useEffect(() => {
@@ -160,11 +160,19 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
     const getAuthHeaders = async () => {
       if (isInWalletApp) {
         // Wallet app: use Farcaster authentication
-        const farcasterUserId = farcasterUser?.fid?.toString();
-        if (!farcasterUserId) {
-          console.error('[UnifiedAuth] Farcaster user not found in wallet app context');
-          throw new Error("Farcaster user not found in wallet app");
+        const fid = farcasterUser?.fid;
+        
+        // Validate FID exists and is a valid numeric value
+        if (fid == null || !Number.isFinite(fid) || !Number.isInteger(fid) || fid <= 0) {
+          console.error('[UnifiedAuth] Invalid or missing Farcaster FID:', { 
+            fid, 
+            type: typeof fid,
+            user: farcasterUser 
+          });
+          throw new Error("Invalid Farcaster FID - must be a positive integer");
         }
+        
+        const farcasterUserId = fid.toString();
         console.log('[UnifiedAuth] Using Farcaster auth for admin check:', { fid: farcasterUserId });
         return {
           'Content-Type': 'application/json',

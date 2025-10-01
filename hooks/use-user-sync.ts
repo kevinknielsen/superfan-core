@@ -31,8 +31,10 @@ export function useUserSync() {
       if (isInWalletApp && farcasterUser) {
         // Farcaster authentication
         const fid = farcasterUser.fid;
-        if (!fid) {
-          throw new Error('No Farcaster FID available');
+        
+        // Validate FID exists and is a valid numeric value
+        if (fid == null || !Number.isFinite(fid) || !Number.isInteger(fid) || fid <= 0) {
+          throw new Error(`Invalid Farcaster FID: expected positive integer, got ${fid} (type: ${typeof fid})`);
         }
         
         headers = {

@@ -2,12 +2,10 @@ import { supabase } from './supabase';
 import type { User } from '@/types/membership.types';
 
 export interface CreateUserParams {
-  privyId?: string;
-  farcasterUsername?: string | null;
+  privyId: string;
   email?: string | null;
   name?: string | null;
   walletAddress?: string | null;
-  farcasterProfileImage?: string | null;
 }
 
 export interface CreateFarcasterUserParams {
@@ -30,10 +28,6 @@ export interface UpdateUserParams {
  */
 export async function getOrCreateUser(params: CreateUserParams): Promise<User> {
   const { privyId, email, name, walletAddress } = params;
-
-  if (!privyId) {
-    throw new Error('privyId is required for Privy users');
-  }
 
   // First try to find existing user
   const { data: existingUser, error: findError } = await supabase
