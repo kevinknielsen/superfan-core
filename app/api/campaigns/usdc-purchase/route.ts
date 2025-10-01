@@ -91,16 +91,62 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Verify transaction is to the club's USDC wallet
+    // Verify transaction is to the USDC contract
     if (receipt.to?.toLowerCase() !== USDC_BASE_ADDRESS.toLowerCase()) {
       return NextResponse.json({ 
         error: 'Transaction not sent to USDC contract' 
       }, { status: 400 });
     }
 
-    // For MVP: Trust the credit_amount provided by client
-    // In production, you'd parse the transaction logs to verify exact USDC amount
-    // This is safe for MVP since you control the frontend and can manually verify
+    // Parse Transfer event from logs to verify recipient and amount
+    // Transfer event signature: Transfer(address indexed from, address indexed to, uint256 value)
+    const TRANSFER_EVENT_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+    
+    const transferEvent = receipt.logs.find(log => 
+      log.address.toLowerCase() === USDC_BASE_ADDRESS.toLowerCase() &&
+      log.topics[0] === TRANSFER_EVENT_SIGNATURE
+    );
+
+    if (!transferEvent || !transferEvent.topics || transferEvent.topics.length < 3) {
+      return NextResponse.json({ 
+        error: 'No USDC transfer found in transaction' 
+      }, { status: 400 });
+    }
+
+    // Decode Transfer event: topics[1] = from, topics[2] = to, data = amount
+    const to = ('0x' + transferEvent.topics[2].slice(26)) as string; // Remove padding from indexed address
+    const amountHex = transferEvent.data;
+    const actualAmount = BigInt(amountHex);
+
+    // Verify recipient is the club's wallet
+    if (to.toLowerCase() !== club.usdc_wallet_address.toLowerCase()) {
+      console.error('[USDC Purchase] Recipient mismatch:', {
+        expected: club.usdc_wallet_address,
+        actual: to
+      });
+      return NextResponse.json({ 
+        error: 'Transaction not sent to club wallet' 
+      }, { status: 400 });
+    }
+
+    // Verify amount matches expected (USDC has 6 decimals)
+    const expectedAmount = BigInt(credit_amount) * BigInt(1_000_000);
+    if (actualAmount !== expectedAmount) {
+      const actualUSDC = Number(actualAmount) / 1_000_000;
+      console.error('[USDC Purchase] Amount mismatch:', {
+        expected: credit_amount,
+        actual: actualUSDC
+      });
+      return NextResponse.json({ 
+        error: `Amount mismatch: expected ${credit_amount} USDC, got ${actualUSDC} USDC` 
+      }, { status: 400 });
+    }
+
+    console.log('[USDC Purchase] Transaction verified:', {
+      recipient: to,
+      amount: credit_amount,
+      txHash: tx_hash
+    });
 
     // Create credit purchase record
     const { data: purchase, error: purchaseError } = await (supabase as any)

@@ -45,14 +45,14 @@ export function useSendUSDC() {
   });
 
   const sendUSDC = ({ toAddress, amountUSDC }: SendUSDCParams) => {
+    // Validate input
+    if (!Number.isFinite(amountUSDC) || amountUSDC <= 0) {
+      console.error('[USDC Payment] Invalid amount:', amountUSDC);
+      throw new Error('Amount must be a positive number');
+    }
+    
     // USDC has 6 decimals
     const amountInSmallestUnit = parseUnits(amountUSDC.toString(), 6);
-    
-    console.log('[USDC Payment] Sending USDC:', {
-      to: toAddress,
-      amount: amountUSDC,
-      amountRaw: amountInSmallestUnit.toString()
-    });
     
     writeContract({
       address: USDC_BASE_ADDRESS,

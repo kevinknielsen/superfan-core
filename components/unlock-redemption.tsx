@@ -36,6 +36,7 @@ import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/li
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
 import { useSendUSDC } from "@/hooks/use-usdc-payment";
+import { useRef } from "react";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
 
@@ -190,6 +191,7 @@ export default function UnlockRedemption({
   const [selectedUnlock, setSelectedUnlock] = useState<Unlock | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
+  const processedTxRef = useRef<string | null>(null);
 
   // Always declare all hooks first (React Rules of Hooks)
   useEffect(() => {
@@ -229,6 +231,12 @@ export default function UnlockRedemption({
   // Monitor USDC transaction completion (must be declared with other hooks)
   useEffect(() => {
     if (!isUSDCSuccess || !usdcTxHash || !selectedUnlock) return;
+    
+    // Prevent duplicate processing of same transaction
+    if (processedTxRef.current === usdcTxHash) {
+      return;
+    }
+    processedTxRef.current = usdcTxHash;
     
     // Transaction confirmed on blockchain - now verify and grant credits
     const processUSDCPurchase = async () => {
@@ -276,6 +284,25 @@ export default function UnlockRedemption({
     processUSDCPurchase();
   }, [isUSDCSuccess, usdcTxHash, selectedUnlock, clubId, onRedemption, toast]);
 
+  // Fetch club USDC wallet address once on mount (optimized - only for wallet app users)
+  useEffect(() => {
+    if (!isInWalletApp || !isAuthenticated) return;
+    
+    const fetchClubWallet = async () => {
+      try {
+        const clubResponse = await fetch(`/api/clubs/${clubId}`);
+        if (clubResponse.ok) {
+          const clubData = await clubResponse.json();
+          setClubWalletAddress(clubData.usdc_wallet_address || null);
+        }
+      } catch (error) {
+        console.error('Error fetching club wallet:', error);
+      }
+    };
+    
+    fetchClubWallet();
+  }, [clubId, isInWalletApp, isAuthenticated]);
+
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
       if (!isMounted || isMounted()) setIsLoading(true);
@@ -288,14 +315,6 @@ export default function UnlockRedemption({
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
       
-      // Also fetch club data to get USDC wallet address for wallet app users
-      if (isInWalletApp && isAuthenticated) {
-        const clubResponse = await fetch(`/api/clubs/${clubId}`, { signal });
-        if (clubResponse.ok) {
-          const clubData = await clubResponse.json();
-          setClubWalletAddress(clubData.usdc_wallet_address || null);
-        }
-      }
       
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
         headers,
@@ -708,15 +727,20 @@ export default function UnlockRedemption({
       if (!clubWalletAddress) {
         throw new Error('Club USDC wallet not configured');
       }
+      
+      // Validate wallet address format
+      if (!/^0x[a-fA-F0-9]{40}$/.test(clubWalletAddress)) {
+        throw new Error('Invalid club wallet address format');
+      }
 
       const creditCost = reward.credit_cost || 0;
       
-      // Send USDC transaction
-      console.log('[USDC Purchase] Initiating USDC payment:', {
-        amount: creditCost,
-        to: clubWalletAddress
-      });
+      // Validate credit cost
+      if (!Number.isFinite(creditCost) || creditCost <= 0) {
+        throw new Error('Invalid credit cost: must be a positive number');
+      }
       
+      // Send USDC transaction
       sendUSDC({
         toAddress: clubWalletAddress as `0x${string}`,
         amountUSDC: creditCost
