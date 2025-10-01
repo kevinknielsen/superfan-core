@@ -33,6 +33,7 @@ import { formatCurrency } from "@/lib/points";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
+import { useFarcaster } from "@/lib/farcaster-context";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
 
@@ -179,6 +180,7 @@ export default function UnlockRedemption({
   onCreditBalancesChange
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
+  const { isInWalletApp, openUrl } = useFarcaster();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
   const [redemptions, setRedemptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -674,7 +676,13 @@ export default function UnlockRedemption({
             });
           }
           
-          window.location.href = url;
+          // Wallet app: use Farcaster SDK to open in external browser (Stripe doesn't work in iframes)
+          // Web: use normal redirect
+          if (isInWalletApp) {
+            await openUrl(url);
+          } else {
+            window.location.href = url;
+          }
         } else {
           const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start purchase');
@@ -702,7 +710,14 @@ export default function UnlockRedemption({
           if (!url || typeof url !== 'string') {
             throw new Error('Missing checkout URL');
           }
-          window.location.href = url;
+          
+          // Wallet app: use Farcaster SDK to open in external browser (Stripe doesn't work in iframes)
+          // Web: use normal redirect
+          if (isInWalletApp) {
+            await openUrl(url);
+          } else {
+            window.location.href = url;
+          }
         } else {
           const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start upgrade purchase');

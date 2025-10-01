@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Play, CheckCircle, ArrowRight, CreditCard, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAccessToken } from "@privy-io/react-auth";
+import { useFarcaster } from "@/lib/farcaster-context";
 import type { CampaignData } from "@/types/campaign.types";
 import { useState } from "react";
 
@@ -19,6 +20,7 @@ interface CampaignProgressCardProps {
 export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = false, onLoginRequired }: CampaignProgressCardProps) {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const { toast } = useToast();
+  const { isInWalletApp, openUrl } = useFarcaster();
   
   const pct = Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)));
   const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -80,7 +82,14 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         if (!url || typeof url !== 'string') {
           throw new Error('Missing checkout URL');
         }
-        window.location.href = url;
+        
+        // Wallet app: use Farcaster SDK to open in external browser (Stripe doesn't work in iframes)
+        // Web: use normal redirect
+        if (isInWalletApp) {
+          await openUrl(url);
+        } else {
+          window.location.href = url;
+        }
       } else {
         const errorData = await response.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');

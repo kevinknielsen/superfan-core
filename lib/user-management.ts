@@ -188,6 +188,25 @@ export async function getOrCreateFarcasterUser(params: CreateFarcasterUserParams
 }
 
 /**
+ * Get or create user based on unified auth result
+ * Automatically calls the correct function based on auth type
+ */
+export async function getOrCreateUserFromAuth(auth: { userId: string; type: 'privy' | 'farcaster' }): Promise<User> {
+  if (auth.type === 'farcaster') {
+    return getOrCreateFarcasterUser({
+      farcasterFid: auth.userId,
+      username: null,
+      displayName: null,
+      pfpUrl: null,
+    });
+  } else {
+    return getOrCreateUser({
+      privyId: auth.userId,
+    });
+  }
+}
+
+/**
  * Get user by Privy ID
  */
 export async function getUserByPrivyId(privyId: string): Promise<User | null> {
