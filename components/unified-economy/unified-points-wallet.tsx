@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button';
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
 import { getAccessToken } from '@privy-io/react-auth';
+import { useFarcaster } from '@/lib/farcaster-context';
+import { navigateToCheckout } from '@/lib/navigation-utils';
 import { useToast } from '@/hooks/use-toast';
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
 import SpendPointsModal from './spend-points-modal';
@@ -264,6 +266,7 @@ export default function UnifiedPointsWallet({
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const { isInWalletApp, openUrl } = useFarcaster();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const { toast } = useToast();
 
@@ -323,7 +326,8 @@ export default function UnifiedPointsWallet({
         if (!url || typeof url !== 'string') {
           throw new Error('Missing checkout URL');
         }
-        window.location.href = url;
+        
+        await navigateToCheckout(url, isInWalletApp, openUrl);
       } else {
         const errorData = await purchaseResponse.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');

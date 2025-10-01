@@ -60,11 +60,11 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         } else if (isInBaseApp) {
           console.log('🏗️ [FarcasterContext] In Base app context, calling sdk.actions.ready()');
           
-          // For Base app, try calling ready without context check
+          // For Base app, DON'T disable native gestures - it blocks scrolling
           setTimeout(async () => {
             try {
-              await sdk.actions.ready({ disableNativeGestures: true });
-              console.log('✅ [FarcasterContext] Base sdk.actions.ready() completed');
+              await sdk.actions.ready({ disableNativeGestures: false });
+              console.log('✅ [FarcasterContext] Base sdk.actions.ready() completed (gestures enabled for scroll)');
             } catch (readyError) {
               console.error('❌ [FarcasterContext] Base ready() error:', readyError);
             }

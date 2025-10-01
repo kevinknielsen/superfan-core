@@ -188,6 +188,81 @@ export async function getOrCreateFarcasterUser(params: CreateFarcasterUserParams
 }
 
 /**
+ * Get or create user based on unified auth result
+ * Automatically calls the correct function based on auth type
+ */
+export async function getOrCreateUserFromAuth(auth: { userId: string; type: 'privy' | 'farcaster' }): Promise<User> {
+  if (auth.type === 'farcaster') {
+    return getOrCreateFarcasterUser({
+      farcasterFid: auth.userId,
+      username: null,
+      displayName: null,
+      pfpUrl: null,
+    });
+  } else {
+    return getOrCreateUser({
+      privyId: auth.userId,
+    });
+  }
+}
+
+/**
+ * Convert camelCase keys to snake_case for Supabase
+ */
+function toSnakeCase(updates: Record<string, any>): Record<string, any> {
+  // Known field mappings
+  const fieldMap: Record<string, string> = {
+    walletAddress: 'wallet_address',
+    metalHolderId: 'metal_holder_id',
+  };
+
+  const snakeCaseUpdates: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    // Use known mapping if available
+    if (fieldMap[key]) {
+      snakeCaseUpdates[fieldMap[key]] = value;
+    } 
+    // If already snake_case (contains underscore), leave as-is
+    else if (key.includes('_')) {
+      snakeCaseUpdates[key] = value;
+    } 
+    // Convert camelCase to snake_case
+    // Handles consecutive capitals correctly (e.g., 'userID' -> 'user_id')
+    else {
+      const snakeKey = key.replace(/[A-Z]/g, (letter, index) => 
+        index === 0 ? letter.toLowerCase() : `_${letter.toLowerCase()}`
+      );
+      snakeCaseUpdates[snakeKey] = value;
+    }
+  }
+
+  return snakeCaseUpdates;
+}
+
+/**
+ * Update user data (supports both Privy and Farcaster users)
+ * Accepts both camelCase and snake_case field names
+ */
+export async function updateUser(userId: string, updates: UpdateUserParams): Promise<User> {
+  // Normalize to snake_case for Supabase
+  const snakeCaseUpdates = toSnakeCase(updates as Record<string, any>);
+  
+  const { data: updatedUser, error } = await supabase
+    .from('users')
+    .update(snakeCaseUpdates)
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update user: ${error.message}`);
+  }
+
+  return updatedUser;
+}
+
+/**
  * Get user by Privy ID
  */
 export async function getUserByPrivyId(privyId: string): Promise<User | null> {

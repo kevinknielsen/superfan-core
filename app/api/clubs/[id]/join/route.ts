@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { supabase } from '@/app/api/supabase';
-import { getOrCreateUser } from '@/lib/user-management';
+import { getOrCreateUserFromAuth } from '@/lib/user-management';
 
 /**
  * POST /api/clubs/[clubId]/join
  * Join a club (create club membership)
+ * Supports both Privy (web) and Farcaster (wallet app) users
  */
 export async function POST(
   request: NextRequest,
@@ -22,10 +23,8 @@ export async function POST(
 
     const { id: clubId } = await params;
 
-    // Ensure user exists in our system
-    const user = await getOrCreateUser({
-      privyId: auth.userId,
-    });
+    // Ensure user exists in our system - handles both Privy and Farcaster
+    const user = await getOrCreateUserFromAuth(auth);
 
     // Check if club exists
     const { data: club, error: clubError } = await supabase

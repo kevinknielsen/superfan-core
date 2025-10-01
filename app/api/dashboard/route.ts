@@ -45,10 +45,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user's internal ID (single query)
+    // Query by privy_id OR farcaster_id depending on auth type
+    // Note: auth.userId already includes 'farcaster:' prefix for Farcaster users (e.g., 'farcaster:1099164')
+    // Whitelist column names for security
+    const userIdColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+      return NextResponse.json({ error: 'Invalid auth type' }, { status: 400 });
+    }
+    
+    // auth.userId format: Farcaster = 'farcaster:1099164', Privy = 'did:privy:...'
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, privy_id')
-      .eq('privy_id', auth.userId)
+      .select('id, privy_id, farcaster_id')
+      .eq(userIdColumn, auth.userId)
       .single();
 
     if (userError || !user) {

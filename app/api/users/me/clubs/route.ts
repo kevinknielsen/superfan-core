@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { supabase } from '@/app/api/supabase';
-import { getOrCreateUser } from '@/lib/user-management';
+import { getOrCreateUserFromAuth } from '@/lib/user-management';
 
 /**
  * GET /api/users/me/clubs
  * Get current user's club memberships
+ * Supports both Privy (web) and Farcaster (wallet app) users
  */
 export async function GET(request: NextRequest) {
   try {
@@ -17,10 +18,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Ensure user exists in our system
-    const user = await getOrCreateUser({
-      privyId: auth.userId,
-    });
+    // Ensure user exists in our system - handles both Privy and Farcaster
+    const user = await getOrCreateUserFromAuth(auth);
 
     // Get user's club memberships with club details
     const { data: memberships, error } = await supabase

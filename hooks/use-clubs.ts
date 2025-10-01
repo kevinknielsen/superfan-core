@@ -55,17 +55,27 @@ export function useClub(clubId: string | null) {
 }
 
 // Get user's club memberships
-export function useUserClubMemberships(privyUserId: string | null) {
+// Accepts either privy_id or farcaster_id (format: "farcaster:12345")
+export function useUserClubMemberships(userId: string | null) {
   return useQuery({
-    queryKey: ['user-club-memberships', privyUserId],
+    queryKey: ['user-club-memberships', userId],
     queryFn: async (): Promise<ClubMembership[]> => {
-      if (!privyUserId) return [];
+      if (!userId) return [];
+
+      // Determine if this is a Farcaster ID or Privy ID
+      const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
+      const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get the user from our database
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('id')
-        .eq('privy_id', privyUserId)
+        .eq(userIdColumn, userId)
         .single();
 
       if (userError) {
@@ -86,22 +96,32 @@ export function useUserClubMemberships(privyUserId: string | null) {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!privyUserId,
+    enabled: !!userId,
   });
 }
 
 // Get user's membership to a specific club
-export function useUserClubMembership(privyUserId: string | null, clubId: string | null) {
+// Accepts either privy_id or farcaster_id (format: "farcaster:12345")
+export function useUserClubMembership(userId: string | null, clubId: string | null) {
   return useQuery({
-    queryKey: ['user-club-membership', privyUserId, clubId],
+    queryKey: ['user-club-membership', userId, clubId],
     queryFn: async (): Promise<ClubMembership | null> => {
-      if (!privyUserId || !clubId) return null;
+      if (!userId || !clubId) return null;
+
+      // Determine if this is a Farcaster ID or Privy ID
+      const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
+      const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get the user from our database
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('id')
-        .eq('privy_id', privyUserId)
+        .eq(userIdColumn, userId)
         .single();
 
       if (userError) {
@@ -125,22 +145,32 @@ export function useUserClubMembership(privyUserId: string | null, clubId: string
       }
       return data;
     },
-    enabled: !!privyUserId && !!clubId,
+    enabled: !!userId && !!clubId,
   });
 }
 
 // Get complete user club data (membership + unlocks + recent activity)
-export function useUserClubData(privyUserId: string | null, clubId: string | null) {
+// Accepts either privy_id or farcaster_id (format: "farcaster:12345")
+export function useUserClubData(userId: string | null, clubId: string | null) {
   return useQuery({
-    queryKey: ['user-club-data', privyUserId, clubId],
+    queryKey: ['user-club-data', userId, clubId],
     queryFn: async (): Promise<UserClubData | null> => {
-      if (!privyUserId || !clubId) return null;
+      if (!userId || !clubId) return null;
+
+      // Determine if this is a Farcaster ID or Privy ID
+      const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
+      const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get the user from our database
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('id')
-        .eq('privy_id', privyUserId)
+        .eq(userIdColumn, userId)
         .single();
 
       if (userError) {
@@ -193,7 +223,7 @@ export function useUserClubData(privyUserId: string | null, clubId: string | nul
         house_account: undefined, // House accounts removed in tier rewards system
       };
     },
-    enabled: !!privyUserId && !!clubId,
+    enabled: !!userId && !!clubId,
   });
 }
 
@@ -234,8 +264,9 @@ export function useJoinClub() {
 }
 
 // Check if user can access an unlock
-export function useCanAccessUnlock(privyUserId: string | null, clubId: string | null, minStatus: string) {
-  const { data: membership } = useUserClubMembership(privyUserId, clubId);
+// Accepts either privy_id or farcaster_id (format: "farcaster:12345")
+export function useCanAccessUnlock(userId: string | null, clubId: string | null, minStatus: string) {
+  const { data: membership } = useUserClubMembership(userId, clubId);
 
   if (!membership) return false;
 

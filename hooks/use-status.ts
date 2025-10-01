@@ -33,19 +33,29 @@ export function useStatusThresholds() {
 }
 
 // Get user's current status by calculating points from tap-ins and points_ledger
-export function useUserStatus(privyUserId: string | null) {
+// Accepts either privy_id or farcaster_id (format: "farcaster:12345")
+export function useUserStatus(userId: string | null) {
   const { data: thresholds } = useStatusThresholds();
 
   return useQuery({
-    queryKey: ['user-status', privyUserId],
+    queryKey: ['user-status', userId],
     queryFn: async (): Promise<UserStatus | null> => {
-      if (!privyUserId || !thresholds) return null;
+      if (!userId || !thresholds) return null;
 
-      // First get our internal user by Privy ID
+      // Determine if this is a Farcaster ID or Privy ID
+      const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
+      const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
+
+      // First get our internal user by auth ID
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('id')
-        .eq('privy_id', privyUserId)
+        .eq(userIdColumn, userId)
         .single();
 
       if (userError) {
@@ -102,13 +112,14 @@ export function useUserStatus(privyUserId: string | null) {
         progress,
       };
     },
-    enabled: !!privyUserId && !!thresholds,
+    enabled: !!userId && !!thresholds,
   });
 }
 
 // Check if user has minimum status for unlock
-export function useStatusAccess(privyUserId: string | null, requiredStatusName: string) {
-  const { data: userStatus } = useUserStatus(privyUserId);
+// Accepts either privy_id or farcaster_id (format: "farcaster:12345")
+export function useStatusAccess(userId: string | null, requiredStatusName: string) {
+  const { data: userStatus } = useUserStatus(userId);
   const { data: thresholds } = useStatusThresholds();
   
   const hasAccess = (() => {
