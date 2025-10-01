@@ -29,6 +29,7 @@ import { useSendUSDC } from '@/hooks/use-usdc-payment';
 import { useToast } from '@/hooks/use-toast';
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
 import SpendPointsModal from './spend-points-modal';
+import { useRef } from 'react';
 
 interface UnifiedPointsWalletProps {
   clubId: string;
@@ -272,6 +273,7 @@ export default function UnifiedPointsWallet({
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
   const [pendingCreditAmount, setPendingCreditAmount] = useState<number | null>(null);
+  const processedUsdcTxRef = useRef<string | null>(null);
   const { toast } = useToast();
 
   // Use the hook instead of manual fetch
@@ -317,6 +319,12 @@ export default function UnifiedPointsWallet({
   // Process USDC transaction when confirmed
   useEffect(() => {
     if (!isUSDCSuccess || !usdcTxHash || !pendingCreditAmount) return;
+    
+    // Prevent duplicate processing
+    if (processedUsdcTxRef.current === usdcTxHash) {
+      return;
+    }
+    processedUsdcTxRef.current = usdcTxHash;
     
     const processUSDCPurchase = async () => {
       try {

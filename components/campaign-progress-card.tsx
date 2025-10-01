@@ -10,7 +10,7 @@ import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
 import { useSendUSDC } from "@/hooks/use-usdc-payment";
 import type { CampaignData } from "@/types/campaign.types";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface CampaignProgressCardProps {
   campaignData: CampaignData;
@@ -26,6 +26,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
   const { isInWalletApp, openUrl } = useFarcaster();
   const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess } = useSendUSDC();
   const [pendingCreditAmount, setPendingCreditAmount] = useState<number | null>(null);
+  const processedTxRef = useRef<string | null>(null);
   
   const pct = Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)));
   const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -52,6 +53,12 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
   // Process USDC transaction when confirmed
   useEffect(() => {
     if (!isUSDCSuccess || !usdcTxHash || !pendingCreditAmount) return;
+    
+    // Prevent duplicate processing
+    if (processedTxRef.current === usdcTxHash) {
+      return;
+    }
+    processedTxRef.current = usdcTxHash;
     
     const processUSDCPurchase = async () => {
       try {
