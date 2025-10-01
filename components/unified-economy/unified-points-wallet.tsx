@@ -445,22 +445,22 @@ export default function UnifiedPointsWallet({
               <div className="grid grid-cols-3 gap-2">
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                   <Button 
+                    onClick={() => handleCreditPurchase(25)}
+                    disabled={isPurchasing}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
+                  >
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    25
+                  </Button>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button 
                     onClick={() => handleCreditPurchase(100)}
                     disabled={isPurchasing}
                     className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                   >
                     <CreditCard className="w-3 h-3 mr-1" />
                     100
-                  </Button>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Button 
-                    onClick={() => handleCreditPurchase(150)}
-                    disabled={isPurchasing}
-                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                  >
-                    <CreditCard className="w-3 h-3 mr-1" />
-                    150
                   </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>

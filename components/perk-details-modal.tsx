@@ -175,7 +175,7 @@ export default function PerkDetailsModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm"
+        className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center"
         role="dialog"
         aria-modal="true"
         aria-labelledby="perk-modal-title"
@@ -186,11 +186,11 @@ export default function PerkDetailsModal({
           animate={{ x: 0 }}
           exit={{ x: "100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 200 }}
-          className="fixed inset-0 bg-[#0E0E14] overflow-hidden flex flex-col"
+          className="relative w-full h-full max-w-[430px] bg-[#0E0E14] md:rounded-3xl md:shadow-2xl md:max-h-[932px] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-800">
+          <div className="flex items-center justify-between p-6 border-b border-gray-800 flex-shrink-0">
             <button
               onClick={onClose}
               className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-800/50 text-white hover:bg-gray-700/50 transition-colors z-10"
@@ -407,7 +407,7 @@ export default function PerkDetailsModal({
           </div>
 
           {/* Enhanced Action Button - Support both preview and redemption modes */}
-          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent">
+          <div className="relative bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent md:rounded-b-3xl flex-shrink-0">
             {isPreviewMode || !isActuallyRedeemed ? (
               // Preview mode - trigger purchase for credit campaigns
               <Button

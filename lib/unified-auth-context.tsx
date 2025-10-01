@@ -82,8 +82,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const currentPoints = userStatus?.currentPoints || 0;
   const statusName = userStatus?.statusName || 'Cadet';
 
-  // Sync user to Supabase when authenticated via Privy
-  // Skip for Farcaster users - they authenticate differently
+  // Sync Privy users to Supabase when authenticated
   useEffect(() => {
     if (!privyAuthenticated || !privyUser || hasTriedSync || isInWalletApp) {
       return;
@@ -109,6 +108,34 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
       }
     );
   }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp, userSyncMutation]);
+
+  // Sync Farcaster users to Supabase when authenticated
+  useEffect(() => {
+    if (!isInWalletApp || !farcasterUser || hasTriedSync) {
+      return;
+    }
+
+    // Sync Farcaster wallet app users
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[UnifiedAuth] Syncing Farcaster user to Supabase', { 
+        fid: farcasterUser.fid,
+        username: farcasterUser.username 
+      });
+    }
+    setHasTriedSync(true);
+
+    // Sync Farcaster user data
+    userSyncMutation.mutate(
+      {
+        farcasterUsername: farcasterUser.username || null,
+        farcasterDisplayName: farcasterUser.displayName || null,
+        farcasterPfpUrl: farcasterUser.pfpUrl || null,
+      },
+      {
+        onError: () => setHasTriedSync(false),
+      }
+    );
+  }, [isInWalletApp, farcasterUser, hasTriedSync, userSyncMutation]);
 
   // Reset sync state when user changes
   useEffect(() => {

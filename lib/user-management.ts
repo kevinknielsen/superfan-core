@@ -2,10 +2,19 @@ import { supabase } from './supabase';
 import type { User } from '@/types/membership.types';
 
 export interface CreateUserParams {
-  privyId: string;
+  privyId?: string;
+  farcasterUsername?: string | null;
   email?: string | null;
   name?: string | null;
   walletAddress?: string | null;
+  farcasterProfileImage?: string | null;
+}
+
+export interface CreateFarcasterUserParams {
+  farcasterFid: string;
+  username?: string | null;
+  displayName?: string | null;
+  pfpUrl?: string | null;
 }
 
 export interface UpdateUserParams {
@@ -21,6 +30,10 @@ export interface UpdateUserParams {
  */
 export async function getOrCreateUser(params: CreateUserParams): Promise<User> {
   const { privyId, email, name, walletAddress } = params;
+
+  if (!privyId) {
+    throw new Error('privyId is required for Privy users');
+  }
 
   // First try to find existing user
   const { data: existingUser, error: findError } = await supabase
@@ -90,6 +103,93 @@ export async function getOrCreateUser(params: CreateUserParams): Promise<User> {
     throw new Error(`Failed to create user: ${createError.message}`);
   }
 
+  return newUser;
+}
+
+/**
+ * Get or create a user based on their Farcaster FID
+ * This is called when a user first authenticates via Farcaster wallet apps
+ */
+export async function getOrCreateFarcasterUser(params: CreateFarcasterUserParams): Promise<User> {
+  const { farcasterFid, username, displayName, pfpUrl } = params;
+
+  // Normalize farcasterFid to ensure it has the "farcaster:" prefix
+  const normalizedFid = farcasterFid.startsWith('farcaster:') 
+    ? farcasterFid 
+    : `farcaster:${farcasterFid}`;
+
+  console.log('[User Management] Syncing Farcaster user:', { farcasterFid: normalizedFid, username, displayName });
+
+  // First try to find existing user by farcaster_id
+  const { data: existingUser, error: findError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('farcaster_id', normalizedFid)
+    .single();
+
+  if (findError && findError.code !== 'PGRST116') {
+    throw new Error(`Failed to check for existing Farcaster user: ${findError.message}`);
+  }
+
+  if (existingUser) {
+    // Update user info if profile data has changed
+    const updates: any = {};
+    const newName = displayName || username;
+    if (newName && newName !== existingUser.name) updates.name = newName;
+    // Note: we don't store pfpUrl in users table currently, but we could add it later
+
+    if (Object.keys(updates).length > 0) {
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('farcaster_id', normalizedFid)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('[User Management] Failed to update Farcaster user:', updateError);
+        return existingUser; // Return existing user if update fails
+      }
+      console.log('[User Management] Farcaster user updated:', updatedUser.id);
+      return updatedUser;
+    }
+
+    console.log('[User Management] Farcaster user found:', existingUser.id);
+    return existingUser;
+  }
+
+  // Create new Farcaster user
+  const { data: newUser, error: createError } = await supabase
+    .from('users')
+    .insert({
+      farcaster_id: normalizedFid,
+      name: displayName || username || `Farcaster User`,
+      // email and wallet_address left null for now
+    })
+    .select()
+    .single();
+
+  if (createError) {
+    // If it's a duplicate key error, try to fetch the existing user
+    if (createError.code === '23505' || createError.message.includes('duplicate key')) {
+      console.log(`[User Management] Farcaster user already exists, fetching: ${normalizedFid}`);
+      const { data: existingUser, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('farcaster_id', normalizedFid)
+        .single();
+        
+      if (fetchError) {
+        throw new Error(`Failed to fetch existing Farcaster user: ${fetchError.message}`);
+      }
+      
+      return existingUser;
+    }
+    
+    throw new Error(`Failed to create Farcaster user: ${createError.message}`);
+  }
+
+  console.log('[User Management] New Farcaster user created:', newUser.id);
   return newUser;
 }
 
