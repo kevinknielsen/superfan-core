@@ -207,6 +207,24 @@ export async function getOrCreateUserFromAuth(auth: { userId: string; type: 'pri
 }
 
 /**
+ * Update user data (supports both Privy and Farcaster users)
+ */
+export async function updateUser(userId: string, updates: UpdateUserParams): Promise<User> {
+  const { data: updatedUser, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update user: ${error.message}`);
+  }
+
+  return updatedUser;
+}
+
+/**
  * Get user by Privy ID
  */
 export async function getUserByPrivyId(privyId: string): Promise<User | null> {

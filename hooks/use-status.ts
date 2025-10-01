@@ -44,7 +44,12 @@ export function useUserStatus(userId: string | null) {
 
       // Determine if this is a Farcaster ID or Privy ID
       const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
       const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get our internal user by auth ID
       const { data: user, error: userError } = await supabase

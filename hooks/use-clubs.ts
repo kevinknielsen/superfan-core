@@ -64,7 +64,12 @@ export function useUserClubMemberships(userId: string | null) {
 
       // Determine if this is a Farcaster ID or Privy ID
       const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
       const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get the user from our database
       const { data: user, error: userError } = await supabase
@@ -105,7 +110,12 @@ export function useUserClubMembership(userId: string | null, clubId: string | nu
 
       // Determine if this is a Farcaster ID or Privy ID
       const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
       const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get the user from our database
       const { data: user, error: userError } = await supabase
@@ -149,7 +159,12 @@ export function useUserClubData(userId: string | null, clubId: string | null) {
 
       // Determine if this is a Farcaster ID or Privy ID
       const isFarcaster = userId.startsWith('farcaster:');
+      
+      // Whitelist column names to prevent SQL injection
       const userIdColumn = isFarcaster ? 'farcaster_id' : 'privy_id';
+      if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+        throw new Error('Invalid ID type');
+      }
 
       // First get the user from our database
       const { data: user, error: userError } = await supabase
