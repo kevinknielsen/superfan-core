@@ -9,53 +9,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user's internal ID (all users use privy_id regardless of auth type)
+    // Get user's internal ID - use correct column based on auth type
+    const userIdColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+      return NextResponse.json({ error: 'Invalid auth type' }, { status: 400 });
+    }
+    
     let { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userIdColumn, auth.userId)
       .single();
 
-    // If user not found, create them (same fallback as tap-in API)
+    // If user not found, create them using the unified helper
     if (userError && userError.code === 'PGRST116') {
-      console.log(`[Global Balance API] User not found, creating new user for privy_id: ${auth.userId}`);
+      console.log(`[Global Balance API] User not found, creating new user for ${auth.type}: ${auth.userId}`);
       
-      const { data: newUser, error: createError } = await supabase
-        .from('users')
-        .insert({
-          privy_id: auth.userId,
-          email: null,
-          name: null,
-        })
-        .select('id')
-        .single();
-        
-      if (createError) {
-        // If it's a duplicate key error, try to fetch the existing user
-        if (createError.code === '23505' || createError.message.includes('duplicate key')) {
-          console.log(`[Global Balance API] User already exists, fetching existing user for privy_id: ${auth.userId}`);
-          const { data: existingUser, error: fetchError } = await supabase
-            .from('users')
-            .select('id')
-            .eq('privy_id', auth.userId)
-            .single();
-            
-          if (fetchError) {
-            console.error("[Global Balance API] Failed to fetch existing user:", fetchError);
-            return NextResponse.json({ error: "Failed to fetch existing user" }, { status: 500 });
-          }
-          
-          user = existingUser;
-          console.log(`[Global Balance API] Successfully fetched existing user with id: ${user.id}`);
-        } else {
-          console.error("[Global Balance API] Failed to create user:", createError);
-          return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
-        }
-      } else {
-        user = newUser;
-        console.log(`[Global Balance API] Successfully created user with id: ${user.id}`);
-      }
-    } else if (userError) {
+      const { getOrCreateUserFromAuth } = await import('@/lib/user-management');
+      user = await getOrCreateUserFromAuth(auth);
+      } else if (userError) {
       console.error("[Global Balance API] User lookup error:", userError);
       return NextResponse.json({ error: "User lookup failed" }, { status: 500 });
     }

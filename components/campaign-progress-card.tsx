@@ -53,21 +53,15 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
       if (isPurchasing) return;
       setIsPurchasing(true);
       
-      const token = await getAccessToken();
-      if (!token) {
-        toast({ 
-          title: 'Sign in required', 
-          description: 'Please sign in to purchase credits.', 
-          variant: 'destructive' 
-        });
-        return;
-      }
-      
+      // Get auth headers (supports both Privy and Farcaster)
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
+
       const response = await fetch(`/api/campaigns/credit-purchase`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...authHeaders
         },
         body: JSON.stringify({
           club_id: clubId,

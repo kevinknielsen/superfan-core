@@ -8,7 +8,7 @@
     "allowedAddresses": ["0x84d572a4c4Ba9164a908c1DD2cD584FDC156E711"]
   },
   "miniapp": {
-    "version": "1",
+    "version": "2",
     "name": "Superfan",
     "homeUrl": "https://superfan.one",
     "iconUrl": "https://superfan.one/favicon.png",
@@ -24,7 +24,7 @@
     "primaryCategory": "music",
     "tags": ["music", "clubs", "membership", "points", "campaigns"],
     "heroImageUrl": "https://superfan.one/og-image.png",
-    "tagline": "Engagement Becomes Economy",
+    "tagline": "Invest in Culture",
     "ogTitle": "Superfan: Culture Memberships",
     "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
     "ogImageUrl": "https://superfan.one/og-image.png",

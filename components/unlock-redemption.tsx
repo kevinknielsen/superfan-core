@@ -643,10 +643,9 @@ export default function UnlockRedemption({
 
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('User not authenticated');
-      }
+      // Get auth headers (supports both Privy and Farcaster)
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
 
       // Use new campaign-aware purchase endpoint if available, fallback to existing
       const useNewPurchaseEndpoint = reward.user_discount_eligible !== undefined;
@@ -657,7 +656,7 @@ export default function UnlockRedemption({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
+            ...authHeaders
           }
         });
 
@@ -690,7 +689,7 @@ export default function UnlockRedemption({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
+            ...authHeaders
           },
           body: JSON.stringify({
             purchase_type: purchaseType,

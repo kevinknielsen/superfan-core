@@ -24,11 +24,16 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceClient();
     
-    // Get the user from our database
+    // Get the user from our database - use correct column based on auth type
+    const userIdColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+      return NextResponse.json({ error: 'Invalid auth type' }, { status: 400 });
+    }
+    
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
-      .eq('privy_id', auth.userId)
+      .eq(userIdColumn, auth.userId)
       .single();
 
     if (userError) {
@@ -74,11 +79,16 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createServiceClient();
     
-    // Get the user's current notifications opt-in status
+    // Get the user's current notifications opt-in status - use correct column based on auth type
+    const userIdColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
+    if (!['farcaster_id', 'privy_id'].includes(userIdColumn)) {
+      return NextResponse.json({ error: 'Invalid auth type' }, { status: 400 });
+    }
+    
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('notifications_opt_in')
-      .eq('privy_id', auth.userId)
+      .eq(userIdColumn, auth.userId)
       .single();
 
     if (userError) {
