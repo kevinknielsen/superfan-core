@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { getOrCreateUser, getOrCreateFarcasterUser } from '@/lib/user-management';
 
+// Type definition for Farcaster user with farcaster_id field
+interface FarcasterUserResponse {
+  id: string;
+  farcaster_id: string;
+  name: string | null;
+  email: string | null;
+  privy_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * Sync user data from Privy or Farcaster to Supabase
  * This endpoint creates or updates the user record in our database
@@ -19,8 +30,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, name, walletAddress, farcasterUsername, farcasterDisplayName, farcasterPfpUrl } = body;
 
-    let user;
-
     if (auth.type === 'farcaster') {
       // Farcaster authentication
       console.log('[User Sync] Syncing Farcaster user:', {
@@ -29,21 +38,21 @@ export async function POST(request: NextRequest) {
         displayName: farcasterDisplayName
       });
 
-      user = await getOrCreateFarcasterUser({
+      const farcasterUser = await getOrCreateFarcasterUser({
         farcasterFid: auth.userId,
         username: farcasterUsername || null,
         displayName: farcasterDisplayName || null,
         pfpUrl: farcasterPfpUrl || null,
-      });
+      }) as FarcasterUserResponse;
 
-      console.log('[User Sync] Farcaster user synced successfully:', user.id);
+      console.log('[User Sync] Farcaster user synced successfully:', farcasterUser.id);
 
       return NextResponse.json({ 
         success: true, 
         user: {
-          id: user.id,
-          farcaster_id: (user as any).farcaster_id,
-          name: user.name
+          id: farcasterUser.id,
+          farcaster_id: farcasterUser.farcaster_id,
+          name: farcasterUser.name
         }
       });
     } else {
@@ -55,22 +64,22 @@ export async function POST(request: NextRequest) {
         walletAddress: walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : null
       });
 
-      user = await getOrCreateUser({
+      const privyUser = await getOrCreateUser({
         privyId: auth.userId,
         email: email || null,
         name: name || null,
         walletAddress: walletAddress || null,
       });
 
-      console.log('[User Sync] Privy user synced successfully:', user.id);
+      console.log('[User Sync] Privy user synced successfully:', privyUser.id);
 
       return NextResponse.json({ 
         success: true, 
         user: {
-          id: user.id,
-          privy_id: user.privy_id,
-          email: user.email,
-          name: user.name
+          id: privyUser.id,
+          privy_id: privyUser.privy_id,
+          email: privyUser.email,
+          name: privyUser.name
         }
       });
     }

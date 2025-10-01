@@ -107,7 +107,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         onError: () => setHasTriedSync(false),
       }
     );
-  }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp, userSyncMutation]);
+  }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp]);
 
   // Sync Farcaster users to Supabase when authenticated
   useEffect(() => {
@@ -135,7 +135,7 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         onError: () => setHasTriedSync(false),
       }
     );
-  }, [isInWalletApp, farcasterUser, hasTriedSync, userSyncMutation]);
+  }, [isInWalletApp, farcasterUser, hasTriedSync]);
 
   // Reset sync state when user changes
   useEffect(() => {
