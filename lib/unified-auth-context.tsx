@@ -82,15 +82,15 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
   const currentPoints = userStatus?.currentPoints || 0;
   const statusName = userStatus?.statusName || 'Cadet';
 
-  // Sync user to Supabase when authenticated via Privy (not needed for Farcaster users)
+  // Sync Privy users to Supabase when authenticated
   useEffect(() => {
     if (!privyAuthenticated || !privyUser || hasTriedSync || isInWalletApp) {
       return;
     }
 
-    // Run user sync immediately without timeout to prevent race conditions
+    // Only sync web users authenticated via Privy
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[UnifiedAuth] Syncing Privy user to Supabase', { id: privyUser.id });
+      console.log('[UnifiedAuth] Syncing Privy web user to Supabase', { id: privyUser.id });
     }
     setHasTriedSync(true);
 
@@ -107,12 +107,40 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         onError: () => setHasTriedSync(false),
       }
     );
-  }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp, userSyncMutation]);
+  }, [privyAuthenticated, privyUser, hasTriedSync, isInWalletApp]);
 
-  // Reset sync state when user changes
+  // Sync Farcaster users to Supabase when authenticated
+  useEffect(() => {
+    if (!isInWalletApp || !farcasterUser || hasTriedSync) {
+      return;
+    }
+
+    // Sync Farcaster wallet app users
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[UnifiedAuth] Syncing Farcaster user to Supabase', { 
+        fid: farcasterUser.fid,
+        username: farcasterUser.username 
+      });
+    }
+    setHasTriedSync(true);
+
+    // Sync Farcaster user data
+    userSyncMutation.mutate(
+      {
+        farcasterUsername: farcasterUser.username || null,
+        farcasterDisplayName: farcasterUser.displayName || null,
+        farcasterPfpUrl: farcasterUser.pfpUrl || null,
+      },
+      {
+        onError: () => setHasTriedSync(false),
+      }
+    );
+  }, [isInWalletApp, farcasterUser, hasTriedSync]);
+
+  // Reset sync state when user changes (either Privy or Farcaster)
   useEffect(() => {
     setHasTriedSync(false);
-  }, [privyUser?.id]);
+  }, [privyUser?.id, farcasterUser?.fid]);
 
   // Fetch admin status when user is authenticated
   useEffect(() => {
@@ -132,10 +160,20 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
     const getAuthHeaders = async () => {
       if (isInWalletApp) {
         // Wallet app: use Farcaster authentication
-        const farcasterUserId = farcasterUser?.fid?.toString();
-        if (!farcasterUserId) {
-          throw new Error("Farcaster user not found in wallet app");
+        const fid = farcasterUser?.fid;
+        
+        // Validate FID exists and is a valid numeric value
+        if (fid == null || !Number.isFinite(fid) || !Number.isInteger(fid) || fid <= 0) {
+          console.error('[UnifiedAuth] Invalid or missing Farcaster FID:', { 
+            fid, 
+            type: typeof fid,
+            user: farcasterUser 
+          });
+          throw new Error("Invalid Farcaster FID - must be a positive integer");
         }
+        
+        const farcasterUserId = fid.toString();
+        console.log('[UnifiedAuth] Using Farcaster auth for admin check:', { fid: farcasterUserId });
         return {
           'Content-Type': 'application/json',
           'Authorization': `Farcaster farcaster:${farcasterUserId}`,
@@ -145,8 +183,10 @@ export function UnifiedAuthProvider({ children }: { children: React.ReactNode })
         const { getAccessToken } = await import('@privy-io/react-auth');
         const accessToken = await getAccessToken();
         if (!accessToken) {
+          console.error('[UnifiedAuth] Privy access token not available for web user');
           throw new Error("User not logged in");
         }
+        console.log('[UnifiedAuth] Using Privy auth for admin check');
         return {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`,

@@ -71,7 +71,8 @@ export interface CodeRedemption {
 
 export interface User {
   id: string;
-  privy_id: string;
+  privy_id: string | null;
+  farcaster_id: string | null;
   email: string | null;
   name: string | null;
   created_at: string;

@@ -751,8 +751,16 @@ export default function UnlockRedemption({
                   }
                   
                   const redemption = getUnlockRedemption(unlock);
-                  if (redemption) {
-                    // Already redeemed - show persistent details modal
+                  
+                  // For campaign items, only show details if actually redeemed (access granted)
+                  // Having a purchase doesn't prevent buying more!
+                  const showDetails = redemption && (
+                    !unlock.is_credit_campaign || 
+                    redemption.status === 'confirmed'
+                  );
+                  
+                  if (showDetails) {
+                    // Actually redeemed - show details modal
                     onShowPerkDetails?.(unlock, redemption);
                   } else if (unlock.is_credit_campaign) {
                     // For credit campaigns, show preview modal with purchase handler

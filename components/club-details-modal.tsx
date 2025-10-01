@@ -325,7 +325,7 @@ export default function ClubDetailsModal({
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 bg-[#0E0E14]"
+        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -333,14 +333,17 @@ export default function ClubDetailsModal({
       >
         <motion.div
           ref={modalRef}
-          className="relative w-full h-full overflow-y-auto bg-[#0E0E14]"
+          className="relative w-full h-full max-w-[430px] bg-[#0E0E14] md:rounded-3xl md:shadow-2xl md:max-h-[932px] flex flex-col"
           initial={{ x: "100%" }}
           animate={{ x: 0 }}
           exit={{ x: "100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
         >
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto">
+          
           {/* Header with Blurred Background */}
-          <div className="relative h-80 w-full overflow-hidden">
+          <div className="relative h-80 w-full overflow-hidden md:rounded-t-3xl">
             {/* Blurred background image */}
             <div className="absolute inset-0 scale-110 blur-lg opacity-95">
               {renderClubImages(club)}
@@ -611,9 +614,10 @@ export default function ClubDetailsModal({
             {/* Bottom spacing for anchored button */}
             <div className="h-20" />
           </div>
+          </div>
 
           {/* Anchored Action Button - Always Visible */}
-          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent z-50">
+          <div className="relative bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#0E0E14] via-[#0E0E14]/95 to-transparent md:rounded-b-3xl flex-shrink-0">
             <div className="flex justify-center">
               <div className="w-full max-w-md">
                 {membership ? (

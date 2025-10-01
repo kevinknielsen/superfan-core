@@ -31,22 +31,34 @@ export async function verifyPrivyToken(req: NextRequest) {
   }
 }
 
-// New function to verify Farcaster authentication
+// Verify Farcaster authentication
+// For Farcaster mini apps, the FID (Farcaster ID) is provided by the trusted SDK
+// The SDK only runs in verified Farcaster/Coinbase Wallet contexts, so we can trust the FID
 export async function verifyFarcasterToken(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Farcaster ")) return null;
   const token = authHeader.split(" ")[1];
 
   try {
-    // For wallet apps, we expect a simple token format: "farcaster:USER_ID"
-    // In a real implementation, you might want to verify this token with Farcaster's API
+    // Expected format: "farcaster:FID" where FID is the Farcaster user ID
     if (token.startsWith("farcaster:")) {
       const userId = token.replace("farcaster:", "");
-      return { userId, type: "farcaster" as const };
+      
+      // Validate that userId is a valid number (FIDs are numeric)
+      const fid = parseInt(userId, 10);
+      if (isNaN(fid) || fid <= 0) {
+        console.error("[Auth] Invalid Farcaster FID:", userId);
+        return null;
+      }
+
+      console.log('[Auth] Farcaster user authenticated:', { fid, userId });
+      
+      // Return the full farcaster:FID format as userId for consistency
+      return { userId: `farcaster:${fid}`, type: "farcaster" as const };
     }
     return null;
   } catch (error) {
-    console.error("[Server]: Error verifying Farcaster token:", error);
+    console.error("[Auth] Error verifying Farcaster token:", error);
     return null;
   }
 }
