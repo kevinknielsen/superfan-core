@@ -35,6 +35,7 @@ import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
+import { useSendUSDC } from "@/hooks/use-usdc-payment";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
 
@@ -182,11 +183,13 @@ export default function UnlockRedemption({
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess } = useSendUSDC();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
   const [redemptions, setRedemptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUnlock, setSelectedUnlock] = useState<Unlock | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
+  const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
 
   // Always declare all hooks first (React Rules of Hooks)
   useEffect(() => {
@@ -233,6 +236,15 @@ export default function UnlockRedemption({
       const headers: HeadersInit = {};
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+      
+      // Also fetch club data to get USDC wallet address for wallet app users
+      if (isInWalletApp && isAuthenticated) {
+        const clubResponse = await fetch(`/api/clubs/${clubId}`, { signal });
+        if (clubResponse.ok) {
+          const clubData = await clubResponse.json();
+          setClubWalletAddress(clubData.usdc_wallet_address || null);
+        }
       }
       
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
@@ -641,8 +653,93 @@ export default function UnlockRedemption({
     }
   };
 
+  const handleUSDCPurchase = async (reward: Unlock) => {
+    try {
+      if (!clubWalletAddress) {
+        throw new Error('Club USDC wallet not configured');
+      }
+
+      const creditCost = reward.credit_cost || 0;
+      
+      // Send USDC transaction
+      console.log('[USDC Purchase] Initiating USDC payment:', {
+        amount: creditCost,
+        to: clubWalletAddress
+      });
+      
+      sendUSDC({
+        toAddress: clubWalletAddress as `0x${string}`,
+        amountUSDC: creditCost
+      });
+      
+      // The transaction monitoring is handled by useEffect below
+    } catch (error) {
+      toast({
+        title: "Payment Failed",
+        description: error instanceof Error ? error.message : "Failed to initiate USDC payment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Monitor USDC transaction completion
+  useEffect(() => {
+    if (isUSDCSuccess && usdcTxHash && selectedUnlock) {
+      // Transaction confirmed on blockchain - now verify and grant credits
+      const processUSDCPurchase = async () => {
+        try {
+          const { getAuthHeaders } = await import('@/app/api/sdk');
+          const authHeaders = await getAuthHeaders();
+          
+          const response = await fetch('/api/campaigns/usdc-purchase', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...authHeaders
+            },
+            body: JSON.stringify({
+              tx_hash: usdcTxHash,
+              club_id: clubId,
+              credit_amount: selectedUnlock.credit_cost || 0,
+              campaign_id: selectedUnlock.campaign_id
+            })
+          });
+
+          if (response.ok) {
+            toast({
+              title: "Purchase Successful! 🎉",
+              description: `${selectedUnlock.credit_cost} credits added to your account`,
+            });
+            
+            // Close modal and reload data
+            setSelectedUnlock(null);
+            await loadData();
+            onRedemption?.();
+          } else {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to process purchase');
+          }
+        } catch (error) {
+          toast({
+            title: "Purchase Failed",
+            description: error instanceof Error ? error.message : "Failed to process purchase",
+            variant: "destructive",
+          });
+        }
+      };
+      
+      processUSDCPurchase();
+    }
+  }, [isUSDCSuccess, usdcTxHash, selectedUnlock, clubId, onRedemption, toast]);
+
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
+      // For wallet app users with credit campaigns: use USDC payment
+      if (isInWalletApp && reward.is_credit_campaign && clubWalletAddress) {
+        handleUSDCPurchase(reward);
+        return;
+      }
+      
       // Get auth headers (supports both Privy and Farcaster)
       const { getAuthHeaders } = await import('@/app/api/sdk');
       const authHeaders = await getAuthHeaders();
@@ -1083,15 +1180,23 @@ export default function UnlockRedemption({
                     handleRedeem(selectedUnlock);
                   }
                 }}
-                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock)}
+                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock) || isUSDCLoading}
                 className="min-w-[140px] sm:w-auto w-full"
               >
-                {isRedeeming ? 'Processing...' : 'Proceed to Checkout'}
+                {isUSDCLoading 
+                  ? 'Confirming Transaction...'
+                  : isRedeeming 
+                    ? 'Processing...' 
+                    : (isInWalletApp && selectedUnlock.is_credit_campaign && clubWalletAddress)
+                      ? `Send ${selectedUnlock.credit_cost} USDC`
+                      : 'Proceed to Checkout'
+                }
               </Button>
               <Button
                 variant="outline"
                 onClick={() => setSelectedUnlock(null)}
                 className="sm:w-auto w-full"
+                disabled={isUSDCLoading}
               >
                 Cancel
               </Button>

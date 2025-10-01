@@ -56,17 +56,14 @@ export default function WalletSettings() {
   } = useQuery<GlobalPointsData>({
     queryKey: ['global-points-balance', user?.id || 'anonymous'], // Scope cache by user ID
     queryFn: async (context): Promise<GlobalPointsData> => {
-      const accessToken = await getAccessToken();
-      
-      // Support wallet-app flows that don't use Privy tokens
-      if (!accessToken && !isInWalletApp) {
-        throw new Error('Authentication required');
-      }
+      // Get auth headers (supports both Privy and Farcaster)
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
       
       const response = await fetch('/api/points/global-balance', {
-        headers: accessToken ? {
-          'Authorization': `Bearer ${accessToken}`,
-        } : {}, // Let unified auth handle wallet-app authentication
+        headers: {
+          ...authHeaders
+        },
         signal: context.signal, // Support query cancellation
       });
       

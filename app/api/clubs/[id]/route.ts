@@ -1,60 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/app/api/supabase';
+import { supabase } from '@/app/api/supabase';
 
 /**
  * GET /api/clubs/[id]
- * Get a single club by ID (public endpoint for QR tap-in flow)
+ * Get a specific club's details including USDC wallet address
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
-    const supabase = createServiceClient();
-    
+    const { id: clubId } = await params;
+
     const { data: club, error } = await supabase
       .from('clubs')
-      .select(`
-        id,
-        name,
-        description,
-        city,
-        image_url,
-        is_active,
-        created_at
-      `)
-      .eq('id', id)
-      .eq('is_active', true)
+      .select('*')
+      .eq('id', clubId)
       .single();
 
     if (error) {
-      console.error('Error fetching club:', error);
-      return NextResponse.json(
-        { error: 'Club not found' },
-        { status: 404 }
-      );
-    }
-
-    // Calculate member count using efficient count query
-    const { count, error: countError } = await supabase
-      .from('club_memberships')
-      .select('id', { count: 'exact', head: true })
-      .eq('club_id', id)
-      .eq('status', 'active');
-
-    if (countError) {
-      console.error('Error counting members:', countError);
-      club.member_count = 0;
-    } else {
-      club.member_count = Number(count) || 0;
+      if (error.code === 'PGRST116') {
+        return NextResponse.json(
+          { error: 'Club not found' },
+          { status: 404 }
+        );
+      }
+      throw error;
     }
 
     return NextResponse.json(club);
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error('[Club API] Error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to fetch club' },
       { status: 500 }
     );
   }
