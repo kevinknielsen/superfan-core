@@ -33,7 +33,7 @@ export async function generateMetadata(): Promise<Metadata> {
     version: "next",
     imageUrl: `${baseUrl}/og-image.png`,
     button: {
-      title: "🎵 Explore Releases",
+      title: "🎵 Invest In Culture",
       action: {
         type: "launch_miniapp",
         url: baseUrl,
