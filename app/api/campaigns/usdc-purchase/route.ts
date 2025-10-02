@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { supabase } from '@/app/api/supabase';
 import { getOrCreateUserFromAuth } from '@/lib/user-management';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, decodeEventLog, parseAbi } from 'viem';
 import { base } from 'viem/chains';
 
 // Base RPC client for transaction verification
@@ -34,6 +34,14 @@ export async function POST(request: NextRequest) {
     // Validate inputs
     if (!tx_hash || typeof tx_hash !== 'string') {
       return NextResponse.json({ error: 'tx_hash is required' }, { status: 400 });
+    }
+
+    // Validate tx_hash format: must be 32-byte hex string (64 hex chars with or without 0x prefix)
+    const txHashRegex = /^(0x)?[a-fA-F0-9]{64}$/;
+    if (!txHashRegex.test(tx_hash)) {
+      return NextResponse.json({ 
+        error: 'tx_hash must be a 32-byte hex string (64 hex characters, optionally prefixed with 0x)' 
+      }, { status: 400 });
     }
 
     if (!club_id || typeof club_id !== 'string') {
@@ -80,9 +88,17 @@ export async function POST(request: NextRequest) {
     // Verify transaction on Base blockchain
     console.log('[USDC Purchase] Verifying transaction:', tx_hash);
     
-    const receipt = await publicClient.getTransactionReceipt({ 
-      hash: tx_hash as `0x${string}` 
-    });
+    let receipt;
+    try {
+      receipt = await publicClient.getTransactionReceipt({
+        hash: tx_hash as `0x${string}`
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Transaction receipt not found yet. The transaction may still be pending. Please try again in a few moments.' },
+        { status: 400 }
+      );
+    }
 
     // Verify transaction succeeded
     if (receipt.status !== 'success') {
@@ -98,25 +114,32 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Parse Transfer event from logs to verify recipient and amount
-    // Transfer event signature: Transfer(address indexed from, address indexed to, uint256 value)
-    const TRANSFER_EVENT_SIGNATURE = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+    // Decode USDC Transfer event using viem for type safety
+    const erc20Events = parseAbi(['event Transfer(address indexed from, address indexed to, uint256 value)']);
+    const candidate = receipt.logs.find(l => l.address.toLowerCase() === USDC_BASE_ADDRESS.toLowerCase());
     
-    const transferEvent = receipt.logs.find(log => 
-      log.address.toLowerCase() === USDC_BASE_ADDRESS.toLowerCase() &&
-      log.topics[0] === TRANSFER_EVENT_SIGNATURE
-    );
-
-    if (!transferEvent || !transferEvent.topics || transferEvent.topics.length < 3) {
+    if (!candidate) {
       return NextResponse.json({ 
         error: 'No USDC transfer found in transaction' 
       }, { status: 400 });
     }
 
-    // Decode Transfer event: topics[1] = from, topics[2] = to, data = amount
-    const to = ('0x' + transferEvent.topics[2].slice(26)) as string; // Remove padding from indexed address
-    const amountHex = transferEvent.data;
-    const actualAmount = BigInt(amountHex);
+    let to: string, actualAmount: bigint;
+    try {
+      const decoded = decodeEventLog({
+        abi: erc20Events,
+        data: candidate.data,
+        topics: candidate.topics,
+      });
+      // @ts-expect-error viem types infer tuple
+      to = decoded.args.to;
+      // @ts-expect-error viem types infer tuple
+      actualAmount = decoded.args.value;
+    } catch {
+      return NextResponse.json({ 
+        error: 'Failed to decode USDC transfer event' 
+      }, { status: 400 });
+    }
 
     // Verify recipient is the club's wallet
     if (to.toLowerCase() !== club.usdc_wallet_address.toLowerCase()) {
@@ -156,17 +179,25 @@ export async function POST(request: NextRequest) {
         club_id: club_id,
         campaign_id: campaign_id || null,
         credits_purchased: credit_amount,
-        price_cents: credit_amount * 100, // 1 USDC = 1 credit = $1
+        price_paid_cents: credit_amount * 100, // 1 USDC = 1 credit = $1
         tx_hash: tx_hash,
         payment_method: 'usdc',
         status: 'completed',
-        stripe_session_id: null, // Not applicable for USDC
+        // Stripe fields are NULL for USDC payments (migration 035 makes these nullable)
+        stripe_session_id: null,
         stripe_payment_intent_id: null
       })
       .select()
       .single();
 
     if (purchaseError) {
+      // Unique violation on tx_hash => duplicate transaction
+      if ((purchaseError as any).code === '23505') {
+        return NextResponse.json(
+          { error: 'Transaction already processed' },
+          { status: 409 }
+        );
+      }
       console.error('[USDC Purchase] Error creating purchase record:', purchaseError);
       return NextResponse.json({ 
         error: 'Failed to process purchase' 

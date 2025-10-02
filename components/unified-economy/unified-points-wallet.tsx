@@ -22,7 +22,6 @@ import { Button } from '@/components/ui/button';
 
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
-import { getAccessToken } from '@privy-io/react-auth';
 import { useFarcaster } from '@/lib/farcaster-context';
 import { navigateToCheckout } from '@/lib/navigation-utils';
 import { useSendUSDC } from '@/hooks/use-usdc-payment';
@@ -269,7 +268,7 @@ export default function UnifiedPointsWallet({
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const { isInWalletApp, openUrl } = useFarcaster();
-  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess } = useSendUSDC();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess, error: usdcError } = useSendUSDC();
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
   const [pendingCreditAmount, setPendingCreditAmount] = useState<number | null>(null);
@@ -301,19 +300,31 @@ export default function UnifiedPointsWallet({
   useEffect(() => {
     if (!isInWalletApp || !clubId) return;
     
+    const controller = new AbortController();
+    
     const fetchClubWallet = async () => {
       try {
-        const response = await fetch(`/api/clubs/${clubId}`);
+        const response = await fetch(`/api/clubs/${clubId}`, { signal: controller.signal });
         if (response.ok) {
-          const clubData = await response.json();
+          const clubData = await response.json() as any;
           setClubWalletAddress(clubData.usdc_wallet_address || null);
+        } else if (response.status === 404) {
+          setClubWalletAddress(null);
+        } else {
+          const errorText = await response.text().catch(() => '');
+          console.error('Error fetching club wallet:', errorText);
+          setClubWalletAddress(null);
         }
       } catch (error) {
-        console.error('Error fetching club wallet:', error);
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Error fetching club wallet:', error);
+          setClubWalletAddress(null);
+        }
       }
     };
     
     fetchClubWallet();
+    return () => controller.abort();
   }, [clubId, isInWalletApp]);
 
   // Process USDC transaction when confirmed
@@ -324,7 +335,6 @@ export default function UnifiedPointsWallet({
     if (processedUsdcTxRef.current === usdcTxHash) {
       return;
     }
-    processedUsdcTxRef.current = usdcTxHash;
     
     const processUSDCPurchase = async () => {
       try {
@@ -346,6 +356,9 @@ export default function UnifiedPointsWallet({
         });
 
         if (response.ok) {
+          // Mark as processed only after successful API call
+          processedUsdcTxRef.current = usdcTxHash;
+          
           toast({
             title: "Purchase Successful! 🎉",
             description: `${pendingCreditAmount} credits added to your account`,
@@ -353,7 +366,7 @@ export default function UnifiedPointsWallet({
           setPendingCreditAmount(null);
           refetch(); // Reload wallet data
         } else {
-          const errorData = await response.json();
+          const errorData = await response.json() as any;
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
@@ -370,6 +383,19 @@ export default function UnifiedPointsWallet({
     processUSDCPurchase();
   }, [isUSDCSuccess, usdcTxHash, pendingCreditAmount, clubId, toast, refetch]);
 
+  // Reset state on USDC errors (user rejection, RPC/contract errors)
+  useEffect(() => {
+    if (!usdcError) return;
+    toast({
+      title: 'USDC Transfer Failed',
+      description: usdcError instanceof Error ? usdcError.message : 'Transaction was not sent',
+      variant: 'destructive',
+    });
+    setPendingCreditAmount(null);
+    setIsPurchasing(false);
+    processedUsdcTxRef.current = null;
+  }, [usdcError, toast]);
+
   // Handle credit purchase flow
   const handleCreditPurchase = async (creditAmount: number) => {
     try {
@@ -380,8 +406,9 @@ export default function UnifiedPointsWallet({
       
       // Wallet app users: Send USDC directly (instant)
       if (isInWalletApp && clubWalletAddress) {
-        // Validate wallet address
-        if (!/^0x[a-fA-F0-9]{40}$/.test(clubWalletAddress)) {
+        // Validate wallet address using viem (safer than regex)
+        const { isAddress } = await import('viem');
+        if (!isAddress(clubWalletAddress)) {
           throw new Error('Invalid club wallet address');
         }
         
@@ -399,6 +426,7 @@ export default function UnifiedPointsWallet({
           amountUSDC: creditAmount
         });
         
+        // Note: isPurchasing will be reset in the transaction processing useEffect's finally block
         return; // Transaction monitoring handled by useEffect
       }
       
@@ -554,7 +582,11 @@ export default function UnifiedPointsWallet({
                     className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                   >
                     <CreditCard className="w-3 h-3 mr-1" />
-                    {isUSDCLoading && pendingCreditAmount === 25 ? 'Sending...' : '25'}
+                    {isUSDCLoading && pendingCreditAmount === 25
+                      ? 'Sending...'
+                      : isPurchasing && pendingCreditAmount === 25
+                        ? 'Processing...'
+                        : '25'}
                   </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -564,7 +596,11 @@ export default function UnifiedPointsWallet({
                     className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                   >
                     <CreditCard className="w-3 h-3 mr-1" />
-                    {isUSDCLoading && pendingCreditAmount === 100 ? 'Sending...' : '100'}
+                    {isUSDCLoading && pendingCreditAmount === 100
+                      ? 'Sending...'
+                      : isPurchasing && pendingCreditAmount === 100
+                        ? 'Processing...'
+                        : '100'}
                   </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -574,7 +610,11 @@ export default function UnifiedPointsWallet({
                     className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                   >
                     <CreditCard className="w-3 h-3 mr-1" />
-                    {isUSDCLoading && pendingCreditAmount === 250 ? 'Sending...' : '250'}
+                    {isUSDCLoading && pendingCreditAmount === 250
+                      ? 'Sending...'
+                      : isPurchasing && pendingCreditAmount === 250
+                        ? 'Processing...'
+                        : '250'}
                   </Button>
                 </motion.div>
               </div>

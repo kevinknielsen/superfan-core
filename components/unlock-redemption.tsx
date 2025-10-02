@@ -184,7 +184,7 @@ export default function UnlockRedemption({
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
-  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess } = useSendUSDC();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess, error: usdcError } = useSendUSDC();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
   const [redemptions, setRedemptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -236,7 +236,6 @@ export default function UnlockRedemption({
     if (processedTxRef.current === usdcTxHash) {
       return;
     }
-    processedTxRef.current = usdcTxHash;
     
     // Transaction confirmed on blockchain - now verify and grant credits
     const processUSDCPurchase = async () => {
@@ -259,6 +258,9 @@ export default function UnlockRedemption({
         });
 
         if (response.ok) {
+          // Mark as processed only after successful API call
+          processedTxRef.current = usdcTxHash;
+          
           toast({
             title: "Purchase Successful! 🎉",
             description: `${selectedUnlock.credit_cost} credits added to your account`,
@@ -269,7 +271,7 @@ export default function UnlockRedemption({
           await loadData();
           onRedemption?.();
         } else {
-          const errorData = await response.json();
+          const errorData = await response.json() as any;
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
@@ -284,6 +286,19 @@ export default function UnlockRedemption({
     processUSDCPurchase();
   }, [isUSDCSuccess, usdcTxHash, selectedUnlock, clubId, onRedemption, toast]);
 
+  // Reset state on USDC errors (user rejection, RPC/contract errors)
+  useEffect(() => {
+    if (!usdcError) return;
+    toast({
+      title: 'USDC Transfer Failed',
+      description: usdcError instanceof Error ? usdcError.message : 'Transaction was not sent',
+      variant: 'destructive',
+    });
+    setSelectedUnlock(null);
+    setIsRedeeming(false);
+    processedTxRef.current = null;
+  }, [usdcError, toast]);
+
   // Fetch club USDC wallet address once on mount (optimized - only for wallet app users)
   useEffect(() => {
     if (!isInWalletApp || !isAuthenticated) return;
@@ -292,7 +307,7 @@ export default function UnlockRedemption({
       try {
         const clubResponse = await fetch(`/api/clubs/${clubId}`);
         if (clubResponse.ok) {
-          const clubData = await clubResponse.json();
+          const clubData = await clubResponse.json() as any;
           setClubWalletAddress(clubData.usdc_wallet_address || null);
         }
       } catch (error) {
@@ -724,6 +739,9 @@ export default function UnlockRedemption({
 
   const handleUSDCPurchase = async (reward: Unlock) => {
     try {
+      // Lock UI immediately
+      setIsRedeeming(true);
+      
       if (!clubWalletAddress) {
         throw new Error('Club USDC wallet not configured');
       }
@@ -753,6 +771,10 @@ export default function UnlockRedemption({
         description: error instanceof Error ? error.message : "Failed to initiate USDC payment",
         variant: "destructive",
       });
+      // If we didn't reach confirming state, unlock UI
+      if (!isUSDCLoading) {
+        setIsRedeeming(false);
+      }
     }
   };
 

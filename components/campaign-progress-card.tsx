@@ -24,7 +24,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
   const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
-  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess } = useSendUSDC();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess, error: usdcError } = useSendUSDC();
   const [pendingCreditAmount, setPendingCreditAmount] = useState<number | null>(null);
   const processedTxRef = useRef<string | null>(null);
   
@@ -35,19 +35,24 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
   useEffect(() => {
     if (!isInWalletApp || !clubId) return;
     
+    const ac = new AbortController();
+    
     const fetchClubWallet = async () => {
       try {
-        const response = await fetch(`/api/clubs/${clubId}`);
+        const response = await fetch(`/api/clubs/${clubId}`, { signal: ac.signal });
         if (response.ok) {
-          const clubData = await response.json();
+          const clubData = await response.json() as any;
           setClubWalletAddress(clubData.usdc_wallet_address || null);
         }
       } catch (error) {
-        console.error('Error fetching club wallet:', error);
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Error fetching club wallet:', error);
+        }
       }
     };
     
     fetchClubWallet();
+    return () => ac.abort();
   }, [clubId, isInWalletApp]);
 
   // Process USDC transaction when confirmed
@@ -58,7 +63,6 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
     if (processedTxRef.current === usdcTxHash) {
       return;
     }
-    processedTxRef.current = usdcTxHash;
     
     const processUSDCPurchase = async () => {
       try {
@@ -80,13 +84,16 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         });
 
         if (response.ok) {
+          // Mark as processed only after successful API call
+          processedTxRef.current = usdcTxHash;
+          
           toast({
             title: "Purchase Successful! 🎉",
             description: `${pendingCreditAmount} credits added to your account`,
           });
           setPendingCreditAmount(null);
         } else {
-          const errorData = await response.json();
+          const errorData = await response.json() as any;
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
@@ -102,6 +109,19 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
     
     processUSDCPurchase();
   }, [isUSDCSuccess, usdcTxHash, pendingCreditAmount, clubId, campaignData.campaign_id, toast]);
+
+  // Reset state on USDC errors (user rejection, RPC/contract errors)
+  useEffect(() => {
+    if (!usdcError) return;
+    toast({
+      title: 'USDC Transfer Failed',
+      description: usdcError instanceof Error ? usdcError.message : 'Transaction was not sent',
+      variant: 'destructive',
+    });
+    setPendingCreditAmount(null);
+    setIsPurchasing(false);
+    processedTxRef.current = null;
+  }, [usdcError, toast]);
   
   // Calculate remaining amount needed - handle null/undefined goal
   const goalCents = campaignData.campaign_progress.goal_funding_cents || 0;
@@ -151,6 +171,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
           amountUSDC: creditAmount
         });
         
+        // Note: isPurchasing will be reset in the transaction processing useEffect's finally block
         return; // Transaction monitoring handled by useEffect
       }
       

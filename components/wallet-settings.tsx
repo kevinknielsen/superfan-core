@@ -14,6 +14,7 @@ import { useFarcaster } from "@/lib/farcaster-context";
 import { useQuery } from '@tanstack/react-query';
 import { getAccessToken } from '@privy-io/react-auth';
 import { Globe, TrendingUp, DollarSign, ArrowUpRight } from 'lucide-react';
+import { getAuthHeaders } from '@/app/api/sdk';
 
 interface GlobalPointsData {
   global_balance: {
@@ -56,8 +57,6 @@ export default function WalletSettings() {
   } = useQuery<GlobalPointsData>({
     queryKey: ['global-points-balance', user?.id || 'anonymous'], // Scope cache by user ID
     queryFn: async (context): Promise<GlobalPointsData> => {
-      // Get auth headers (supports both Privy and Farcaster)
-      const { getAuthHeaders } = await import('@/app/api/sdk');
       const authHeaders = await getAuthHeaders();
       
       const response = await fetch('/api/points/global-balance', {
