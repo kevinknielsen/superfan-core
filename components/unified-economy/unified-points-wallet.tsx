@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
@@ -28,7 +28,6 @@ import { useSendUSDC } from '@/hooks/use-usdc-payment';
 import { useToast } from '@/hooks/use-toast';
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
 import SpendPointsModal from './spend-points-modal';
-import { useRef } from 'react';
 
 interface UnifiedPointsWalletProps {
   clubId: string;
@@ -306,7 +305,10 @@ export default function UnifiedPointsWallet({
       try {
         const response = await fetch(`/api/clubs/${clubId}`, { signal: controller.signal });
         if (response.ok) {
-          const clubData = await response.json() as any;
+          interface ClubResponse {
+            usdc_wallet_address?: string | null;
+          }
+          const clubData = await response.json() as ClubResponse;
           setClubWalletAddress(clubData.usdc_wallet_address || null);
         } else if (response.status === 404) {
           setClubWalletAddress(null);
@@ -366,7 +368,10 @@ export default function UnifiedPointsWallet({
           setPendingCreditAmount(null);
           refetch(); // Reload wallet data
         } else {
-          const errorData = await response.json() as any;
+          interface ApiErrorResponse {
+            error?: string;
+          }
+          const errorData = await response.json() as ApiErrorResponse;
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
@@ -426,7 +431,7 @@ export default function UnifiedPointsWallet({
           amountUSDC: creditAmount
         });
         
-        // Note: isPurchasing will be reset in the transaction processing useEffect's finally block
+        // Note: isPurchasing will be reset after transaction completes or fails (see useEffect handlers)
         return; // Transaction monitoring handled by useEffect
       }
       

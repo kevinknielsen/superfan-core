@@ -21,8 +21,7 @@ export async function GET(
       const authHeaders = await getAuthHeaders();
       isAuthenticated = !!authHeaders?.Authorization;
     } catch {
-      // User is not authenticated
-      isAuthenticated = false;
+      // User is not authenticated (isAuthenticated remains false)
     }
 
     // Select only needed fields to avoid exposing unnecessary data

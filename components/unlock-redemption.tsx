@@ -271,7 +271,10 @@ export default function UnlockRedemption({
           await loadData();
           onRedemption?.();
         } else {
-          const errorData = await response.json() as any;
+          interface ApiErrorResponse {
+            error?: string;
+          }
+          const errorData = await response.json() as ApiErrorResponse;
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
@@ -307,7 +310,10 @@ export default function UnlockRedemption({
       try {
         const clubResponse = await fetch(`/api/clubs/${clubId}`);
         if (clubResponse.ok) {
-          const clubData = await clubResponse.json() as any;
+          interface ClubResponse {
+            usdc_wallet_address?: string | null;
+          }
+          const clubData = await clubResponse.json() as ClubResponse;
           setClubWalletAddress(clubData.usdc_wallet_address || null);
         }
       } catch (error) {
@@ -739,9 +745,6 @@ export default function UnlockRedemption({
 
   const handleUSDCPurchase = async (reward: Unlock) => {
     try {
-      // Lock UI immediately
-      setIsRedeeming(true);
-      
       if (!clubWalletAddress) {
         throw new Error('Club USDC wallet not configured');
       }
@@ -758,6 +761,9 @@ export default function UnlockRedemption({
         throw new Error('Invalid credit cost: must be a positive number');
       }
       
+      // Lock UI after validation passes
+      setIsRedeeming(true);
+      
       // Send USDC transaction
       sendUSDC({
         toAddress: clubWalletAddress as `0x${string}`,
@@ -771,10 +777,7 @@ export default function UnlockRedemption({
         description: error instanceof Error ? error.message : "Failed to initiate USDC payment",
         variant: "destructive",
       });
-      // If we didn't reach confirming state, unlock UI
-      if (!isUSDCLoading) {
-        setIsRedeeming(false);
-      }
+      setIsRedeeming(false);
     }
   };
 
