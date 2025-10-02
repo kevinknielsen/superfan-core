@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/app/api/supabase';
-import { getAuthHeaders } from '@/app/api/sdk';
+import { verifyUnifiedAuth } from '@/app/api/auth';
 
 /**
  * GET /api/clubs/[id]
@@ -18,8 +18,8 @@ export async function GET(
     // Check authentication status
     let isAuthenticated = false;
     try {
-      const authHeaders = await getAuthHeaders();
-      isAuthenticated = !!authHeaders?.Authorization;
+      const auth = await verifyUnifiedAuth(request);
+      isAuthenticated = !!auth;
     } catch {
       // User is not authenticated (isAuthenticated remains false)
     }
