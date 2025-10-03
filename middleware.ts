@@ -113,7 +113,23 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   
-  return NextResponse.next();
+  const response = NextResponse.next();
+
+  // Only for Vercel preview deployments, forcefully remove X-Frame-Options
+  // This allows Farcaster miniapp to work in iframe on preview branches
+  const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+  if (isVercelPreview) {
+    response.headers.delete('X-Frame-Options');
+    // Ensure frame-ancestors allows Farcaster embedding
+    const existingCSP = response.headers.get('Content-Security-Policy');
+    if (existingCSP && !existingCSP.includes('frame-ancestors')) {
+      response.headers.set('Content-Security-Policy', 
+        existingCSP + '; frame-ancestors *'
+      );
+    }
+  }
+
+  return response;
 }
 
 export const config = {
