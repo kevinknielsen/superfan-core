@@ -271,6 +271,7 @@ export default function UnlockRedemption({
           await loadData();
           onRedemption?.();
         } else {
+          // API failed - allow retry by NOT marking as processed
           interface ApiErrorResponse {
             error?: string;
           }
@@ -278,11 +279,16 @@ export default function UnlockRedemption({
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
+        // Backend processing failed - reset transaction tracking to allow retry
+        processedTxRef.current = null;
+        
         toast({
           title: "Purchase Failed",
-          description: error instanceof Error ? error.message : "Failed to process purchase",
+          description: error instanceof Error ? error.message : "Failed to process purchase. Please contact support with your transaction hash.",
           variant: "destructive",
         });
+      } finally {
+        setIsRedeeming(false);
       }
     };
     
@@ -308,7 +314,13 @@ export default function UnlockRedemption({
     
     const fetchClubWallet = async () => {
       try {
-        const clubResponse = await fetch(`/api/clubs/${clubId}`);
+        // Get auth headers to access usdc_wallet_address
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const clubResponse = await fetch(`/api/clubs/${clubId}`, {
+          headers: authHeaders
+        });
         if (clubResponse.ok) {
           interface ClubResponse {
             usdc_wallet_address?: string | null;

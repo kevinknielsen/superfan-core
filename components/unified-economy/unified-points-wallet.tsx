@@ -37,6 +37,7 @@ interface UnifiedPointsWalletProps {
   className?: string;
   creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
   onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
+  isAuthenticated?: boolean; // Required for fetching USDC wallet address
 }
 
 // Enhanced status icons mapping
@@ -261,6 +262,7 @@ export default function UnifiedPointsWallet({
   showPurchaseOptions = false,
   showTransferOptions = false,
   className = "",
+  isAuthenticated = false,
   creditBalances = {},
   onCloseWallet
 }: UnifiedPointsWalletProps) {
@@ -295,15 +297,22 @@ export default function UnifiedPointsWallet({
     [creditBalances]
   );
 
-  // Fetch club USDC wallet for wallet app users
+  // Fetch club USDC wallet for wallet app users (only when authenticated)
   useEffect(() => {
-    if (!isInWalletApp || !clubId) return;
+    if (!isInWalletApp || !clubId || !isAuthenticated) return;
     
     const controller = new AbortController();
     
     const fetchClubWallet = async () => {
       try {
-        const response = await fetch(`/api/clubs/${clubId}`, { signal: controller.signal });
+        // Get auth headers to access usdc_wallet_address
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const response = await fetch(`/api/clubs/${clubId}`, { 
+          signal: controller.signal,
+          headers: authHeaders
+        });
         if (response.ok) {
           interface ClubResponse {
             usdc_wallet_address?: string | null;
@@ -327,7 +336,7 @@ export default function UnifiedPointsWallet({
     
     fetchClubWallet();
     return () => controller.abort();
-  }, [clubId, isInWalletApp]);
+  }, [clubId, isInWalletApp, isAuthenticated]);
 
   // Process USDC transaction when confirmed
   useEffect(() => {
@@ -368,6 +377,7 @@ export default function UnifiedPointsWallet({
           setPendingCreditAmount(null);
           refetch(); // Reload wallet data
         } else {
+          // API failed - allow retry by NOT marking as processed
           interface ApiErrorResponse {
             error?: string;
           }
@@ -375,9 +385,13 @@ export default function UnifiedPointsWallet({
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
+        // Backend processing failed - reset transaction tracking to allow retry
+        processedUsdcTxRef.current = null;
+        setPendingCreditAmount(null);
+        
         toast({
           title: "Purchase Failed",
-          description: error instanceof Error ? error.message : "Failed to process purchase",
+          description: error instanceof Error ? error.message : "Failed to process purchase. Please contact support with your transaction hash.",
           variant: "destructive",
         });
       } finally {

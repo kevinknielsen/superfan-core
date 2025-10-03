@@ -33,16 +33,24 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
 
   // Fetch club USDC wallet for wallet app users
   useEffect(() => {
-    console.log('[CampaignProgressCard] Wallet fetch check:', { isInWalletApp, clubId });
+    console.log('[CampaignProgressCard] Wallet fetch check:', { isInWalletApp, clubId, isAuthenticated });
     
-    if (!isInWalletApp || !clubId) return;
+    if (!isInWalletApp || !clubId || !isAuthenticated) return;
     
     const ac = new AbortController();
     
     const fetchClubWallet = async () => {
       try {
         console.log('[CampaignProgressCard] Fetching club wallet for:', clubId);
-        const response = await fetch(`/api/clubs/${clubId}`, { signal: ac.signal });
+        
+        // Get auth headers to access usdc_wallet_address
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const response = await fetch(`/api/clubs/${clubId}`, { 
+          signal: ac.signal,
+          headers: authHeaders
+        });
         if (response.ok) {
           const clubData = await response.json() as any;
           console.log('[CampaignProgressCard] Club wallet fetched:', {
@@ -63,7 +71,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
     
     fetchClubWallet();
     return () => ac.abort();
-  }, [clubId, isInWalletApp]);
+  }, [clubId, isInWalletApp, isAuthenticated]);
 
   // Process USDC transaction when confirmed
   useEffect(() => {
@@ -103,13 +111,18 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
           });
           setPendingCreditAmount(null);
         } else {
+          // API failed - allow retry by NOT marking as processed
           const errorData = await response.json() as any;
           throw new Error(errorData.error || 'Failed to process purchase');
         }
       } catch (error) {
+        // Backend processing failed - reset transaction tracking to allow retry
+        processedTxRef.current = null;
+        setPendingCreditAmount(null);
+        
         toast({
           title: "Purchase Failed",
-          description: error instanceof Error ? error.message : "Failed to process purchase",
+          description: error instanceof Error ? error.message : "Failed to process purchase. Please contact support with your transaction hash.",
           variant: "destructive",
         });
       } finally {
