@@ -115,29 +115,55 @@ export async function POST(request: NextRequest) {
     }
 
     // Decode USDC Transfer event using viem for type safety
+    // Filter all USDC Transfer logs and find the one from the authenticated user's wallet
     const erc20Events = parseAbi(['event Transfer(address indexed from, address indexed to, uint256 value)']);
-    const candidate = receipt.logs.find(l => l.address.toLowerCase() === USDC_BASE_ADDRESS.toLowerCase());
+    const usdcLogs = receipt.logs.filter(l => l.address.toLowerCase() === USDC_BASE_ADDRESS.toLowerCase());
     
-    if (!candidate) {
+    if (usdcLogs.length === 0) {
       return NextResponse.json({ 
         error: 'No USDC transfer found in transaction' 
       }, { status: 400 });
     }
 
-    let to: string, actualAmount: bigint;
-    try {
-      const decoded = decodeEventLog({
-        abi: erc20Events,
-        data: candidate.data,
-        topics: candidate.topics,
-      });
-      // @ts-expect-error viem types infer tuple
-      to = decoded.args.to;
-      // @ts-expect-error viem types infer tuple
-      actualAmount = decoded.args.value;
-    } catch {
+    // Get user's wallet address from auth (Farcaster custody address or connected wallet)
+    const userWalletAddress = auth.walletAddress?.toLowerCase();
+    if (!userWalletAddress) {
       return NextResponse.json({ 
-        error: 'Failed to decode USDC transfer event' 
+        error: 'User wallet address not found' 
+      }, { status: 400 });
+    }
+
+    // Decode each log and find the Transfer from the user's wallet
+    let to: string | null = null;
+    let actualAmount: bigint | null = null;
+    
+    for (const log of usdcLogs) {
+      try {
+        const decoded = decodeEventLog({
+          abi: erc20Events,
+          data: log.data,
+          topics: log.topics,
+        });
+        // @ts-expect-error viem types infer tuple
+        const from = decoded.args.from as string;
+        
+        // Match the transfer from the authenticated user's wallet
+        if (from.toLowerCase() === userWalletAddress) {
+          // @ts-expect-error viem types infer tuple
+          to = decoded.args.to as string;
+          // @ts-expect-error viem types infer tuple
+          actualAmount = decoded.args.value as bigint;
+          break;
+        }
+      } catch {
+        // Skip logs that fail to decode
+        continue;
+      }
+    }
+
+    if (!to || !actualAmount) {
+      return NextResponse.json({ 
+        error: 'No USDC transfer from your wallet found in transaction' 
       }, { status: 400 });
     }
 

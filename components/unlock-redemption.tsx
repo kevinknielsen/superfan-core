@@ -312,6 +312,8 @@ export default function UnlockRedemption({
   useEffect(() => {
     if (!isInWalletApp || !isAuthenticated) return;
     
+    const controller = new AbortController();
+    
     const fetchClubWallet = async () => {
       try {
         // Get auth headers to access usdc_wallet_address
@@ -319,7 +321,8 @@ export default function UnlockRedemption({
         const authHeaders = await getAuthHeaders();
         
         const clubResponse = await fetch(`/api/clubs/${clubId}`, {
-          headers: authHeaders
+          headers: authHeaders,
+          signal: controller.signal
         });
         if (clubResponse.ok) {
           interface ClubResponse {
@@ -329,11 +332,14 @@ export default function UnlockRedemption({
           setClubWalletAddress(clubData.usdc_wallet_address || null);
         }
       } catch (error) {
-        console.error('Error fetching club wallet:', error);
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Error fetching club wallet:', error);
+        }
       }
     };
     
     fetchClubWallet();
+    return () => controller.abort();
   }, [clubId, isInWalletApp, isAuthenticated]);
 
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {

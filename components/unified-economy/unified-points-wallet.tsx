@@ -421,13 +421,6 @@ export default function UnifiedPointsWallet({
       if (isPurchasing) return;
       setIsPurchasing(true);
       
-      console.log('[UnifiedPointsWallet] Purchase flow check:', {
-        isInWalletApp,
-        clubWalletAddress,
-        willUseUSDC: isInWalletApp && clubWalletAddress,
-        creditAmount
-      });
-      
       // Wallet app users: Send USDC directly (instant)
       if (isInWalletApp && clubWalletAddress) {
         // Validate wallet address using viem (safer than regex)

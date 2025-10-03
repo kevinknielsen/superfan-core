@@ -33,16 +33,12 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
 
   // Fetch club USDC wallet for wallet app users
   useEffect(() => {
-    console.log('[CampaignProgressCard] Wallet fetch check:', { isInWalletApp, clubId, isAuthenticated });
-    
     if (!isInWalletApp || !clubId || !isAuthenticated) return;
     
     const ac = new AbortController();
     
     const fetchClubWallet = async () => {
       try {
-        console.log('[CampaignProgressCard] Fetching club wallet for:', clubId);
-        
         // Get auth headers to access usdc_wallet_address
         const { getAuthHeaders } = await import('@/app/api/sdk');
         const authHeaders = await getAuthHeaders();
@@ -53,18 +49,13 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         });
         if (response.ok) {
           const clubData = await response.json() as any;
-          console.log('[CampaignProgressCard] Club wallet fetched:', {
-            clubId,
-            hasWallet: !!clubData.usdc_wallet_address,
-            walletAddress: clubData.usdc_wallet_address
-          });
           setClubWalletAddress(clubData.usdc_wallet_address || null);
         } else {
-          console.error('[CampaignProgressCard] Failed to fetch club:', response.status);
+          // Failed to fetch club wallet
         }
       } catch (error) {
         if ((error as Error).name !== 'AbortError') {
-          console.error('[CampaignProgressCard] Error fetching club wallet:', error);
+          // Error fetching club wallet
         }
       }
     };
@@ -172,14 +163,6 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
     try {
       if (isPurchasing) return;
       setIsPurchasing(true);
-      
-      // Debug logging
-      console.log('[CampaignProgressCard] Purchase flow check:', {
-        isInWalletApp,
-        clubWalletAddress,
-        willUseUSDC: isInWalletApp && clubWalletAddress,
-        creditAmount
-      });
       
       // Wallet app users: Send USDC directly (instant transaction)
       if (isInWalletApp && clubWalletAddress) {
