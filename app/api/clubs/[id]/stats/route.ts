@@ -59,11 +59,11 @@ export async function GET(
       );
     }
 
-    // Get this week's stats
+    // Get this week's stats - select only needed fields
     const weekStart = getWeekStart();
     const { data: weeklyStats, error: weeklyError } = await supabase
       .from('weekly_upfront_stats')
-      .select('*')
+      .select('id, club_id, week_start, gross_cents, platform_fee_cents, reserve_delta_cents, upfront_cents, created_at, updated_at')
       .eq('club_id', clubId)
       .eq('week_start', weekStart)
       .single();

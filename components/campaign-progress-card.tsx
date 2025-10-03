@@ -8,8 +8,9 @@ import { useToast } from "@/hooks/use-toast";
 import { getAccessToken } from "@privy-io/react-auth";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
+import { useSendUSDC } from "@/hooks/use-usdc-payment";
 import type { CampaignData } from "@/types/campaign.types";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface CampaignProgressCardProps {
   campaignData: CampaignData;
@@ -20,11 +21,121 @@ interface CampaignProgressCardProps {
 
 export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = false, onLoginRequired }: CampaignProgressCardProps) {
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess, error: usdcError } = useSendUSDC();
+  const [pendingCreditAmount, setPendingCreditAmount] = useState<number | null>(null);
+  const processedTxRef = useRef<string | null>(null);
   
   const pct = Math.round(Math.max(0, Math.min(100, campaignData.campaign_progress.funding_percentage)));
   const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  // Fetch club USDC wallet for wallet app users
+  useEffect(() => {
+    if (!isInWalletApp || !clubId || !isAuthenticated) return;
+    
+    const ac = new AbortController();
+    
+    const fetchClubWallet = async () => {
+      try {
+        // Get auth headers to access usdc_wallet_address
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const response = await fetch(`/api/clubs/${clubId}`, { 
+          signal: ac.signal,
+          headers: authHeaders
+        });
+        if (response.ok) {
+          const clubData = await response.json() as any;
+          setClubWalletAddress(clubData.usdc_wallet_address || null);
+        } else {
+          // Failed to fetch club wallet
+        }
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          // Error fetching club wallet
+        }
+      }
+    };
+    
+    fetchClubWallet();
+    return () => ac.abort();
+  }, [clubId, isInWalletApp, isAuthenticated]);
+
+  // Process USDC transaction when confirmed
+  useEffect(() => {
+    if (!isUSDCSuccess || !usdcTxHash || !pendingCreditAmount) return;
+    
+    // Prevent duplicate processing
+    if (processedTxRef.current === usdcTxHash) {
+      return;
+    }
+    
+    const processUSDCPurchase = async () => {
+      try {
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const response = await fetch('/api/campaigns/usdc-purchase', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders
+          },
+          body: JSON.stringify({
+            tx_hash: usdcTxHash,
+            club_id: clubId,
+            credit_amount: pendingCreditAmount,
+            campaign_id: campaignData.campaign_id
+          })
+        });
+
+        if (response.ok) {
+          // Mark as processed only after successful API call
+          processedTxRef.current = usdcTxHash;
+          
+          toast({
+            title: "Purchase Successful! 🎉",
+            description: `${pendingCreditAmount} credits added to your account`,
+          });
+          setPendingCreditAmount(null);
+        } else {
+          // API failed - allow retry by NOT marking as processed
+          const errorData = await response.json() as any;
+          throw new Error(errorData.error || 'Failed to process purchase');
+        }
+      } catch (error) {
+        // Backend processing failed - reset transaction tracking to allow retry
+        processedTxRef.current = null;
+        setPendingCreditAmount(null);
+        
+        toast({
+          title: "Purchase Failed",
+          description: error instanceof Error ? error.message : "Failed to process purchase. Please contact support with your transaction hash.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsPurchasing(false);
+      }
+    };
+    
+    processUSDCPurchase();
+  }, [isUSDCSuccess, usdcTxHash, pendingCreditAmount, clubId, campaignData.campaign_id, toast]);
+
+  // Reset state on USDC errors (user rejection, RPC/contract errors)
+  useEffect(() => {
+    if (!usdcError) return;
+    toast({
+      title: 'USDC Transfer Failed',
+      description: usdcError instanceof Error ? usdcError.message : 'Transaction was not sent',
+      variant: 'destructive',
+    });
+    setPendingCreditAmount(null);
+    setIsPurchasing(false);
+    processedTxRef.current = null;
+  }, [usdcError, toast]);
   
   // Calculate remaining amount needed - handle null/undefined goal
   const goalCents = campaignData.campaign_progress.goal_funding_cents || 0;
@@ -53,7 +164,33 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
       if (isPurchasing) return;
       setIsPurchasing(true);
       
-      // Get auth headers (supports both Privy and Farcaster)
+      // Wallet app users: Send USDC directly (instant transaction)
+      if (isInWalletApp && clubWalletAddress) {
+        // Validate wallet address using viem (safer than regex)
+        const { isAddress } = await import('viem');
+        if (!isAddress(clubWalletAddress)) {
+          throw new Error('Invalid club wallet address');
+        }
+        
+        // Validate amount
+        if (!Number.isFinite(creditAmount) || creditAmount <= 0) {
+          throw new Error('Invalid credit amount');
+        }
+        
+        // Store pending amount for processing after confirmation
+        setPendingCreditAmount(creditAmount);
+        
+        // Trigger USDC transaction (wallet popup will appear)
+        sendUSDC({
+          toAddress: clubWalletAddress as `0x${string}`,
+          amountUSDC: creditAmount
+        });
+        
+        // Note: isPurchasing will be reset in the transaction processing useEffect's finally block
+        return; // Transaction monitoring handled by useEffect
+      }
+      
+      // Web users: Stripe checkout flow
       const { getAuthHeaders } = await import('@/app/api/sdk');
       const authHeaders = await getAuthHeaders();
 
@@ -79,6 +216,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         }
         
         await navigateToCheckout(url, isInWalletApp, openUrl);
+        // Note: Page will redirect, so state reset not critical but included for completeness
       } else {
         const errorData = await response.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');
@@ -91,7 +229,10 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         variant: 'destructive' 
       });
     } finally {
-      setIsPurchasing(false);
+      // Always reset state unless we're waiting for USDC transaction
+      if (!isInWalletApp || !clubWalletAddress) {
+        setIsPurchasing(false);
+      }
     }
   };
 
@@ -226,31 +367,31 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing}
+                  disabled={isPurchasing || isUSDCLoading}
                   className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  25
+                  {isUSDCLoading && pendingCreditAmount === 25 ? 'Sending...' : '25'}
                 </Button>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing}
+                  disabled={isPurchasing || isUSDCLoading}
                   className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  100
+                  {isUSDCLoading && pendingCreditAmount === 100 ? 'Sending...' : '100'}
                 </Button>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing}
+                  disabled={isPurchasing || isUSDCLoading}
                   className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  250
+                  {isUSDCLoading && pendingCreditAmount === 250 ? 'Sending...' : '250'}
                 </Button>
               </motion.div>
             </div>

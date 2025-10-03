@@ -1,60 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/app/api/supabase';
+import { supabase } from '@/app/api/supabase';
+import { verifyUnifiedAuth } from '@/app/api/auth';
 
 /**
  * GET /api/clubs/[id]
- * Get a single club by ID (public endpoint for QR tap-in flow)
+ * Get a specific club's details
+ * - Authenticated: Returns all fields including sensitive data (usdc_wallet_address)
+ * - Unauthenticated: Returns only public fields for active clubs
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
-    const supabase = createServiceClient();
-    
+    const { id: clubId } = await params;
+
+    // Check authentication status
+    let isAuthenticated = false;
+    try {
+      const auth = await verifyUnifiedAuth(request);
+      isAuthenticated = !!auth;
+    } catch {
+      // User is not authenticated (isAuthenticated remains false)
+    }
+
+    // Select only needed fields to avoid exposing unnecessary data
     const { data: club, error } = await supabase
-      .from('clubs')
-      .select(`
-        id,
-        name,
-        description,
-        city,
-        image_url,
-        is_active,
-        created_at
-      `)
-      .eq('id', id)
-      .eq('is_active', true)
+      .from('clubs' as any)
+      .select('id, name, description, city, image_url, is_active, created_at, updated_at, usdc_wallet_address')
+      .eq('id', clubId)
       .single();
 
     if (error) {
-      console.error('Error fetching club:', error);
+      if (error.code === 'PGRST116') {
+        return NextResponse.json(
+          { error: 'Club not found' },
+          { status: 404 }
+        );
+      }
+      throw error;
+    }
+
+    // Type assertion for club data
+    const clubData = club as any;
+
+    // For unauthenticated users, only return active clubs
+    if (!isAuthenticated && !clubData.is_active) {
       return NextResponse.json(
         { error: 'Club not found' },
         { status: 404 }
       );
     }
 
-    // Calculate member count using efficient count query
-    const { count, error: countError } = await supabase
-      .from('club_memberships')
-      .select('id', { count: 'exact', head: true })
-      .eq('club_id', id)
-      .eq('status', 'active');
-
-    if (countError) {
-      console.error('Error counting members:', countError);
-      club.member_count = 0;
-    } else {
-      club.member_count = Number(count) || 0;
+    // For unauthenticated users, filter out sensitive fields
+    if (!isAuthenticated) {
+      const publicFields = {
+        id: clubData.id,
+        name: clubData.name,
+        description: clubData.description,
+        city: clubData.city,
+        image_url: clubData.image_url,
+        is_active: clubData.is_active,
+        created_at: clubData.created_at,
+        updated_at: clubData.updated_at
+      };
+      return NextResponse.json(publicFields);
     }
 
-    return NextResponse.json(club);
+    // Authenticated users get all fields
+    return NextResponse.json(clubData);
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error('[Club API] Error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to fetch club' },
       { status: 500 }
     );
   }
