@@ -33,20 +33,30 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
 
   // Fetch club USDC wallet for wallet app users
   useEffect(() => {
+    console.log('[CampaignProgressCard] Wallet fetch check:', { isInWalletApp, clubId });
+    
     if (!isInWalletApp || !clubId) return;
     
     const ac = new AbortController();
     
     const fetchClubWallet = async () => {
       try {
+        console.log('[CampaignProgressCard] Fetching club wallet for:', clubId);
         const response = await fetch(`/api/clubs/${clubId}`, { signal: ac.signal });
         if (response.ok) {
           const clubData = await response.json() as any;
+          console.log('[CampaignProgressCard] Club wallet fetched:', {
+            clubId,
+            hasWallet: !!clubData.usdc_wallet_address,
+            walletAddress: clubData.usdc_wallet_address
+          });
           setClubWalletAddress(clubData.usdc_wallet_address || null);
+        } else {
+          console.error('[CampaignProgressCard] Failed to fetch club:', response.status);
         }
       } catch (error) {
         if ((error as Error).name !== 'AbortError') {
-          console.error('Error fetching club wallet:', error);
+          console.error('[CampaignProgressCard] Error fetching club wallet:', error);
         }
       }
     };
@@ -150,10 +160,19 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
       if (isPurchasing) return;
       setIsPurchasing(true);
       
+      // Debug logging
+      console.log('[CampaignProgressCard] Purchase flow check:', {
+        isInWalletApp,
+        clubWalletAddress,
+        willUseUSDC: isInWalletApp && clubWalletAddress,
+        creditAmount
+      });
+      
       // Wallet app users: Send USDC directly (instant transaction)
       if (isInWalletApp && clubWalletAddress) {
-        // Validate wallet address
-        if (!/^0x[a-fA-F0-9]{40}$/.test(clubWalletAddress)) {
+        // Validate wallet address using viem (safer than regex)
+        const { isAddress } = await import('viem');
+        if (!isAddress(clubWalletAddress)) {
           throw new Error('Invalid club wallet address');
         }
         
@@ -201,6 +220,7 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         }
         
         await navigateToCheckout(url, isInWalletApp, openUrl);
+        // Note: Page will redirect, so state reset not critical but included for completeness
       } else {
         const errorData = await response.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');
@@ -212,7 +232,11 @@ export function CampaignProgressCard({ campaignData, clubId, isAuthenticated = f
         description: error instanceof Error ? error.message : 'Failed to start credit purchase', 
         variant: 'destructive' 
       });
-      setIsPurchasing(false);
+    } finally {
+      // Always reset state unless we're waiting for USDC transaction
+      if (!isInWalletApp || !clubWalletAddress) {
+        setIsPurchasing(false);
+      }
     }
   };
 

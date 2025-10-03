@@ -749,8 +749,9 @@ export default function UnlockRedemption({
         throw new Error('Club USDC wallet not configured');
       }
       
-      // Validate wallet address format
-      if (!/^0x[a-fA-F0-9]{40}$/.test(clubWalletAddress)) {
+      // Validate wallet address using viem (safer than regex)
+      const { isAddress } = await import('viem');
+      if (!isAddress(clubWalletAddress)) {
         throw new Error('Invalid club wallet address format');
       }
 
@@ -790,6 +791,9 @@ export default function UnlockRedemption({
         return;
       }
       
+      // Set loading state for Stripe flows
+      setIsRedeeming(true);
+      
       // Get auth headers (supports both Privy and Farcaster)
       const { getAuthHeaders } = await import('@/app/api/sdk');
       const authHeaders = await getAuthHeaders();
@@ -824,6 +828,7 @@ export default function UnlockRedemption({
           }
           
           await navigateToCheckout(url, isInWalletApp, openUrl);
+          // Note: Page will redirect, so state reset not critical but included for completeness
         } else {
           const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start purchase');
@@ -853,6 +858,7 @@ export default function UnlockRedemption({
           }
           
           await navigateToCheckout(url, isInWalletApp, openUrl);
+          // Note: Page will redirect, so state reset not critical but included for completeness
         } else {
           const errorData = await response.json() as { error?: string };
           throw new Error(errorData.error || 'Failed to start upgrade purchase');
@@ -864,6 +870,11 @@ export default function UnlockRedemption({
         description: error instanceof Error ? error.message : "Failed to start purchase",
         variant: "destructive",
       });
+    } finally {
+      // Always reset state unless we're waiting for USDC transaction
+      if (!isInWalletApp || !reward.is_credit_campaign || !clubWalletAddress) {
+        setIsRedeeming(false);
+      }
     }
   };
 

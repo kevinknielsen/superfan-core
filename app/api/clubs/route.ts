@@ -4,12 +4,14 @@ import { supabase } from '@/app/api/supabase';
 /**
  * GET /api/clubs
  * Get all active clubs for discovery
+ * Public endpoint - only returns safe fields
  */
 export async function GET(request: NextRequest) {
   try {
+    // Only select public fields - never expose sensitive data like usdc_wallet_address, owner_id, etc.
     const { data: clubs, error } = await supabase
       .from('clubs')
-      .select('*')
+      .select('id, name, description, city, image_url, is_active, created_at, updated_at')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 

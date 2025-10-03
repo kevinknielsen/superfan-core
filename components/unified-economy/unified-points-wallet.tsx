@@ -407,7 +407,12 @@ export default function UnifiedPointsWallet({
       if (isPurchasing) return;
       setIsPurchasing(true);
       
-      console.log('Starting credit purchase flow for amount:', creditAmount);
+      console.log('[UnifiedPointsWallet] Purchase flow check:', {
+        isInWalletApp,
+        clubWalletAddress,
+        willUseUSDC: isInWalletApp && clubWalletAddress,
+        creditAmount
+      });
       
       // Wallet app users: Send USDC directly (instant)
       if (isInWalletApp && clubWalletAddress) {
@@ -462,6 +467,7 @@ export default function UnifiedPointsWallet({
         }
         
         await navigateToCheckout(url, isInWalletApp, openUrl);
+        // Note: Page will redirect, so state reset not critical but included for completeness
       } else {
         const errorData = await purchaseResponse.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');
@@ -469,7 +475,11 @@ export default function UnifiedPointsWallet({
     } catch (error) {
       console.error('Credit purchase error:', error);
       toast({ title: 'Purchase Failed', description: error instanceof Error ? error.message : 'Failed to start credit purchase', variant: 'destructive' });
-      setIsPurchasing(false);
+    } finally {
+      // Always reset state unless we're waiting for USDC transaction
+      if (!isInWalletApp || !clubWalletAddress) {
+        setIsPurchasing(false);
+      }
     }
   };
 
