@@ -34,12 +34,12 @@ const nextConfig = {
   },
   async redirects() {
     return [
-      // Commented out hosted manifest redirect - using local file instead
-      // {
-      //   source: '/.well-known/farcaster.json',
-      //   destination: 'https://api.farcaster.xyz/miniapps/hosted-manifest/01979e9a-62af-6c54-56ba-bb4240942d5b',
-      //   permanent: false,
-      // },
+      // Redirect to dynamic manifest API route
+      {
+        source: '/.well-known/farcaster.json',
+        destination: '/api/.well-known/farcaster',
+        permanent: false,
+      },
       {
         source: '/projects',
         has: [{ type: 'query', key: 'projectId' }],
