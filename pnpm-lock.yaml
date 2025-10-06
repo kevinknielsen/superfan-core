@@ -152,6 +152,9 @@ importers:
       lucide-react:
         specifier: ^0.454.0
         version: 0.454.0(react@19.0.0)
+      metal-presale:
+        specifier: ^0.0.9
+        version: 0.0.9
       next:
         specifier: 15.2.4
         version: 15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -3078,6 +3081,9 @@ packages:
   merge2@1.4.1:
     resolution: {integrity: sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==}
     engines: {node: '>= 8'}
+
+  metal-presale@0.0.9:
+    resolution: {integrity: sha512-88ot09ayHrwJtVst2+N+AaVRWuxx/xozFiLyH2eWoLMZHVVClUw5FCPAQmvOVzol6xgBtnEFr+uOBUYabXUlYg==}
 
   micro-ftch@0.3.1:
     resolution: {integrity: sha512-/0LLxhzP0tfiR5hcQebtudP56gUurs2CLkGarnCiB/OqEyUFQ6U3paQi/tgLv0hBJYt2rnr9MNpxz4fiiugstg==}
@@ -8785,6 +8791,10 @@ snapshots:
       is-buffer: 1.1.6
 
   merge2@1.4.1: {}
+
+  metal-presale@0.0.9:
+    dependencies:
+      server-only: 0.0.1
 
   micro-ftch@0.3.1: {}
 
