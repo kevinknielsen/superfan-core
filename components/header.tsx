@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, QrCode, User } from "lucide-react";
+import { ArrowLeft, QrCode, User, Sparkles } from "lucide-react";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useAuthAction } from "@/lib/universal-auth-context";
 import { usePrivy } from "@privy-io/react-auth";
@@ -108,16 +108,17 @@ export default function Header({ showBackButton = false }: HeaderProps) {
             {isAuthenticated ? (
               <>
                 {/* Authenticated User Navigation */}
-                {/* Check In button - show when membership is enabled */}
-                {!showBackButton && enableMembership && (
-                  <button
-                    type="button"
-                    onClick={handleCheckInClick}
+                {/* For Artists button */}
+                {!showBackButton && (
+                  <Link
+                    href="https://artists.superfan.one"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white text-sm font-medium transition-all duration-200"
                   >
-                    <QrCode className="h-4 w-4" />
-                    <span className="hidden sm:inline">Check In</span>
-                  </button>
+                    <Sparkles className="h-4 w-4" />
+                    <span className="hidden sm:inline">For Artists</span>
+                  </Link>
                 )}
 
                 {/* Profile Dropdown - includes admin link and logout */}
