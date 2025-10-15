@@ -12,7 +12,7 @@
     "name": "Superfan",
     "imageUrl": "https://superfan.one/og-image.png",
     "homeUrl": "https://superfan.one",
-    "iconUrl": "https://superfan.one/favicon.png",
+    "iconUrl": "https://superfan.one/app-icon.png",
     "splashImageUrl": "https://superfan.one/splash-new.png",
     "splashBackgroundColor": "#0E0E14",
     "webhookUrl": "https://superfan.one/api/farcaster/webhook",
@@ -29,7 +29,6 @@
     "ogTitle": "Superfan: Culture Memberships",
     "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
     "ogImageUrl": "https://superfan.one/og-image.png",
-    "noindex": false,
     "castShareUrl": "https://superfan.one"
   }
 } 
