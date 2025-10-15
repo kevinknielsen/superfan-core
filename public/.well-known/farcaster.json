@@ -29,6 +29,7 @@
     "ogTitle": "Superfan: Culture Memberships",
     "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
     "ogImageUrl": "https://superfan.one/og-image.png",
+    "noindex": false,
     "castShareUrl": "https://superfan.one"
   }
 } 
