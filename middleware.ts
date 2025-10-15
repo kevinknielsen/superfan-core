@@ -5,12 +5,6 @@ import { isRouteEnabled, isApiRouteEnabled, getLegacyRouteRedirect } from '@/con
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  
-  // Skip middleware for API routes, Next.js internals, and static files
-  if (pathname.startsWith('/api/') || pathname.startsWith('/_next') || pathname === '/favicon.ico') {
-    return NextResponse.next();
-  }
-  
   const hostname = request.nextUrl.hostname;
   const appType = hostname.startsWith('manager.') ? 'manager' : 'main';
   const isProduction = process.env.NODE_ENV === 'production';
@@ -125,13 +119,13 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all paths EXCEPT:
-     * - /api routes (API routes)
-     * - /_next (Next.js internals)
-     * - /favicon.ico (favicon file)
-     * 
-     * Using the recommended Next.js pattern from docs
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - .well-known (domain verification files)
      */
-    '/((?!api/|_next/static|_next/image|favicon\\.ico).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|\\.well-known).*)',
   ],
 }; 
