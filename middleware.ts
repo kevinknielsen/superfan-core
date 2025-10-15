@@ -126,6 +126,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - .well-known (domain verification files)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|\\.well-known).*)',
+    '/((?!api/|_next/static|_next/image|favicon.ico|\\.well-known).*)',
   ],
 }; 
