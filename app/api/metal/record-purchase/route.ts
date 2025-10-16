@@ -3,6 +3,9 @@ import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 
 // Type assertion for enhanced features
+// TODO: Replace with proper Supabase typing when Database types are available
+// import type { Database } from '@/types/database.types';
+// const supabaseTyped = supabase as unknown as SupabaseClient<Database>;
 const supabaseAny = supabase as any;
 
 /**
@@ -61,22 +64,6 @@ export async function POST(request: NextRequest) {
 
     const actualUserId = user.id;
 
-    // Check for duplicate transaction (idempotency)
-    const { data: existingPurchase } = await supabaseAny
-      .from('credit_purchases')
-      .select('id')
-      .eq('usdc_tx_hash', tx_hash)
-      .single();
-
-    if (existingPurchase) {
-      console.log(`Metal purchase already recorded for tx: ${tx_hash}`);
-      return NextResponse.json({ 
-        success: true,
-        message: 'Purchase already recorded',
-        purchase_id: existingPurchase.id 
-      });
-    }
-
     // Get campaign info for metadata
     const { data: campaign } = await supabaseAny
       .from('campaigns')
@@ -84,12 +71,20 @@ export async function POST(request: NextRequest) {
       .eq('id', campaign_id)
       .single();
 
+    if (!campaign) {
+      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+    }
+
     // Get club info for metadata
     const { data: club } = await supabaseAny
       .from('clubs')
       .select('name')
       .eq('id', club_id)
       .single();
+
+    if (!club) {
+      return NextResponse.json({ error: 'Club not found' }, { status: 404 });
+    }
 
     // Calculate price in cents (1 credit = $1 = 100 cents)
     const priceCents = credit_amount * 100;
@@ -123,6 +118,26 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
+      // Check if this is a duplicate transaction error (unique constraint violation)
+      if ((insertError as any).code === '23505') {
+        const { data: existingPurchase } = await supabaseAny
+          .from('credit_purchases')
+          .select('id')
+          .eq('usdc_tx_hash', tx_hash)
+          .single();
+        
+        if (existingPurchase) {
+          console.log(`Metal purchase already recorded for tx: ${tx_hash}`);
+          return NextResponse.json({ 
+            success: true,
+            message: 'Purchase already recorded',
+            purchase_id: existingPurchase.id,
+            credits_purchased: credit_amount,
+            campaign_updated: false
+          });
+        }
+      }
+      
       console.error('Failed to create Metal credit purchase:', insertError);
       return NextResponse.json({ 
         error: 'Failed to record purchase',
@@ -158,11 +173,12 @@ export async function POST(request: NextRequest) {
     if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
       console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
       
-      // Mark campaign as funded
+      // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
       await supabaseAny
         .from('campaigns')
         .update({ status: 'funded' })
-        .eq('id', campaign_id);
+        .eq('id', campaign_id)
+        .neq('status', 'funded');
     }
 
     return NextResponse.json({

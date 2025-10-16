@@ -104,12 +104,24 @@ export function CampaignProgressCard({
         processedTxRef.current = null;
 
         console.error("Metal purchase error:", error);
+        
+        // Persist failed transaction for recovery
+        if (typeof window !== 'undefined' && usdcTxHash) {
+          const failedTx = {
+            txHash: usdcTxHash,
+            creditAmount: pendingCreditAmount,
+            timestamp: Date.now(),
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+          localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+        }
+        
         toast({
           title: "Purchase Failed",
           description:
             error instanceof Error
               ? error.message
-              : "Failed to process purchase. Please contact support with your transaction hash.",
+              : `Failed to process purchase. Transaction hash: ${usdcTxHash}. Please contact support.`,
           variant: "destructive",
         });
         setPendingCreditAmount(null);
@@ -173,11 +185,15 @@ export function CampaignProgressCard({
     }
 
     try {
-      if (isPurchasing || !metalHolder.data) return;
+      if (isPurchasing) return;
       setIsPurchasing(true);
 
       // Wallet app users: Metal Presale flow with USDC
-      if (isInWalletApp && metalHolder.data?.address) {
+      if (isInWalletApp) {
+        if (!metalHolder.data?.address) {
+          throw new Error("Metal holder address not available");
+        }
+        
         // Validate Metal holder address
         const { isAddress } = await import("viem");
         if (!isAddress(metalHolder.data.address)) {

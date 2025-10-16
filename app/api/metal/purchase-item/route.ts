@@ -4,6 +4,9 @@ import { supabase } from "../../supabase";
 import crypto from "node:crypto";
 
 // Type assertion for enhanced features
+// TODO: Replace with proper Supabase typing when Database types are available
+// import type { Database } from '@/types/database.types';
+// const supabaseTyped = supabase as unknown as SupabaseClient<Database>;
 const supabaseAny = supabase as any;
 
 /**
@@ -52,6 +55,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'tx_hash is required for USDC transaction tracking' }, { status: 400 });
     }
 
+    if (original_price_cents !== undefined && (!Number.isInteger(original_price_cents) || original_price_cents < 0)) {
+      return NextResponse.json({ error: 'original_price_cents must be a non-negative integer' }, { status: 400 });
+    }
+
+    if (discount_applied_cents !== undefined && (!Number.isInteger(discount_applied_cents) || discount_applied_cents < 0)) {
+      return NextResponse.json({ error: 'discount_applied_cents must be a non-negative integer' }, { status: 400 });
+    }
+
+    if (campaign_id !== undefined && typeof campaign_id !== 'string') {
+      return NextResponse.json({ error: 'campaign_id must be a string' }, { status: 400 });
+    }
+
     // Get the user from our database
     const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
     const { data: user, error: userError } = await supabaseAny
@@ -76,22 +91,6 @@ export async function POST(request: NextRequest) {
 
     if (tierRewardError || !tierReward) {
       return NextResponse.json({ error: 'Tier reward not found' }, { status: 404 });
-    }
-
-    // Check for duplicate transaction (idempotency)
-    const { data: existingClaim } = await supabaseAny
-      .from('reward_claims')
-      .select('id')
-      .eq('usdc_tx_hash', tx_hash)
-      .single();
-
-    if (existingClaim) {
-      console.log(`Metal item purchase already recorded for tx: ${tx_hash}`);
-      return NextResponse.json({ 
-        success: true,
-        message: 'Purchase already recorded',
-        claim_id: existingClaim.id 
-      });
     }
 
     // Generate secure access code
@@ -142,6 +141,27 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (claimError) {
+      // Check if this is a duplicate transaction error (unique constraint violation)
+      if ((claimError as any).code === '23505') {
+        const { data: existingClaim } = await supabaseAny
+          .from('reward_claims')
+          .select('id, access_code')
+          .eq('usdc_tx_hash', tx_hash)
+          .single();
+        
+        if (existingClaim) {
+          console.log(`Metal item purchase already recorded for tx: ${tx_hash}`);
+          return NextResponse.json({ 
+            success: true,
+            message: 'Purchase already recorded',
+            claim_id: existingClaim.id,
+            access_code: existingClaim.access_code,
+            tier_reward_title: tierReward.title,
+            campaign_updated: false
+          });
+        }
+      }
+      
       console.error('Failed to create Metal item claim:', claimError);
       return NextResponse.json({ 
         error: 'Failed to record purchase',
@@ -181,11 +201,12 @@ export async function POST(request: NextRequest) {
       if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
         console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
         
-        // Mark campaign as funded
+        // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
         await supabaseAny
           .from('campaigns')
           .update({ status: 'funded' })
-          .eq('id', campaign_id);
+          .eq('id', campaign_id)
+          .neq('status', 'funded');
       }
     }
 

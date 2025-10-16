@@ -321,9 +321,24 @@ export default function UnlockRedemption({
         processedTxRef.current = null;
         
         console.error('Metal purchase error:', error);
+        
+        // Persist failed transaction for recovery
+        if (typeof window !== 'undefined' && usdcTxHash) {
+          const failedTx = {
+            txHash: usdcTxHash,
+            itemId: pendingItemPurchase?.id,
+            itemTitle: pendingItemPurchase?.title,
+            timestamp: Date.now(),
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+          localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+        }
+        
         toast({
           title: "Purchase Failed",
-          description: error instanceof Error ? error.message : "Failed to process purchase. Please contact support with your transaction hash.",
+          description: error instanceof Error 
+            ? error.message 
+            : `Failed to process purchase. Transaction hash: ${usdcTxHash}. Please contact support.`,
           variant: "destructive",
         });
         setPendingItemPurchase(null);
@@ -813,6 +828,71 @@ export default function UnlockRedemption({
     }
   };
 
+  const handleStripeCheckout = async (url: string) => {
+    await navigateToCheckout(url, isInWalletApp, openUrl);
+  };
+
+  const handleNewPurchaseEndpoint = async (reward: Unlock, authHeaders: HeadersInit) => {
+    const response = await fetch(`/api/tier-rewards/${reward.id}/purchase`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      }
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      const url = (result as PurchaseResponse)?.stripe_session_url;
+      if (!url || typeof url !== 'string') {
+        throw new Error('Missing checkout URL');
+      }
+      
+      // Show discount confirmation if applicable
+      const purchaseResult = result as PurchaseResponse;
+      if ((purchaseResult?.discount_applied_cents ?? 0) > 0) {
+        toast({
+          title: "Discount Applied!",
+          description: `You're saving $${(purchaseResult.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
+        });
+      }
+      
+      await handleStripeCheckout(url);
+    } else {
+      const errorData = await response.json() as { error?: string };
+      throw new Error(errorData.error || 'Failed to start purchase');
+    }
+  };
+
+  const handleLegacyUpgrade = async (reward: Unlock, authHeaders: HeadersInit) => {
+    const purchaseType = getClaimOptionsPurchaseType(reward) || 'tier_boost';
+
+    const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        purchase_type: purchaseType,
+        success_url: `${window.location.origin}${window.location.pathname}?upgrade_success=true`,
+        cancel_url: `${window.location.origin}${window.location.pathname}?upgrade_cancelled=true`
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json() as { stripe_session_url?: string };
+      const url = result?.stripe_session_url;
+      if (!url || typeof url !== 'string') {
+        throw new Error('Missing checkout URL');
+      }
+      
+      await handleStripeCheckout(url);
+    } else {
+      const errorData = await response.json() as { error?: string };
+      throw new Error(errorData.error || 'Failed to start upgrade purchase');
+    }
+  };
 
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
@@ -829,71 +909,13 @@ export default function UnlockRedemption({
       const { getAuthHeaders } = await import('@/app/api/sdk');
       const authHeaders = await getAuthHeaders();
 
-      // Use new campaign-aware purchase endpoint if available, fallback to existing
+      // Use new campaign-aware purchase endpoint if available, fallback to legacy
       const useNewPurchaseEndpoint = reward.user_discount_eligible !== undefined;
       
       if (useNewPurchaseEndpoint) {
-        // New campaign purchase endpoint with instant discounts
-        const response = await fetch(`/api/tier-rewards/${reward.id}/purchase`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders
-          }
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          const url = (result as PurchaseResponse)?.stripe_session_url;
-          if (!url || typeof url !== 'string') {
-            throw new Error('Missing checkout URL');
-          }
-          
-          // Show discount confirmation if applicable
-          const purchaseResult = result as PurchaseResponse;
-          if ((purchaseResult?.discount_applied_cents ?? 0) > 0) {
-            toast({
-              title: "Discount Applied!",
-              description: `You're saving $${(purchaseResult.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
-            });
-          }
-          
-          await navigateToCheckout(url, isInWalletApp, openUrl);
-          // Note: Page will redirect, so state reset not critical but included for completeness
-        } else {
-          const errorData = await response.json() as { error?: string };
-          throw new Error(errorData.error || 'Failed to start purchase');
-        }
+        await handleNewPurchaseEndpoint(reward, authHeaders);
       } else {
-        // Existing upgrade endpoint for backward compatibility
-        const purchaseType = getClaimOptionsPurchaseType(reward) || 'tier_boost';
-
-        const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders
-          },
-          body: JSON.stringify({
-            purchase_type: purchaseType,
-            success_url: `${window.location.origin}${window.location.pathname}?upgrade_success=true`,
-            cancel_url: `${window.location.origin}${window.location.pathname}?upgrade_cancelled=true`
-          })
-        });
-
-        if (response.ok) {
-          const result = await response.json() as { stripe_session_url?: string };
-          const url = result?.stripe_session_url;
-          if (!url || typeof url !== 'string') {
-            throw new Error('Missing checkout URL');
-          }
-          
-          await navigateToCheckout(url, isInWalletApp, openUrl);
-          // Note: Page will redirect, so state reset not critical but included for completeness
-        } else {
-          const errorData = await response.json() as { error?: string };
-          throw new Error(errorData.error || 'Failed to start upgrade purchase');
-        }
+        await handleLegacyUpgrade(reward, authHeaders);
       }
     } catch (error) {
       toast({

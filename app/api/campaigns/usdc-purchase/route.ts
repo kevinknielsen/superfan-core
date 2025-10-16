@@ -72,19 +72,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Check if transaction was already processed
-    const { data: existingPurchase } = await (supabase as any)
-      .from('credit_purchases')
-      .select('id')
-      .eq('tx_hash', tx_hash)
-      .single();
-
-    if (existingPurchase) {
-      return NextResponse.json({ 
-        error: 'Transaction already processed' 
-      }, { status: 409 });
-    }
-
     // Verify transaction on Base blockchain
     console.log('[USDC Purchase] Verifying transaction:', tx_hash);
     
@@ -206,7 +193,7 @@ export async function POST(request: NextRequest) {
         campaign_id: campaign_id || null,
         credits_purchased: credit_amount,
         price_paid_cents: credit_amount * 100, // 1 USDC = 1 credit = $1
-        tx_hash: tx_hash,
+        usdc_tx_hash: tx_hash,
         payment_method: 'usdc',
         status: 'completed',
         // Stripe fields are NULL for USDC payments (migration 035 makes these nullable)
@@ -217,12 +204,25 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (purchaseError) {
-      // Unique violation on tx_hash => duplicate transaction
+      // Unique violation on usdc_tx_hash => duplicate transaction
       if ((purchaseError as any).code === '23505') {
-        return NextResponse.json(
-          { error: 'Transaction already processed' },
-          { status: 409 }
-        );
+        // Fetch existing purchase to return its details
+        const { data: existingPurchase } = await (supabase as any)
+          .from('credit_purchases')
+          .select('id, credits_purchased')
+          .eq('usdc_tx_hash', tx_hash)
+          .single();
+        
+        if (existingPurchase) {
+          console.log('[USDC Purchase] Transaction already processed:', tx_hash);
+          return NextResponse.json({
+            success: true,
+            message: 'Transaction already processed',
+            purchase_id: existingPurchase.id,
+            credits_purchased: existingPurchase.credits_purchased,
+            tx_hash: tx_hash
+          });
+        }
       }
       console.error('[USDC Purchase] Error creating purchase record:', purchaseError);
       return NextResponse.json({ 
@@ -266,11 +266,12 @@ export async function POST(request: NextRequest) {
       if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
         console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
         
-        // Mark campaign as funded
+        // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
         await (supabase as any)
           .from('campaigns')
           .update({ status: 'funded' })
-          .eq('id', campaign_id);
+          .eq('id', campaign_id)
+          .neq('status', 'funded');
       }
     }
 
