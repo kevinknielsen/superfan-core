@@ -105,15 +105,19 @@ export function CampaignProgressCard({
 
         console.error("Metal purchase error:", error);
         
-        // Persist failed transaction for recovery
-        if (typeof window !== 'undefined' && usdcTxHash) {
-          const failedTx = {
-            txHash: usdcTxHash,
-            creditAmount: pendingCreditAmount,
-            timestamp: Date.now(),
-            error: error instanceof Error ? error.message : 'Unknown error'
-          };
-          localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+        // Persist failed transaction for recovery (with error handling)
+        try {
+          if (typeof window !== 'undefined' && usdcTxHash) {
+            const failedTx = {
+              txHash: usdcTxHash,
+              creditAmount: pendingCreditAmount,
+              timestamp: Date.now(),
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+            localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+          }
+        } catch (storageError) {
+          console.error('Failed to persist transaction to localStorage:', storageError);
         }
         
         toast({

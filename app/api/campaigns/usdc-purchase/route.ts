@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Normalize tx_hash to always have 0x prefix
+    const normalizedTxHash = tx_hash.startsWith('0x') ? tx_hash : `0x${tx_hash}`;
+
     if (!club_id || typeof club_id !== 'string') {
       return NextResponse.json({ error: 'club_id is required' }, { status: 400 });
     }
@@ -73,12 +76,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify transaction on Base blockchain
-    console.log('[USDC Purchase] Verifying transaction:', tx_hash);
+    console.log('[USDC Purchase] Verifying transaction:', normalizedTxHash);
     
     let receipt;
     try {
       receipt = await publicClient.getTransactionReceipt({
-        hash: tx_hash as `0x${string}`
+        hash: normalizedTxHash as `0x${string}`
       });
     } catch (e) {
       return NextResponse.json(
@@ -193,7 +196,7 @@ export async function POST(request: NextRequest) {
         campaign_id: campaign_id || null,
         credits_purchased: credit_amount,
         price_paid_cents: credit_amount * 100, // 1 USDC = 1 credit = $1
-        usdc_tx_hash: tx_hash,
+        usdc_tx_hash: normalizedTxHash,
         payment_method: 'usdc',
         status: 'completed',
         // Stripe fields are NULL for USDC payments (migration 035 makes these nullable)
@@ -210,7 +213,7 @@ export async function POST(request: NextRequest) {
         const { data: existingPurchase } = await (supabase as any)
           .from('credit_purchases')
           .select('id, credits_purchased')
-          .eq('usdc_tx_hash', tx_hash)
+          .eq('usdc_tx_hash', normalizedTxHash)
           .single();
         
         if (existingPurchase) {
@@ -220,7 +223,7 @@ export async function POST(request: NextRequest) {
             message: 'Transaction already processed',
             purchase_id: existingPurchase.id,
             credits_purchased: existingPurchase.credits_purchased,
-            tx_hash: tx_hash
+            tx_hash: normalizedTxHash
           });
         }
       }
@@ -234,7 +237,7 @@ export async function POST(request: NextRequest) {
       purchaseId: purchase.id,
       userId: user.id,
       credits: credit_amount,
-      txHash: tx_hash
+      txHash: normalizedTxHash
     });
 
     // Update campaign progress if campaign_id provided (same as Stripe webhook)
@@ -279,7 +282,7 @@ export async function POST(request: NextRequest) {
       success: true,
       purchase_id: purchase.id,
       credits_purchased: credit_amount,
-      tx_hash: tx_hash,
+      tx_hash: normalizedTxHash,
       campaign_updated: !!campaign_id,
       message: `Successfully purchased ${credit_amount} credits with USDC`
     });

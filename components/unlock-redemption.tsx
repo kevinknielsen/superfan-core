@@ -248,10 +248,15 @@ export default function UnlockRedemption({
     
     const processMetalPurchase = async () => {
       try {
+        // Validate campaign_id before processing
+        if (!pendingItemPurchase.campaign_id) {
+          throw new Error('Missing campaign ID for purchase');
+        }
+        
         // Step 1: Buy presale with Metal
         await buyPresale({
           user,
-          campaignId: pendingItemPurchase.campaign_id || '',
+          campaignId: pendingItemPurchase.campaign_id,
           amount: pendingItemPurchase.is_credit_campaign 
             ? (pendingItemPurchase.credit_cost || 0)
             : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
@@ -322,16 +327,20 @@ export default function UnlockRedemption({
         
         console.error('Metal purchase error:', error);
         
-        // Persist failed transaction for recovery
-        if (typeof window !== 'undefined' && usdcTxHash) {
-          const failedTx = {
-            txHash: usdcTxHash,
-            itemId: pendingItemPurchase?.id,
-            itemTitle: pendingItemPurchase?.title,
-            timestamp: Date.now(),
-            error: error instanceof Error ? error.message : 'Unknown error'
-          };
-          localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+        // Persist failed transaction for recovery (with error handling)
+        try {
+          if (typeof window !== 'undefined' && usdcTxHash) {
+            const failedTx = {
+              txHash: usdcTxHash,
+              itemId: pendingItemPurchase?.id,
+              itemTitle: pendingItemPurchase?.title,
+              timestamp: Date.now(),
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+            localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+          }
+        } catch (storageError) {
+          console.error('Failed to persist transaction to localStorage:', storageError);
         }
         
         toast({

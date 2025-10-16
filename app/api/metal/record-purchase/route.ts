@@ -2,10 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 
-// Type assertion for enhanced features
-// TODO: Replace with proper Supabase typing when Database types are available
-// import type { Database } from '@/types/database.types';
-// const supabaseTyped = supabase as unknown as SupabaseClient<Database>;
+// Proper types for response validation
+interface UserRecord {
+  id: string;
+}
+
+interface CampaignRecord {
+  title: string;
+}
+
+interface ClubRecord {
+  name: string;
+}
+
+interface CreditPurchaseRecord {
+  id: string;
+}
+
+// Type-safe wrapper for newer tables not in base Supabase types
 const supabaseAny = supabase as any;
 
 /**
@@ -55,7 +69,7 @@ export async function POST(request: NextRequest) {
       .from('users')
       .select('id')
       .eq(userColumn, auth.userId)
-      .single();
+      .single() as { data: UserRecord | null; error: any };
 
     if (userError || !user) {
       console.error('User not found:', userError);
@@ -69,7 +83,7 @@ export async function POST(request: NextRequest) {
       .from('campaigns')
       .select('title')
       .eq('id', campaign_id)
-      .single();
+      .single() as { data: CampaignRecord | null; error: any };
 
     if (!campaign) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
@@ -80,7 +94,7 @@ export async function POST(request: NextRequest) {
       .from('clubs')
       .select('name')
       .eq('id', club_id)
-      .single();
+      .single() as { data: ClubRecord | null; error: any };
 
     if (!club) {
       return NextResponse.json({ error: 'Club not found' }, { status: 404 });
@@ -115,7 +129,7 @@ export async function POST(request: NextRequest) {
       .from('credit_purchases')
       .insert(creditPurchaseData)
       .select('id')
-      .single();
+      .single() as { data: CreditPurchaseRecord | null; error: any };
 
     if (insertError) {
       // Check if this is a duplicate transaction error (unique constraint violation)
@@ -124,7 +138,7 @@ export async function POST(request: NextRequest) {
           .from('credit_purchases')
           .select('id')
           .eq('usdc_tx_hash', tx_hash)
-          .single();
+          .single() as { data: CreditPurchaseRecord | null; error: any };
         
         if (existingPurchase) {
           console.log(`Metal purchase already recorded for tx: ${tx_hash}`);
@@ -148,6 +162,7 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Recorded Metal purchase: ${credit_amount} credits for user ${actualUserId}`);
 
     // Update campaign progress (same as Stripe webhook)
+    let campaignUpdateErrorMessage: string | null = null;
     const { error: campaignUpdateError } = await supabaseAny
       .rpc('increment_campaigns_ticket_progress', {
         p_campaign_id: campaign_id,
@@ -157,35 +172,39 @@ export async function POST(request: NextRequest) {
       });
 
     if (campaignUpdateError) {
+      campaignUpdateErrorMessage = campaignUpdateError.message || 'Unknown error updating campaign';
       console.error('Failed to update campaign progress:', campaignUpdateError);
-      // Don't fail the whole operation, just log the error
+      // Don't fail the whole operation, purchase was successful
     } else {
       console.log(`✅ Updated campaign ${campaign_id} progress by $${priceCents/100}`);
-    }
-
-    // Check if campaign goal reached
-    const { data: updatedCampaign } = await supabaseAny
-      .from('campaigns')
-      .select('funding_goal_cents, current_funding_cents, title')
-      .eq('id', campaign_id)
-      .single();
-
-    if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
-      console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
       
-      // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
-      await supabaseAny
+      // Check if campaign goal reached (only if update succeeded)
+      const { data: updatedCampaign } = await supabaseAny
         .from('campaigns')
-        .update({ status: 'funded' })
+        .select('funding_goal_cents, current_funding_cents, title')
         .eq('id', campaign_id)
-        .neq('status', 'funded');
+        .single();
+
+      if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
+        console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
+        
+        // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
+        await supabaseAny
+          .from('campaigns')
+          .update({ status: 'funded' })
+          .eq('id', campaign_id)
+          .neq('status', 'funded');
+      }
     }
 
     return NextResponse.json({
       success: true,
-      purchase_id: purchase.id,
+      purchase_id: purchase!.id,
       credits_purchased: credit_amount,
-      campaign_updated: !campaignUpdateError
+      campaign_updated: !campaignUpdateError,
+      // Include partial failure details
+      partial_success: !!campaignUpdateError,
+      campaign_update_error: campaignUpdateErrorMessage
     });
 
   } catch (error) {

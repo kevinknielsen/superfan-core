@@ -3,10 +3,27 @@ import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 import crypto from "node:crypto";
 
-// Type assertion for enhanced features
-// TODO: Replace with proper Supabase typing when Database types are available
-// import type { Database } from '@/types/database.types';
-// const supabaseTyped = supabase as unknown as SupabaseClient<Database>;
+// Proper types for response validation
+interface UserRecord {
+  id: string;
+}
+
+interface TierRewardRecord {
+  id: string;
+  title: string;
+  tier: string;
+  reward_type: string;
+  ticket_cost: number | null;
+  is_ticket_campaign: boolean;
+  campaign_id: string | null;
+}
+
+interface RewardClaimRecord {
+  id: string;
+  access_code: string;
+}
+
+// Type-safe wrapper for newer tables not in base Supabase types
 const supabaseAny = supabase as any;
 
 /**
@@ -73,7 +90,7 @@ export async function POST(request: NextRequest) {
       .from('users')
       .select('id')
       .eq(userColumn, auth.userId)
-      .single();
+      .single() as { data: UserRecord | null; error: any };
 
     if (userError || !user) {
       console.error('User not found:', userError);
@@ -87,7 +104,7 @@ export async function POST(request: NextRequest) {
       .from('tier_rewards')
       .select('id, title, tier, reward_type, ticket_cost, is_ticket_campaign, campaign_id')
       .eq('id', tier_reward_id)
-      .single();
+      .single() as { data: TierRewardRecord | null; error: any };
 
     if (tierRewardError || !tierReward) {
       return NextResponse.json({ error: 'Tier reward not found' }, { status: 404 });
@@ -138,7 +155,7 @@ export async function POST(request: NextRequest) {
       .from('reward_claims')
       .insert(claimData)
       .select('id, access_code')
-      .single();
+      .single() as { data: RewardClaimRecord | null; error: any };
 
     if (claimError) {
       // Check if this is a duplicate transaction error (unique constraint violation)
@@ -147,7 +164,7 @@ export async function POST(request: NextRequest) {
           .from('reward_claims')
           .select('id, access_code')
           .eq('usdc_tx_hash', tx_hash)
-          .single();
+          .single() as { data: RewardClaimRecord | null; error: any };
         
         if (existingClaim) {
           console.log(`Metal item purchase already recorded for tx: ${tx_hash}`);
@@ -172,6 +189,7 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Recorded Metal item purchase: ${tierReward.title} for user ${actualUserId}`);
 
     // Update campaign progress if campaign_id provided
+    let campaignUpdateErrorMessage: string | null = null;
     if (campaign_id) {
       // For campaign items, credit full original price to campaign (not discounted amount)
       const campaignCreditCents = original_price_cents || amount_paid_cents;
@@ -185,37 +203,41 @@ export async function POST(request: NextRequest) {
         });
 
       if (campaignUpdateError) {
+        campaignUpdateErrorMessage = campaignUpdateError.message || 'Unknown error updating campaign';
         console.error('Failed to update campaign progress:', campaignUpdateError);
-        // Don't fail the whole operation, just log the error
+        // Don't fail the whole operation, purchase was successful
       } else {
         console.log(`✅ Updated campaign ${campaign_id} progress by $${campaignCreditCents/100}`);
-      }
-
-      // Check if campaign goal reached
-      const { data: updatedCampaign } = await supabaseAny
-        .from('campaigns')
-        .select('funding_goal_cents, current_funding_cents, title')
-        .eq('id', campaign_id)
-        .single();
-
-      if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
-        console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
         
-        // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
-        await supabaseAny
+        // Check if campaign goal reached (only if update succeeded)
+        const { data: updatedCampaign } = await supabaseAny
           .from('campaigns')
-          .update({ status: 'funded' })
+          .select('funding_goal_cents, current_funding_cents, title')
           .eq('id', campaign_id)
-          .neq('status', 'funded');
+          .single();
+
+        if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
+          console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
+          
+          // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
+          await supabaseAny
+            .from('campaigns')
+            .update({ status: 'funded' })
+            .eq('id', campaign_id)
+            .neq('status', 'funded');
+        }
       }
     }
 
     return NextResponse.json({
       success: true,
-      claim_id: claim.id,
-      access_code: claim.access_code,
+      claim_id: claim!.id,
+      access_code: claim!.access_code,
       tier_reward_title: tierReward.title,
-      campaign_updated: !!campaign_id
+      campaign_updated: !!campaign_id && !campaignUpdateErrorMessage,
+      // Include partial failure details
+      partial_success: !!campaignUpdateErrorMessage,
+      campaign_update_error: campaignUpdateErrorMessage
     });
 
   } catch (error) {
