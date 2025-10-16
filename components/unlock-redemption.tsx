@@ -37,6 +37,8 @@ import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
 import { useSendUSDC } from "@/hooks/use-usdc-payment";
 import { useRef } from "react";
+import { useMetalHolder, useBuyPresale } from "@/hooks/use-metal-holder";
+import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
 
@@ -190,8 +192,12 @@ export default function UnlockRedemption({
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUnlock, setSelectedUnlock] = useState<Unlock | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
-  const [clubWalletAddress, setClubWalletAddress] = useState<string | null>(null);
   const processedTxRef = useRef<string | null>(null);
+  const [pendingItemPurchase, setPendingItemPurchase] = useState<Unlock | null>(null);
+  
+  const { user } = useUnifiedAuth();
+  const metalHolder = useMetalHolder();
+  const { mutate: buyPresale, isPending: isBuyingPresale } = useBuyPresale();
 
   // Always declare all hooks first (React Rules of Hooks)
   useEffect(() => {
@@ -228,72 +234,106 @@ export default function UnlockRedemption({
     onCreditBalancesChange(creditBalances);
   }, [unlocks, onCreditBalancesChange]);
 
-  // Monitor USDC transaction completion (must be declared with other hooks)
+  // Monitor Metal Presale purchase completion for wallet users
   useEffect(() => {
-    if (!isUSDCSuccess || !usdcTxHash || !selectedUnlock) return;
+    if (!isUSDCSuccess || !usdcTxHash || !pendingItemPurchase || !user) return;
     
     // Prevent duplicate processing of same transaction
     if (processedTxRef.current === usdcTxHash) {
       return;
     }
     
-    // Transaction confirmed on blockchain - now verify and grant credits
-    const processUSDCPurchase = async () => {
+    // Mark as processed immediately to prevent duplicate calls
+    processedTxRef.current = usdcTxHash;
+    
+    const processMetalPurchase = async () => {
       try {
+        // Step 1: Buy presale with Metal
+        await buyPresale({
+          user,
+          campaignId: pendingItemPurchase.campaign_id || '',
+          amount: pendingItemPurchase.is_credit_campaign 
+            ? (pendingItemPurchase.credit_cost || 0)
+            : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
+        });
+
+        // Step 2: Record purchase in our database
         const { getAuthHeaders } = await import('@/app/api/sdk');
         const authHeaders = await getAuthHeaders();
         
-        const response = await fetch('/api/campaigns/usdc-purchase', {
+        // Different endpoints for credits vs items
+        const endpoint = pendingItemPurchase.is_credit_campaign
+          ? '/api/metal/record-purchase'
+          : '/api/metal/purchase-item';
+        
+        const requestBody = pendingItemPurchase.is_credit_campaign
+          ? {
+              club_id: clubId,
+              campaign_id: pendingItemPurchase.campaign_id,
+              credit_amount: pendingItemPurchase.credit_cost || 0,
+              tx_hash: usdcTxHash,
+              metal_holder_id: metalHolder.data?.id,
+              metal_holder_address: metalHolder.data?.address,
+            }
+          : {
+              tier_reward_id: pendingItemPurchase.id,
+              club_id: clubId,
+              campaign_id: pendingItemPurchase.campaign_id,
+              amount_paid_cents: pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0,
+              original_price_cents: pendingItemPurchase.upgrade_price_cents || 0,
+              discount_applied_cents: pendingItemPurchase.user_discount_amount_cents || 0,
+              tx_hash: usdcTxHash,
+              metal_holder_id: metalHolder.data?.id,
+              metal_holder_address: metalHolder.data?.address,
+              user_tier: userStatus
+            };
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...authHeaders
           },
-          body: JSON.stringify({
-            tx_hash: usdcTxHash,
-            club_id: clubId,
-            credit_amount: selectedUnlock.credit_cost || 0,
-            campaign_id: selectedUnlock.campaign_id
-          })
+          body: JSON.stringify(requestBody)
         });
 
-        if (response.ok) {
-          // Mark as processed only after successful API call
-          processedTxRef.current = usdcTxHash;
-          
-          toast({
-            title: "Purchase Successful! 🎉",
-            description: `${selectedUnlock.credit_cost} credits added to your account`,
-          });
-          
-          // Close modal and reload data
-          setSelectedUnlock(null);
-          await loadData();
-          onRedemption?.();
-        } else {
-          // API failed - allow retry by NOT marking as processed
-          interface ApiErrorResponse {
-            error?: string;
-          }
-          const errorData = await response.json() as ApiErrorResponse;
-          throw new Error(errorData.error || 'Failed to process purchase');
+        if (!response.ok) {
+          const errorData = await response.json() as any;
+          throw new Error(errorData.error || 'Failed to record purchase');
         }
+
+        // Success!
+        const result = await response.json() as any;
+        toast({
+          title: "Purchase Successful! 🎉",
+          description: pendingItemPurchase.is_credit_campaign
+            ? `${pendingItemPurchase.credit_cost} credits added to your account`
+            : `${pendingItemPurchase.title} unlocked!`,
+        });
+        
+        // Close modal and reload data
+        setPendingItemPurchase(null);
+        setSelectedUnlock(null);
+        await loadData();
+        onRedemption?.();
       } catch (error) {
-        // Backend processing failed - reset transaction tracking to allow retry
+        // Reset transaction tracking to allow retry
         processedTxRef.current = null;
         
+        console.error('Metal purchase error:', error);
         toast({
           title: "Purchase Failed",
           description: error instanceof Error ? error.message : "Failed to process purchase. Please contact support with your transaction hash.",
           variant: "destructive",
         });
+        setPendingItemPurchase(null);
       } finally {
         setIsRedeeming(false);
       }
     };
     
-    processUSDCPurchase();
-  }, [isUSDCSuccess, usdcTxHash, selectedUnlock, clubId, onRedemption, toast]);
+    processMetalPurchase();
+  }, [isUSDCSuccess, usdcTxHash, pendingItemPurchase, user, clubId, metalHolder.data, buyPresale, userStatus, onRedemption, toast]);
 
   // Reset state on USDC errors (user rejection, RPC/contract errors)
   useEffect(() => {
@@ -307,40 +347,6 @@ export default function UnlockRedemption({
     setIsRedeeming(false);
     processedTxRef.current = null;
   }, [usdcError, toast]);
-
-  // Fetch club USDC wallet address once on mount (optimized - only for wallet app users)
-  useEffect(() => {
-    if (!isInWalletApp || !isAuthenticated) return;
-    
-    const controller = new AbortController();
-    
-    const fetchClubWallet = async () => {
-      try {
-        // Get auth headers to access usdc_wallet_address
-        const { getAuthHeaders } = await import('@/app/api/sdk');
-        const authHeaders = await getAuthHeaders();
-        
-        const clubResponse = await fetch(`/api/clubs/${clubId}`, {
-          headers: authHeaders,
-          signal: controller.signal
-        });
-        if (clubResponse.ok) {
-          interface ClubResponse {
-            usdc_wallet_address?: string | null;
-          }
-          const clubData = await clubResponse.json() as ClubResponse;
-          setClubWalletAddress(clubData.usdc_wallet_address || null);
-        }
-      } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          console.error('Error fetching club wallet:', error);
-        }
-      }
-    };
-    
-    fetchClubWallet();
-    return () => controller.abort();
-  }, [clubId, isInWalletApp, isAuthenticated]);
 
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
@@ -761,32 +767,38 @@ export default function UnlockRedemption({
     }
   };
 
-  const handleUSDCPurchase = async (reward: Unlock) => {
+  const handleMetalPurchase = async (reward: Unlock) => {
     try {
-      if (!clubWalletAddress) {
-        throw new Error('Club USDC wallet not configured');
+      if (!metalHolder.data?.address) {
+        throw new Error('Metal holder not initialized');
       }
       
-      // Validate wallet address using viem (safer than regex)
+      // Validate Metal holder address
       const { isAddress } = await import('viem');
-      if (!isAddress(clubWalletAddress)) {
-        throw new Error('Invalid club wallet address format');
+      if (!isAddress(metalHolder.data.address)) {
+        throw new Error('Invalid Metal holder address format');
       }
 
-      const creditCost = reward.credit_cost || 0;
+      // Determine the amount to pay (credit cost or regular price)
+      const amountUSDC = reward.is_credit_campaign 
+        ? (reward.credit_cost || 0)
+        : ((reward.user_final_price_cents || reward.upgrade_price_cents || 0) / 100);
       
-      // Validate credit cost
-      if (!Number.isFinite(creditCost) || creditCost <= 0) {
-        throw new Error('Invalid credit cost: must be a positive number');
+      // Validate amount
+      if (!Number.isFinite(amountUSDC) || amountUSDC <= 0) {
+        throw new Error('Invalid purchase amount');
       }
+      
+      // Store pending purchase for processing after USDC confirmation
+      setPendingItemPurchase(reward);
       
       // Lock UI after validation passes
       setIsRedeeming(true);
       
-      // Send USDC transaction
+      // Send USDC to Metal holder address
       sendUSDC({
-        toAddress: clubWalletAddress as `0x${string}`,
-        amountUSDC: creditCost
+        toAddress: metalHolder.data.address as `0x${string}`,
+        amountUSDC: amountUSDC
       });
       
       // The transaction monitoring is handled by useEffect below
@@ -797,15 +809,16 @@ export default function UnlockRedemption({
         variant: "destructive",
       });
       setIsRedeeming(false);
+      setPendingItemPurchase(null);
     }
   };
 
 
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
-      // For wallet app users with credit campaigns: use USDC payment
-      if (isInWalletApp && reward.is_credit_campaign && clubWalletAddress) {
-        handleUSDCPurchase(reward);
+      // For wallet app users: use Metal Presale with USDC (for ALL purchases)
+      if (isInWalletApp && metalHolder.data?.address) {
+        handleMetalPurchase(reward);
         return;
       }
       
@@ -889,8 +902,8 @@ export default function UnlockRedemption({
         variant: "destructive",
       });
     } finally {
-      // Always reset state unless we're waiting for USDC transaction
-      if (!isInWalletApp || !reward.is_credit_campaign || !clubWalletAddress) {
+      // Always reset state unless we're waiting for Metal/USDC transaction
+      if (!isInWalletApp || !metalHolder.data?.address) {
         setIsRedeeming(false);
       }
     }
@@ -1266,8 +1279,10 @@ export default function UnlockRedemption({
                   ? 'Confirming Transaction...'
                   : isRedeeming 
                     ? 'Processing...' 
-                    : (isInWalletApp && selectedUnlock.is_credit_campaign && clubWalletAddress)
-                      ? `Send ${selectedUnlock.credit_cost} USDC`
+                    : (isInWalletApp && metalHolder.data?.address)
+                      ? selectedUnlock.is_credit_campaign 
+                        ? `Send ${selectedUnlock.credit_cost} USDC`
+                        : `Pay ${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} USDC`
                       : 'Proceed to Checkout'
                 }
               </Button>

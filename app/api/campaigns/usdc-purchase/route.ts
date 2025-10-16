@@ -237,11 +237,49 @@ export async function POST(request: NextRequest) {
       txHash: tx_hash
     });
 
+    // Update campaign progress if campaign_id provided (same as Stripe webhook)
+    if (campaign_id) {
+      const priceCents = credit_amount * 100;
+      
+      const { error: campaignUpdateError } = await (supabase as any)
+        .rpc('increment_campaigns_ticket_progress', {
+          p_campaign_id: campaign_id,
+          p_increment_current_funding_cents: priceCents,
+          p_increment_stripe_received_cents: priceCents,
+          p_increment_total_tickets_sold: credit_amount
+        });
+
+      if (campaignUpdateError) {
+        console.error('[USDC Purchase] Failed to update campaign progress:', campaignUpdateError);
+        // Don't fail the whole operation, just log the error
+      } else {
+        console.log(`[USDC Purchase] Updated campaign ${campaign_id} progress by $${priceCents/100}`);
+      }
+
+      // Check if campaign goal reached
+      const { data: updatedCampaign } = await (supabase as any)
+        .from('campaigns')
+        .select('funding_goal_cents, current_funding_cents, title')
+        .eq('id', campaign_id)
+        .single();
+
+      if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
+        console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
+        
+        // Mark campaign as funded
+        await (supabase as any)
+          .from('campaigns')
+          .update({ status: 'funded' })
+          .eq('id', campaign_id);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       purchase_id: purchase.id,
       credits_purchased: credit_amount,
       tx_hash: tx_hash,
+      campaign_updated: !!campaign_id,
       message: `Successfully purchased ${credit_amount} credits with USDC`
     });
 
