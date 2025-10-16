@@ -10,8 +10,8 @@ ALTER COLUMN stripe_session_id DROP NOT NULL;
 ALTER TABLE credit_purchases
 ADD CONSTRAINT credit_purchases_stripe_fields_check
 CHECK (
-  (payment_method = 'stripe' AND stripe_payment_intent_id IS NOT NULL AND stripe_session_id IS NOT NULL) OR
-  (payment_method = 'usdc' AND tx_hash IS NOT NULL)
+  (payment_method = 'stripe' AND stripe_payment_intent_id IS NOT NULL AND stripe_session_id IS NOT NULL AND tx_hash IS NULL) OR
+  (payment_method = 'usdc' AND tx_hash IS NOT NULL AND stripe_payment_intent_id IS NULL AND stripe_session_id IS NULL)
 );
 
 -- Update any existing USDC placeholder records to use proper NULL values

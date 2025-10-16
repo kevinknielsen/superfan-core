@@ -4,7 +4,7 @@
 -- Add payment tracking fields
 ALTER TABLE reward_claims
 ADD COLUMN IF NOT EXISTS usdc_tx_hash TEXT,
-ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'stripe';
+ADD COLUMN IF NOT EXISTS payment_method TEXT;
 
 -- Create unique index on usdc_tx_hash to prevent duplicate Metal purchases
 CREATE UNIQUE INDEX IF NOT EXISTS reward_claims_usdc_tx_hash_unique 
@@ -41,4 +41,8 @@ UPDATE reward_claims
 SET payment_method = 'free_claim'
 WHERE payment_method IS NULL
   AND stripe_payment_intent_id IS NULL;
+
+-- Make payment_method NOT NULL after backfill
+ALTER TABLE reward_claims
+ALTER COLUMN payment_method SET NOT NULL;
 
