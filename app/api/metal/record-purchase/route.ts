@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
-import { metal } from "@/lib/metal/server";
+import { verifyMetalTransaction } from "@/lib/metal/verify-transaction";
 
 // Proper types for response validation
 interface UserRecord {
@@ -65,6 +65,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'tx_hash is required for USDC transaction tracking' }, { status: 400 });
     }
 
+    if (!metal_holder_id || typeof metal_holder_id !== 'string') {
+      return NextResponse.json({ 
+        error: 'metal_holder_id is required for Metal transaction verification' 
+      }, { status: 400 });
+    }
+
     // Validate tx_hash format: must be 32-byte hex string (64 hex chars with or without 0x prefix)
     const txHashRegex = /^(0x)?[a-fA-F0-9]{64}$/;
     if (!txHashRegex.test(tx_hash)) {
@@ -124,83 +130,18 @@ export async function POST(request: NextRequest) {
 
     // CRITICAL: Verify the USDC transaction through Metal's server API
     // This ensures the purchase actually happened and prevents fraudulent claims
-    if (metal_holder_id) {
-      try {
-        console.log('[Metal Credit Purchase] Verifying transaction through Metal API:', {
-          holder: metal_holder_id,
-          txHash: normalizedTxHash,
-          expectedAmount: credit_amount
-        });
+    const verificationResult = await verifyMetalTransaction({
+      metal_holder_id,
+      tx_hash: normalizedTxHash,
+      expected_amount_usdc: credit_amount, // 1 credit = 1 USDC
+      tolerance: 0.01
+    });
 
-        // Fetch holder's transactions from Metal to verify this purchase
-        const holderTransactions = await metal.getTransactions(metal_holder_id);
-        
-        if (!holderTransactions || !Array.isArray(holderTransactions)) {
-          console.error('[Metal Credit Purchase] Failed to fetch holder transactions');
-          return NextResponse.json({ 
-            error: 'Unable to verify transaction with Metal. Please try again.' 
-          }, { status: 500 });
-        }
-
-        // Find the transaction matching this tx_hash
-        const matchingTransaction: any = holderTransactions.find((tx: any) => 
-          tx.transactionHash?.toLowerCase() === normalizedTxHash.toLowerCase()
-        );
-
-        if (!matchingTransaction) {
-          console.error('[Metal Credit Purchase] Transaction not found in Metal holder records:', {
-            txHash: normalizedTxHash,
-            holderTransactionsCount: holderTransactions.length
-          });
-          return NextResponse.json({ 
-            error: 'Transaction not found in Metal records. The transaction may still be processing or was not completed through Metal.' 
-          }, { status: 400 });
-        }
-
-        // Verify the transaction amount matches expected
-        // Metal amounts are typically in the token's native units
-        // For USDC (6 decimals), convert cents to USDC
-        const expectedUSDC = credit_amount; // 1 credit = 1 USDC
-        const actualAmount = parseFloat(matchingTransaction.amount || '0');
-        
-        // Allow for small floating point differences (within 0.01 USDC)
-        if (Math.abs(actualAmount - expectedUSDC) > 0.01) {
-          console.error('[Metal Credit Purchase] Amount mismatch:', {
-            expected: expectedUSDC,
-            actual: actualAmount,
-            difference: Math.abs(actualAmount - expectedUSDC)
-          });
-          return NextResponse.json({ 
-            error: `Transaction amount mismatch: expected ${expectedUSDC} USDC, got ${actualAmount} USDC` 
-          }, { status: 400 });
-        }
-
-        // Verify transaction was successful
-        if (matchingTransaction.status && matchingTransaction.status !== 'success' && matchingTransaction.status !== 'completed') {
-          console.error('[Metal Credit Purchase] Transaction not successful:', {
-            status: matchingTransaction.status
-          });
-          return NextResponse.json({ 
-            error: `Transaction status is ${matchingTransaction.status}, not successful` 
-          }, { status: 400 });
-        }
-
-        console.log('[Metal Credit Purchase] ✅ Transaction verified through Metal:', {
-          txHash: normalizedTxHash,
-          amount: actualAmount,
-          status: matchingTransaction.status
-        });
-
-      } catch (error) {
-        console.error('[Metal Credit Purchase] Error verifying transaction with Metal:', error);
-        return NextResponse.json({ 
-          error: 'Failed to verify transaction with Metal API. Please try again.' 
-        }, { status: 500 });
-      }
-    } else {
-      // If no metal_holder_id provided, we cannot verify through Metal
-      console.warn('[Metal Credit Purchase] No metal_holder_id provided - skipping Metal verification');
-      // Note: We could add additional on-chain verification here as a fallback
+    if (verificationResult.success === false) {
+      return NextResponse.json(
+        { error: verificationResult.error },
+        { status: verificationResult.status }
+      );
     }
 
     // Insert Metal purchase into credit_purchases table
@@ -268,7 +209,7 @@ export async function POST(request: NextRequest) {
         .rpc('increment_campaigns_ticket_progress', {
           p_campaign_id: campaign_id,
           p_increment_current_funding_cents: priceCents,
-          p_increment_stripe_received_cents: priceCents, // Metal purchases count toward goal
+          p_increment_received_cents: priceCents, // Generic parameter for all payment methods
           p_increment_total_tickets_sold: credit_amount
         });
 

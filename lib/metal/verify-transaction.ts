@@ -1,0 +1,120 @@
+import "server-only";
+import { metal } from "@/lib/metal/server";
+
+export interface VerifyTransactionParams {
+  metal_holder_id: string;
+  tx_hash: string;
+  expected_amount_usdc: number;
+  tolerance?: number; // Tolerance in USDC, default 0.01
+}
+
+export type VerifyTransactionResult = 
+  | { success: true }
+  | { success: false; error: string; status: number };
+
+/**
+ * Verifies a USDC transaction through Metal's server API
+ * 
+ * This function:
+ * - Fetches holder transactions from Metal
+ * - Finds the matching transaction by hash
+ * - Validates transaction amount (within tolerance)
+ * - Verifies transaction status is successful
+ * 
+ * @param params - Transaction verification parameters
+ * @returns Success result or error with HTTP status code
+ */
+export async function verifyMetalTransaction(
+  params: VerifyTransactionParams
+): Promise<VerifyTransactionResult> {
+  const { metal_holder_id, tx_hash, expected_amount_usdc, tolerance = 0.01 } = params;
+
+  try {
+    // Normalize tx_hash to lowercase with 0x prefix
+    const normalizedTxHash = (tx_hash.startsWith('0x') ? tx_hash : `0x${tx_hash}`).toLowerCase();
+
+    console.log('[Metal Verification] Verifying transaction:', {
+      holder: metal_holder_id,
+      txHash: normalizedTxHash,
+      expectedAmount: expected_amount_usdc
+    });
+
+    // Fetch holder's transactions from Metal
+    const holderTransactions = await metal.getTransactions(metal_holder_id);
+    
+    if (!holderTransactions || !Array.isArray(holderTransactions)) {
+      console.error('[Metal Verification] Failed to fetch holder transactions');
+      return {
+        success: false,
+        error: 'Unable to verify transaction with Metal. Please try again.',
+        status: 500
+      };
+    }
+
+    // Find the transaction matching this tx_hash
+    const matchingTransaction: any = holderTransactions.find((tx: any) => 
+      tx.transactionHash?.toLowerCase() === normalizedTxHash
+    );
+
+    if (!matchingTransaction) {
+      console.error('[Metal Verification] Transaction not found in Metal holder records:', {
+        txHash: normalizedTxHash,
+        holderTransactionsCount: holderTransactions.length
+      });
+      return {
+        success: false,
+        error: 'Transaction not found in Metal records. The transaction may still be processing or was not completed through Metal.',
+        status: 400
+      };
+    }
+
+    // Verify the transaction amount matches expected
+    const actualAmount = parseFloat(matchingTransaction.amount || '0');
+    
+    // Allow for small floating point differences
+    if (Math.abs(actualAmount - expected_amount_usdc) > tolerance) {
+      console.error('[Metal Verification] Amount mismatch:', {
+        expected: expected_amount_usdc,
+        actual: actualAmount,
+        difference: Math.abs(actualAmount - expected_amount_usdc),
+        tolerance
+      });
+      return {
+        success: false,
+        error: `Transaction amount mismatch: expected ${expected_amount_usdc} USDC, got ${actualAmount} USDC`,
+        status: 400
+      };
+    }
+
+    // Verify transaction was successful
+    if (matchingTransaction.status && 
+        matchingTransaction.status !== 'success' && 
+        matchingTransaction.status !== 'completed') {
+      console.error('[Metal Verification] Transaction not successful:', {
+        status: matchingTransaction.status
+      });
+      return {
+        success: false,
+        error: `Transaction status is ${matchingTransaction.status}, not successful`,
+        status: 400
+      };
+    }
+
+    console.log('[Metal Verification] ✅ Transaction verified:', {
+      txHash: normalizedTxHash,
+      amount: actualAmount,
+      status: matchingTransaction.status
+    });
+
+    return { success: true };
+
+  } catch (error) {
+    console.error('[Metal Verification] Error verifying transaction:', error);
+    return {
+      success: false,
+      error: 'Failed to verify transaction with Metal API. Please try again.',
+      status: 500
+    };
+  }
+}
+

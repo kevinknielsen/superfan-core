@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
         .rpc('increment_campaigns_ticket_progress', {
           p_campaign_id: campaign_id,
           p_increment_current_funding_cents: priceCents,
-          p_increment_stripe_received_cents: priceCents,
+          p_increment_received_cents: priceCents, // Generic parameter for all payment methods
           p_increment_total_tickets_sold: credit_amount
         });
 

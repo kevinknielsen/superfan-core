@@ -20,8 +20,13 @@ export async function GET(
     try {
       const auth = await verifyUnifiedAuth(request);
       isAuthenticated = !!auth;
-    } catch {
+    } catch (error) {
       // User is not authenticated (isAuthenticated remains false)
+      console.error('[Clubs API] Authentication error:', {
+        clubId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
 
     // Select only needed fields to avoid exposing unnecessary data
