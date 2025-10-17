@@ -1,13 +1,8 @@
 import "server-only";
 
-export interface ResolvePresaleResult {
-  success: true;
-  presaleId: string;
-  status: string;
-} | {
-  success: false;
-  error: string;
-}
+export type ResolvePresaleResult = 
+  | { success: true; presaleId: string; status: string }
+  | { success: false; error: string };
 
 /**
  * Resolves (cancels/refunds) a Metal presale
