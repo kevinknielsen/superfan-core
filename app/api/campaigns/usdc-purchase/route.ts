@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Normalize tx_hash to always have 0x prefix
+    const normalizedTxHash = tx_hash.startsWith('0x') ? tx_hash : `0x${tx_hash}`;
+
     if (!club_id || typeof club_id !== 'string') {
       return NextResponse.json({ error: 'club_id is required' }, { status: 400 });
     }
@@ -72,26 +75,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Check if transaction was already processed
-    const { data: existingPurchase } = await (supabase as any)
-      .from('credit_purchases')
-      .select('id')
-      .eq('tx_hash', tx_hash)
-      .single();
-
-    if (existingPurchase) {
-      return NextResponse.json({ 
-        error: 'Transaction already processed' 
-      }, { status: 409 });
-    }
-
     // Verify transaction on Base blockchain
-    console.log('[USDC Purchase] Verifying transaction:', tx_hash);
+    console.log('[USDC Purchase] Verifying transaction:', normalizedTxHash);
     
     let receipt;
     try {
       receipt = await publicClient.getTransactionReceipt({
-        hash: tx_hash as `0x${string}`
+        hash: normalizedTxHash as `0x${string}`
       });
     } catch (e) {
       return NextResponse.json(
@@ -206,7 +196,7 @@ export async function POST(request: NextRequest) {
         campaign_id: campaign_id || null,
         credits_purchased: credit_amount,
         price_paid_cents: credit_amount * 100, // 1 USDC = 1 credit = $1
-        tx_hash: tx_hash,
+        usdc_tx_hash: normalizedTxHash,
         payment_method: 'usdc',
         status: 'completed',
         // Stripe fields are NULL for USDC payments (migration 035 makes these nullable)
@@ -217,12 +207,25 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (purchaseError) {
-      // Unique violation on tx_hash => duplicate transaction
+      // Unique violation on usdc_tx_hash => duplicate transaction
       if ((purchaseError as any).code === '23505') {
-        return NextResponse.json(
-          { error: 'Transaction already processed' },
-          { status: 409 }
-        );
+        // Fetch existing purchase to return its details
+        const { data: existingPurchase } = await (supabase as any)
+          .from('credit_purchases')
+          .select('id, credits_purchased')
+          .eq('usdc_tx_hash', normalizedTxHash)
+          .single();
+        
+        if (existingPurchase) {
+          console.log('[USDC Purchase] Transaction already processed:', tx_hash);
+          return NextResponse.json({
+            success: true,
+            message: 'Transaction already processed',
+            purchase_id: existingPurchase.id,
+            credits_purchased: existingPurchase.credits_purchased,
+            tx_hash: normalizedTxHash
+          });
+        }
       }
       console.error('[USDC Purchase] Error creating purchase record:', purchaseError);
       return NextResponse.json({ 
@@ -234,14 +237,53 @@ export async function POST(request: NextRequest) {
       purchaseId: purchase.id,
       userId: user.id,
       credits: credit_amount,
-      txHash: tx_hash
+      txHash: normalizedTxHash
     });
+
+    // Update campaign progress if campaign_id provided (same as Stripe webhook)
+    if (campaign_id) {
+      const priceCents = credit_amount * 100;
+      
+      const { error: campaignUpdateError } = await (supabase as any)
+        .rpc('increment_campaigns_ticket_progress', {
+          p_campaign_id: campaign_id,
+          p_increment_current_funding_cents: priceCents,
+          p_increment_stripe_received_cents: priceCents,
+          p_increment_total_tickets_sold: credit_amount
+        });
+
+      if (campaignUpdateError) {
+        console.error('[USDC Purchase] Failed to update campaign progress:', campaignUpdateError);
+        // Don't fail the whole operation, just log the error
+      } else {
+        console.log(`[USDC Purchase] Updated campaign ${campaign_id} progress by $${priceCents/100}`);
+      }
+
+      // Check if campaign goal reached
+      const { data: updatedCampaign } = await (supabase as any)
+        .from('campaigns')
+        .select('funding_goal_cents, current_funding_cents, title')
+        .eq('id', campaign_id)
+        .single();
+
+      if (updatedCampaign && updatedCampaign.current_funding_cents >= updatedCampaign.funding_goal_cents) {
+        console.log(`🎉 Campaign "${updatedCampaign.title}" reached funding goal!`);
+        
+        // Mark campaign as funded (only if not already funded to avoid unnecessary updates)
+        await (supabase as any)
+          .from('campaigns')
+          .update({ status: 'funded' })
+          .eq('id', campaign_id)
+          .neq('status', 'funded');
+      }
+    }
 
     return NextResponse.json({
       success: true,
       purchase_id: purchase.id,
       credits_purchased: credit_amount,
-      tx_hash: tx_hash,
+      tx_hash: normalizedTxHash,
+      campaign_updated: !!campaign_id,
       message: `Successfully purchased ${credit_amount} credits with USDC`
     });
 
