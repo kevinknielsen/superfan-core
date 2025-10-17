@@ -85,6 +85,24 @@ const nextConfig = {
     
     return [
       {
+        // No-cache headers for Farcaster manifest to prevent stale data
+        source: '/.well-known/farcaster.json',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-cache, no-store, must-revalidate',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
+          },
+        ],
+      },
+      {
         // Apply security headers to all routes
         source: '/(.*)',
         headers: [
