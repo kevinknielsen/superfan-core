@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 import { supabase } from '@/app/api/supabase';
 import { getOrCreateUserFromAuth } from '@/lib/user-management';
-import { createPublicClient, http, decodeEventLog, parseAbi } from 'viem';
+import { createPublicClient, http, decodeEventLog, parseAbi, formatUnits } from 'viem';
 import { base } from 'viem/chains';
 
 // Base RPC client for transaction verification
 const publicClient = createPublicClient({
   chain: base,
-  transport: http('https://mainnet.base.org')
+  transport: http(process.env.BASE_RPC_URL ?? 'https://mainnet.base.org', { timeout: 10_000 })
 });
 
 // USDC contract address on Base
@@ -33,8 +33,9 @@ export async function POST(request: NextRequest) {
       club_id: string;
       credit_amount: number;
       campaign_id?: string;
+      sender_address: string; // User's wallet address for verification
     };
-    const { tx_hash, club_id, credit_amount, campaign_id } = body;
+    const { tx_hash, club_id, credit_amount, campaign_id, sender_address } = body;
 
     // Validate inputs
     if (!tx_hash || typeof tx_hash !== 'string') {
@@ -58,6 +59,16 @@ export async function POST(request: NextRequest) {
 
     if (!credit_amount || !Number.isInteger(credit_amount) || credit_amount <= 0) {
       return NextResponse.json({ error: 'credit_amount must be a positive integer' }, { status: 400 });
+    }
+
+    if (!sender_address || typeof sender_address !== 'string') {
+      return NextResponse.json({ error: 'sender_address is required' }, { status: 400 });
+    }
+
+    // Validate sender address format
+    const { isAddress } = await import('viem');
+    if (!isAddress(sender_address)) {
+      return NextResponse.json({ error: 'sender_address must be a valid Ethereum address' }, { status: 400 });
     }
 
     // Get user
@@ -156,10 +167,21 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // CRITICAL: Verify sender matches the provided sender_address
+    if (from.toLowerCase() !== sender_address.toLowerCase()) {
+      console.error('[USDC Purchase] Sender mismatch:', {
+        onChainSender: from,
+        claimedSender: sender_address
+      });
+      return NextResponse.json({ 
+        error: 'Transaction sender does not match your wallet address' 
+      }, { status: 403 });
+    }
+
     // Verify amount matches expected (USDC has 6 decimals)
     const expectedAmount = BigInt(credit_amount) * BigInt(1_000_000);
     if (actualAmount !== expectedAmount) {
-      const actualUSDC = Number(actualAmount) / 1_000_000;
+      const actualUSDC = Number(formatUnits(actualAmount, 6));
       console.error('[USDC Purchase] Amount mismatch:', {
         expected: credit_amount,
         actual: actualUSDC
@@ -279,7 +301,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[USDC Purchase] Error:', error);
     return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Failed to process USDC purchase' 
+      error: 'Failed to process USDC purchase' 
     }, { status: 500 });
   }
 }

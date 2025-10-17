@@ -17,22 +17,14 @@ export async function GET(
 
     // Check authentication status
     let isAuthenticated = false;
-    try {
-      const auth = await verifyUnifiedAuth(request);
-      isAuthenticated = !!auth;
-    } catch (error) {
-      // User is not authenticated (isAuthenticated remains false)
-      console.error('[Clubs API] Authentication error:', {
-        clubId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        // Only include stack trace in development for debugging
-        ...(process.env.NODE_ENV !== 'production' && error instanceof Error && { stack: error.stack })
-      });
-    }
+    const auth = await verifyUnifiedAuth(request);
+    isAuthenticated = !!auth;
+    // Note: verifyUnifiedAuth returns null for unauthenticated users (not an error)
+    // Any actual errors (token validation failures, etc.) will propagate
 
     // Select only needed fields to avoid exposing unnecessary data
-    const { data: club, error } = await supabase
-      .from('clubs' as any)
+    const { data: club, error } = await (supabase as any)
+      .from('clubs')
       .select('id, name, description, city, image_url, is_active, created_at, updated_at, usdc_wallet_address')
       .eq('id', clubId)
       .single();
@@ -47,8 +39,18 @@ export async function GET(
       throw error;
     }
 
-    // Type assertion for club data
-    const clubData = club as any;
+    // Narrow type for the selected shape
+    const clubData: {
+      id: string;
+      name: string;
+      description: string | null;
+      city: string | null;
+      image_url: string | null;
+      is_active: boolean;
+      created_at: string;
+      updated_at: string;
+      usdc_wallet_address: string | null;
+    } = club;
 
     // For unauthenticated users, only return active clubs
     if (!isAuthenticated && !clubData.is_active) {

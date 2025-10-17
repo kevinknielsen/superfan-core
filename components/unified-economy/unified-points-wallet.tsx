@@ -26,7 +26,7 @@ import { useFarcaster } from '@/lib/farcaster-context';
 import { navigateToCheckout } from '@/lib/navigation-utils';
 import { useToast } from '@/hooks/use-toast';
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
-import { useMetalHolder, useBuyPresale, useBuyTokens } from '@/hooks/use-metal-holder';
+import { useMetalHolder, useBuyTokens } from '@/hooks/use-metal-holder';
 import { useUnifiedAuth } from '@/lib/unified-auth-context';
 import SpendPointsModal from './spend-points-modal';
 
@@ -39,7 +39,6 @@ interface UnifiedPointsWalletProps {
   className?: string;
   creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
   onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
-  isAuthenticated?: boolean; // Required for fetching USDC wallet address
 }
 
 // Enhanced status icons mapping
@@ -265,7 +264,6 @@ export default function UnifiedPointsWallet({
   showPurchaseOptions = false,
   showTransferOptions = false,
   className = "",
-  isAuthenticated = false,
   creditBalances = {},
   onCloseWallet
 }: UnifiedPointsWalletProps) {
@@ -277,7 +275,6 @@ export default function UnifiedPointsWallet({
   
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
-  const { mutate: buyPresale, isPending: isBuyingPresale } = useBuyPresale();
   const { mutate: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess } = useBuyTokens();
 
   // Use the hook instead of manual fetch
@@ -322,7 +319,7 @@ export default function UnifiedPointsWallet({
           body: JSON.stringify({
             club_id: clubId,
             // No campaign_id for direct token purchases
-            credit_amount: Math.floor(tokenData.buyAmount || 0), // Tokens received
+            credit_amount: Math.floor(tokenData.sellAmount || 0), // Actual USDC spent (accounts for slippage/fees)
             tx_hash: tokenData.transactionHash,
             metal_holder_id: metalHolder.data?.id,
             metal_holder_address: metalHolder.data?.address,
@@ -337,7 +334,7 @@ export default function UnifiedPointsWallet({
         // Success!
         toast({
           title: "Purchase Successful! 🎉",
-          description: `${Math.floor(tokenData.buyAmount || 0)} credits added to your account`,
+          description: `${Math.floor(tokenData.sellAmount || 0)} credits added to your account`,
         });
         setIsPurchasing(false);
         refetch(); // Reload wallet data
@@ -370,6 +367,12 @@ export default function UnifiedPointsWallet({
         // Validate token address is provided
         if (!clubTokenAddress) {
           throw new Error('Club token address not configured. Please contact support.');
+        }
+        
+        // Validate token address format
+        const { isAddress } = await import('viem');
+        if (!isAddress(clubTokenAddress)) {
+          throw new Error('Invalid club token address');
         }
         
         // Validate amount
@@ -544,11 +547,11 @@ export default function UnifiedPointsWallet({
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing || isBuyingTokens || isBuyingPresale}
+                  disabled={isPurchasing || isBuyingTokens}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {(isBuyingTokens || isBuyingPresale)
+                  {isBuyingTokens
                     ? 'Buying...'
                     : '25'}
                 </Button>
@@ -556,11 +559,11 @@ export default function UnifiedPointsWallet({
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing || isBuyingTokens || isBuyingPresale}
+                  disabled={isPurchasing || isBuyingTokens}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {(isBuyingTokens || isBuyingPresale)
+                  {isBuyingTokens
                     ? 'Buying...'
                     : '100'}
                 </Button>
@@ -568,11 +571,11 @@ export default function UnifiedPointsWallet({
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing || isBuyingTokens || isBuyingPresale}
+                  disabled={isPurchasing || isBuyingTokens}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {(isBuyingTokens || isBuyingPresale)
+                  {isBuyingTokens
                     ? 'Buying...'
                     : '250'}
                 </Button>

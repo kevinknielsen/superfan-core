@@ -22,6 +22,8 @@ export function useMetalHolder() {
       return getOrCreateMetalHolder(user.id);
     },
     enabled: !!user?.id,
+    staleTime: 60_000, // Cache for 1 minute
+    refetchOnWindowFocus: false, // Avoid hammering Metal API
   });
 }
 
@@ -34,7 +36,7 @@ export function useBuyPresale() {
       user: User;
       campaignId: string;
       amount: number;
-    }) => {
+    }): Promise<any> => {
       if (!data.user.id) {
         throw new Error("User ID is required for presale purchase");
       }
@@ -66,13 +68,18 @@ export function useBuyTokens() {
         throw new Error("Metal holder not initialized");
       }
       
+      const apiKey = process.env.NEXT_PUBLIC_METAL_PUBLIC_KEY;
+      if (!apiKey) {
+        throw new Error('Metal public API key is not configured');
+      }
+      
       const response = await fetch(
         `https://api.metal.build/holder/${data.holderId}/buy`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': process.env.NEXT_PUBLIC_METAL_PUBLIC_KEY || '',
+            'x-api-key': apiKey,
           },
           body: JSON.stringify({
             tokenAddress: data.tokenAddress,

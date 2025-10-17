@@ -83,14 +83,17 @@ export async function verifyMetalTransaction(
     }
 
     // Verify the transaction amount matches expected
-    const actualAmount = parseFloat(matchingTransaction.amount || '0');
+    // Use fixed-decimal math (USDC has 6 decimals) for precise comparison
+    const actualMicros = Math.round(parseFloat(matchingTransaction.amount || '0') * 1_000_000);
+    const expectedMicros = Math.round(expected_amount_usdc * 1_000_000);
+    const toleranceMicros = Math.round(tolerance * 1_000_000);
     
-    // Allow for small floating point differences
-    if (Math.abs(actualAmount - expected_amount_usdc) > tolerance) {
+    if (Math.abs(actualMicros - expectedMicros) > toleranceMicros) {
+      const actualAmount = actualMicros / 1_000_000;
       console.error('[Metal Verification] Amount mismatch:', {
         expected: expected_amount_usdc,
         actual: actualAmount,
-        difference: Math.abs(actualAmount - expected_amount_usdc),
+        difference: Math.abs(actualMicros - expectedMicros) / 1_000_000,
         tolerance
       });
       return {

@@ -155,7 +155,8 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
   try {
     console.log(`[Tier Rewards Webhook] Processing campaign tier purchase: ${session.id}`);
     
-    const metadata = session.metadata!;
+    // Guard against missing metadata
+    const metadata = (session.metadata ?? {}) as Record<string, string>;
     const idempotencyKey = metadata.idempotency_key;
     
     // Check if already processed (idempotency protection)

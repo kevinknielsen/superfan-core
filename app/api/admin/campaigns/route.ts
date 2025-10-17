@@ -3,6 +3,8 @@ import { verifyUnifiedAuth } from "../../auth";
 import { createServiceClient } from "../../supabase";
 import { isAdmin } from "@/lib/security.server";
 import { createMetalPresale } from "@/lib/metal/create-presale";
+import { getOrCreateTreasury } from "@/lib/metal/treasury";
+import { resolveMetalPresale } from "@/lib/metal/resolve-presale";
 
 export const runtime = 'nodejs';
 
@@ -224,6 +226,13 @@ export async function PATCH(request: NextRequest) {
     if (body.status === 'active' && existingCampaign.status === 'draft' && !existingCampaign.metal_presale_id) {
       console.log(`[Campaigns API] Activating campaign ${campaignId}, creating Metal presale...`);
 
+      // Get or create treasury holder
+      const treasury = await getOrCreateTreasury();
+      console.log(`[Campaigns API] Treasury ready:`, {
+        holderId: treasury.holderId,
+        address: treasury.address
+      });
+
       // Get club's token address
       const { data: club, error: clubError } = await supabaseAny
         .from('clubs')
@@ -236,6 +245,19 @@ export async function PATCH(request: NextRequest) {
           error: 'Club must have a metal_token_address configured before activating campaigns. Please set up the club\'s Metal token first.' 
         }, { status: 400 });
       }
+
+      // Calculate how much USDC to deposit for existing Stripe purchases
+      const { data: stripePurchases } = await supabaseAny
+        .from('credit_purchases')
+        .select('credits_purchased')
+        .eq('campaign_id', campaignId)
+        .eq('payment_method', 'stripe')
+        .eq('status', 'completed');
+
+      const totalStripeCredits = stripePurchases?.reduce(
+        (sum: number, p: any) => sum + (p.credits_purchased || 0), 
+        0
+      ) || 0;
 
       // Calculate presale size based on funding goal
       // Credits: 1 credit = $1 = 1 presale token
@@ -256,7 +278,7 @@ export async function PATCH(request: NextRequest) {
         tokenAddress: club.metal_token_address,
         price: 1, // $1 per presale token = 1 credit
         totalSupply: totalSupply,
-        lockDuration: 90 * 24 * 60 * 60, // 90 days lock (standard for presales)
+        lockDuration: 7 * 24 * 60 * 60, // 7 days lock
       });
 
       if (presaleResult.success === false) {
@@ -283,31 +305,55 @@ export async function PATCH(request: NextRequest) {
 
       if (updateError) {
         // CRITICAL: Metal presale was created but DB update failed
-        // Log orphaned presale for manual recovery
-        console.error('[Campaigns API] ⚠️ ORPHANED PRESALE CREATED:', {
+        // Execute compensating action: resolve the presale to prevent orphaned state
+        console.error('[Campaigns API] ⚠️ DB update failed after presale creation, executing compensating action:', {
           presaleId: presaleResult.presaleId,
           campaignId: campaignId,
           tokenAddress: club.metal_token_address,
           error: updateError.message,
-          timestamp: new Date().toISOString(),
-          recovery_action: 'Manual intervention required - link presale to campaign or resolve presale on Metal'
+          timestamp: new Date().toISOString()
         });
         
-        // TODO: Implement compensating action
-        // Options:
-        // 1. Call metal.resolvePresale(presaleResult.presaleId) to cancel/refund
-        // 2. Store in dead-letter queue for retry
-        // 3. Manual admin tool to link orphaned presales
+        // Attempt to resolve (cancel/refund) the orphaned presale
+        const resolveResult = await resolveMetalPresale(presaleResult.presaleId);
         
-        return NextResponse.json({ 
-          error: 'Failed to update campaign',
-          details: 'Metal presale created but database update failed. Please contact support.',
-          presale_id: presaleResult.presaleId // Include for recovery
-        }, { status: 500 });
+        if (resolveResult.success) {
+          console.log(`[Campaigns API] ✅ Compensating action successful: resolved orphaned presale ${presaleResult.presaleId}`);
+          return NextResponse.json({ 
+            error: 'Failed to activate campaign',
+            details: 'Campaign activation failed, presale was automatically cancelled.',
+          }, { status: 500 });
+        } else {
+          // Both DB update AND compensating action failed - critical
+          console.error('[Campaigns API] 🚨 CRITICAL: Compensating action failed, orphaned presale exists:', {
+            presaleId: presaleResult.presaleId,
+            resolveError: resolveResult.error,
+            recovery_action: 'MANUAL INTERVENTION REQUIRED - Resolve presale on Metal dashboard'
+          });
+          
+          return NextResponse.json({ 
+            error: 'Failed to activate campaign',
+            details: 'Critical error: orphaned presale created. Contact support immediately.',
+            presale_id: presaleResult.presaleId,
+            requires_manual_resolution: true
+          }, { status: 500 });
+        }
       }
 
       console.log(`[Campaigns API] ✅ Activated campaign ${campaignId} with Metal presale ${presaleResult.presaleId}`);
-      return NextResponse.json(updatedCampaign);
+      
+      // Return campaign with treasury info for USDC deposit
+      return NextResponse.json({
+        ...updatedCampaign,
+        treasury_info: {
+          holder_id: treasury.holderId,
+          deposit_address: treasury.address,
+          required_usdc_deposit: totalStripeCredits,
+          message: totalStripeCredits > 0 
+            ? `IMPORTANT: Deposit ${totalStripeCredits} USDC to ${treasury.address} to cover existing Stripe purchases, then buy presale on behalf of treasury.`
+            : 'No existing Stripe purchases - no deposit needed'
+        }
+      });
     }
 
     // For other status updates, just update the campaign

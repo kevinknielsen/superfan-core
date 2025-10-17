@@ -170,7 +170,7 @@ export default function UnlockRedemption({
   
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
-  const { mutate: buyPresale, isPending: isBuyingPresale } = useBuyPresale();
+  const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
 
   // Always declare all hooks first (React Rules of Hooks)
   useEffect(() => {
@@ -227,7 +227,7 @@ export default function UnlockRedemption({
         }
         
         // Step 1: Buy presale with Metal
-        await buyPresale({
+        await buyPresaleAsync({
           user,
           campaignId: pendingItemPurchase.campaign_id,
           amount: pendingItemPurchase.is_credit_campaign 
@@ -330,7 +330,7 @@ export default function UnlockRedemption({
     };
     
     processMetalPurchase();
-  }, [isUSDCSuccess, usdcTxHash, pendingItemPurchase, user, clubId, metalHolder.data, buyPresale, userStatus, onRedemption, toast]);
+  }, [isUSDCSuccess, usdcTxHash, pendingItemPurchase, user, clubId, metalHolder.data, buyPresaleAsync, userStatus, onRedemption, toast]);
 
   // Reset state on USDC errors (user rejection, RPC/contract errors)
   useEffect(() => {

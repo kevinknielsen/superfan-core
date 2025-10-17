@@ -27,6 +27,11 @@ function getMetalServer(): MetalPresalesServer {
 export const metal = new Proxy({} as MetalPresalesServer, {
   get(_target, prop) {
     const server = getMetalServer();
-    return (server as any)[prop];
+    const value = (server as any)[prop];
+    // Bind functions to the server instance to preserve 'this' context
+    if (typeof value === 'function') {
+      return value.bind(server);
+    }
+    return value;
   }
 });

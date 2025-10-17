@@ -1,5 +1,6 @@
 import "server-only";
 import { metal } from "@/lib/metal/server";
+import { isAddress, getAddress } from "viem";
 
 export interface CreatePresaleParams {
   campaignId: string;
@@ -28,10 +29,22 @@ export async function createMetalPresale(
   const { campaignId, tokenAddress, price, totalSupply, lockDuration } = params;
 
   try {
+    // Validate inputs
+    if (!isAddress(tokenAddress)) {
+      return { success: false, error: 'Invalid tokenAddress' };
+    }
+    if (!(Number.isFinite(price) && price > 0)) {
+      return { success: false, error: 'Invalid price' };
+    }
+    
+    const checksummedToken = getAddress(tokenAddress);
+    // Round to 2 decimals to avoid float artifacts
+    const stablePrice = Number(price.toFixed(2));
+
     console.log('[Metal Presale] Creating presale:', {
       campaignId,
-      tokenAddress,
-      price,
+      tokenAddress: checksummedToken,
+      price: stablePrice,
       totalSupply,
       lockDuration
     });
@@ -39,8 +52,8 @@ export async function createMetalPresale(
     // Create presale via Metal's Merchant API
     const presale = await metal.createPresale({
       id: campaignId, // Use campaign ID as presale ID for consistency
-      tokenAddress,
-      price,
+      tokenAddress: checksummedToken,
+      price: stablePrice,
       ...(totalSupply !== undefined && { totalSupply }),
       ...(lockDuration !== undefined && { lockDuration }),
     });

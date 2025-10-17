@@ -44,7 +44,7 @@ export function CampaignProgressCard({
 
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
-  const { mutate: buyPresale, isPending: isBuyingPresale } = useBuyPresale();
+  const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
 
   // Process Metal Presale purchase when USDC transaction succeeds
   useEffect(() => {
@@ -61,7 +61,7 @@ export function CampaignProgressCard({
     const processPurchase = async () => {
       try {
         // Step 1: Buy presale with Metal
-        const metalResult = await buyPresale({
+        const metalResult = await buyPresaleAsync({
           user,
           campaignId: campaignData.campaign_id,
           amount: pendingCreditAmount,
@@ -134,7 +134,7 @@ export function CampaignProgressCard({
     };
 
     processPurchase();
-  }, [isUSDCSuccess, usdcTxHash, pendingCreditAmount, user, clubId, campaignData.campaign_id, metalHolder.data, buyPresale, toast]);
+  }, [isUSDCSuccess, usdcTxHash, pendingCreditAmount, user, clubId, campaignData.campaign_id, metalHolder.data, buyPresaleAsync, toast]);
 
   const pct = Math.round(
     Math.max(
