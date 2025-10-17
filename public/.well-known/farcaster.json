@@ -5,7 +5,7 @@
     "signature": "MHg2MTBjMjkyNmM5Zjk4MDZiOTJiNzQ1YmUwMTNiODNlYzhhMmU0YmE0ZWFjYTgwNDlmN2YzOTkyYzM1ZjVmNWQwMDRiOWI5MmU2NDMyOTkyZWFhZTQ4MWZmYzc4YWM5NDE0NTQyM2RiZGQwZDEyNWEyMzNlMjM3ZTVjNzc3NjI2MTFj"
   },
   "baseBuilder": {
-    "allowedAddresses": ["0x84d572a4c4Ba9164a908c1DD2cD584FDC156E711"]
+    "allowedAddresses": []
   },
   "miniapp": {
     "version": "1",
@@ -18,15 +18,15 @@
     "webhookUrl": "https://superfan.one/api/farcaster/webhook",
     "buttonTitle": "🎵 Invest In Culture",
     "subtitle": "The Loyalty Rail for Culture",
-    "description": "Superfan turns fan engagement into points, tiers, and campaigns. Join clubs, earn status by showing up online and IRL, and help launch vinyl, merch, and presales.",
+    "description": "Participate in campaignsto support artists and creators.",
     "screenshotUrls": [
       "https://superfan.one/og-image.png"
     ],
     "primaryCategory": "music",
-    "tags": ["music", "clubs", "membership", "points", "campaigns"],
+    "tags": ["music", "clubs", "membership", "points", "superfan"],
     "heroImageUrl": "https://superfan.one/og-image.png",
     "tagline": "Invest in Culture",
-    "ogTitle": "Superfan: Culture Memberships",
+    "ogTitle": "Superfan",
     "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
     "ogImageUrl": "https://superfan.one/og-image.png",
     "castShareUrl": "https://superfan.one",

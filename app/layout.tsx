@@ -32,6 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const miniAppEmbed = {
     version: "next",
     imageUrl: `${baseUrl}/og-image.png`,
+    aspectRatio: "1.91:1",
     button: {
       title: "🎵 Invest In Culture",
       action: {
