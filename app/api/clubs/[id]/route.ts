@@ -25,7 +25,8 @@ export async function GET(
       console.error('[Clubs API] Authentication error:', {
         clubId,
         error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
+        // Only include stack trace in development for debugging
+        ...(process.env.NODE_ENV !== 'production' && error instanceof Error && { stack: error.stack })
       });
     }
 

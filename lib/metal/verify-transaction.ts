@@ -1,6 +1,20 @@
 import "server-only";
 import { metal } from "@/lib/metal/server";
 
+// Type for Metal API transaction objects
+export interface MetalTransaction {
+  transactionHash?: string;
+  amount?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  tokenAddress?: string;
+  blockNumber?: number;
+  blockHash?: string;
+  gasUsed?: string;
+  effectiveGasPrice?: string;
+}
+
 export interface VerifyTransactionParams {
   metal_holder_id: string;
   tx_hash: string;
@@ -40,7 +54,7 @@ export async function verifyMetalTransaction(
     });
 
     // Fetch holder's transactions from Metal
-    const holderTransactions = await metal.getTransactions(metal_holder_id);
+    const holderTransactions = await metal.getTransactions(metal_holder_id) as MetalTransaction[];
     
     if (!holderTransactions || !Array.isArray(holderTransactions)) {
       console.error('[Metal Verification] Failed to fetch holder transactions');
@@ -52,7 +66,7 @@ export async function verifyMetalTransaction(
     }
 
     // Find the transaction matching this tx_hash
-    const matchingTransaction: any = holderTransactions.find((tx: any) => 
+    const matchingTransaction = holderTransactions.find((tx: MetalTransaction) => 
       tx.transactionHash?.toLowerCase() === normalizedTxHash
     );
 
