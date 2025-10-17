@@ -34,3 +34,6 @@ $$ LANGUAGE plpgsql;
 -- Update comment to reflect generic naming
 COMMENT ON FUNCTION increment_campaigns_ticket_progress IS 'Migration 036 - Atomic campaign funding updates with generic payment tracking (Stripe, USDC, Metal)';
 
+-- Add comment to campaigns.stripe_received_cents to clarify it tracks ALL payment methods
+COMMENT ON COLUMN campaigns.stripe_received_cents IS 'Total payment received in cents from all payment methods (Stripe, USDC, Metal). Column name kept for backwards compatibility but tracks generic received amounts, not Stripe-only.';
+

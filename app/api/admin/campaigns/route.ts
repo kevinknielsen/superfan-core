@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { createServiceClient } from "../../supabase";
 import { isAdmin } from "@/lib/security.server";
+import { createMetalPresale } from "@/lib/metal/create-presale";
 
 export const runtime = 'nodejs';
 
@@ -174,6 +175,140 @@ export async function POST(request: NextRequest) {
     const isDevelopment = process.env.NODE_ENV === 'development';
     return NextResponse.json({ 
       error: 'Failed to create campaign',
+      ...(isDevelopment && { details: errMsg })
+    }, { status: 500 });
+  }
+}
+
+// Update campaign (admin only) - used to activate campaigns and create Metal presales
+export async function PATCH(request: NextRequest) {
+  try {
+    // Verify admin authentication
+    const auth = await verifyUnifiedAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user is admin
+    if (!isAdmin(auth.userId)) {
+      return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
+    }
+
+    const body = await request.json() as {
+      campaign_id?: string;
+      status?: string;
+    };
+
+    if (!body.campaign_id || typeof body.campaign_id !== 'string') {
+      return NextResponse.json({ 
+        error: 'campaign_id is required' 
+      }, { status: 400 });
+    }
+
+    const campaignId = body.campaign_id;
+
+    // Get current campaign data
+    const { data: existingCampaign, error: fetchError } = await supabaseAny
+      .from('campaigns')
+      .select('id, title, status, club_id, ticket_price_cents, funding_goal_cents, metal_presale_id')
+      .eq('id', campaignId)
+      .single();
+
+    if (fetchError || !existingCampaign) {
+      return NextResponse.json({ 
+        error: 'Campaign not found' 
+      }, { status: 404 });
+    }
+
+    // If activating campaign (draft → active), create Metal presale
+    if (body.status === 'active' && existingCampaign.status === 'draft' && !existingCampaign.metal_presale_id) {
+      console.log(`[Campaigns API] Activating campaign ${campaignId}, creating Metal presale...`);
+
+      // Get club's token address
+      const { data: club, error: clubError } = await supabaseAny
+        .from('clubs')
+        .select('metal_token_address')
+        .eq('id', existingCampaign.club_id)
+        .single();
+
+      if (clubError || !club || !club.metal_token_address) {
+        return NextResponse.json({ 
+          error: 'Club must have a metal_token_address configured before activating campaigns. Please set up the club\'s Metal token first.' 
+        }, { status: 400 });
+      }
+
+      // Create Metal presale
+      const presaleResult = await createMetalPresale({
+        campaignId: campaignId,
+        tokenAddress: club.metal_token_address,
+        price: (existingCampaign.ticket_price_cents || 1800) / 100, // Convert cents to USDC
+        lockDuration: 90 * 24 * 60 * 60, // 90 days lock (standard for presales)
+      });
+
+      if (!presaleResult.success) {
+        console.error('[Campaigns API] Failed to create Metal presale:', presaleResult.error);
+        return NextResponse.json({ 
+          error: 'Failed to create Metal presale',
+          details: presaleResult.error
+        }, { status: 500 });
+      }
+
+      console.log(`[Campaigns API] Created Metal presale ${presaleResult.presaleId} for campaign ${campaignId}`);
+
+      // Update campaign with Metal presale ID and new status
+      const { data: updatedCampaign, error: updateError } = await supabaseAny
+        .from('campaigns')
+        .update({
+          status: body.status,
+          metal_presale_id: presaleResult.presaleId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', campaignId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('[Campaigns API] Error updating campaign:', updateError);
+        return NextResponse.json({ 
+          error: 'Failed to update campaign' 
+        }, { status: 500 });
+      }
+
+      console.log(`[Campaigns API] Activated campaign ${campaignId} with Metal presale ${presaleResult.presaleId}`);
+      return NextResponse.json(updatedCampaign);
+    }
+
+    // For other status updates, just update the campaign
+    if (body.status) {
+      const { data: updatedCampaign, error: updateError } = await supabaseAny
+        .from('campaigns')
+        .update({
+          status: body.status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', campaignId)
+        .select('*')
+        .single();
+
+      if (updateError) {
+        console.error('[Campaigns API] Error updating campaign:', updateError);
+        return NextResponse.json({ 
+          error: 'Failed to update campaign' 
+        }, { status: 500 });
+      }
+
+      console.log(`[Campaigns API] Updated campaign ${campaignId} status to ${body.status}`);
+      return NextResponse.json(updatedCampaign);
+    }
+
+    return NextResponse.json({ error: 'No updates specified' }, { status: 400 });
+
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Campaigns API] Unexpected error:', error);
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    return NextResponse.json({ 
+      error: 'Failed to update campaign',
       ...(isDevelopment && { details: errMsg })
     }, { status: 500 });
   }
