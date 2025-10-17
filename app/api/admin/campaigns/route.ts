@@ -237,15 +237,29 @@ export async function PATCH(request: NextRequest) {
         }, { status: 400 });
       }
 
+      // Calculate presale size based on funding goal
+      // Credits: 1 credit = $1 = 1 presale token
+      const fundingGoalUSDC = (existingCampaign.funding_goal_cents || 0) / 100;
+      const totalSupply = Math.ceil(fundingGoalUSDC * 1.5); // 50% buffer for oversubscription
+      
+      console.log(`[Campaigns API] Calculated presale supply:`, {
+        fundingGoalUSDC,
+        creditPrice: 1, // 1 credit = $1
+        minimumCreditsNeeded: fundingGoalUSDC,
+        totalSupply
+      });
+
       // Create Metal presale
+      // Price: $1 per token (matching 1 credit = $1 system)
       const presaleResult = await createMetalPresale({
         campaignId: campaignId,
         tokenAddress: club.metal_token_address,
-        price: (existingCampaign.ticket_price_cents || 1800) / 100, // Convert cents to USDC
+        price: 1, // $1 per presale token = 1 credit
+        totalSupply: totalSupply,
         lockDuration: 90 * 24 * 60 * 60, // 90 days lock (standard for presales)
       });
 
-      if (!presaleResult.success) {
+      if (presaleResult.success === false) {
         console.error('[Campaigns API] Failed to create Metal presale:', presaleResult.error);
         return NextResponse.json({ 
           error: 'Failed to create Metal presale',
@@ -268,13 +282,31 @@ export async function PATCH(request: NextRequest) {
         .single();
 
       if (updateError) {
-        console.error('[Campaigns API] Error updating campaign:', updateError);
+        // CRITICAL: Metal presale was created but DB update failed
+        // Log orphaned presale for manual recovery
+        console.error('[Campaigns API] ⚠️ ORPHANED PRESALE CREATED:', {
+          presaleId: presaleResult.presaleId,
+          campaignId: campaignId,
+          tokenAddress: club.metal_token_address,
+          error: updateError.message,
+          timestamp: new Date().toISOString(),
+          recovery_action: 'Manual intervention required - link presale to campaign or resolve presale on Metal'
+        });
+        
+        // TODO: Implement compensating action
+        // Options:
+        // 1. Call metal.resolvePresale(presaleResult.presaleId) to cancel/refund
+        // 2. Store in dead-letter queue for retry
+        // 3. Manual admin tool to link orphaned presales
+        
         return NextResponse.json({ 
-          error: 'Failed to update campaign' 
+          error: 'Failed to update campaign',
+          details: 'Metal presale created but database update failed. Please contact support.',
+          presale_id: presaleResult.presaleId // Include for recovery
         }, { status: 500 });
       }
 
-      console.log(`[Campaigns API] Activated campaign ${campaignId} with Metal presale ${presaleResult.presaleId}`);
+      console.log(`[Campaigns API] ✅ Activated campaign ${campaignId} with Metal presale ${presaleResult.presaleId}`);
       return NextResponse.json(updatedCampaign);
     }
 

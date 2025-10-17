@@ -9,13 +9,9 @@ export interface CreatePresaleParams {
   lockDuration?: number; // Lock duration in seconds
 }
 
-export interface CreatePresaleResult {
-  success: true;
-  presaleId: string;
-} | {
-  success: false;
-  error: string;
-}
+export type CreatePresaleResult = 
+  | { success: true; presaleId: string }
+  | { success: false; error: string };
 
 /**
  * Creates a Metal presale for a campaign
@@ -45,8 +41,8 @@ export async function createMetalPresale(
       id: campaignId, // Use campaign ID as presale ID for consistency
       tokenAddress,
       price,
-      ...(totalSupply && { totalSupply }),
-      ...(lockDuration && { lockDuration }),
+      ...(totalSupply !== undefined && { totalSupply }),
+      ...(lockDuration !== undefined && { lockDuration }),
     });
 
     if (!presale || !presale.id) {
