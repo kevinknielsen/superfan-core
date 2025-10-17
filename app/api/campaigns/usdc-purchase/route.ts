@@ -28,7 +28,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const body = await request.json();
+    const body = await request.json() as {
+      tx_hash: string;
+      club_id: string;
+      credit_amount: number;
+      campaign_id?: string;
+    };
     const { tx_hash, club_id, credit_amount, campaign_id } = body;
 
     // Validate inputs
@@ -44,8 +49,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Normalize tx_hash to always have 0x prefix
-    const normalizedTxHash = tx_hash.startsWith('0x') ? tx_hash : `0x${tx_hash}`;
+    // Normalize tx_hash to lowercase with 0x prefix for consistent deduplication
+    const normalizedTxHash = (tx_hash.startsWith('0x') ? tx_hash : `0x${tx_hash}`).toLowerCase();
 
     if (!club_id || typeof club_id !== 'string') {
       return NextResponse.json({ error: 'club_id is required' }, { status: 400 });
@@ -85,7 +90,7 @@ export async function POST(request: NextRequest) {
       });
     } catch (e) {
       return NextResponse.json(
-        { error: 'Transaction receipt not found yet. The transaction may still be pending. Please try again in a few moments.' },
+        { error: 'Transaction receipt not found yet. The transaction may still be pending. Please wait ~5 seconds and try again.' },
         { status: 400 }
       );
     }
@@ -115,15 +120,9 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get user's wallet address from auth (Farcaster custody address or connected wallet)
-    const userWalletAddress = auth.walletAddress?.toLowerCase();
-    if (!userWalletAddress) {
-      return NextResponse.json({ 
-        error: 'User wallet address not found' 
-      }, { status: 400 });
-    }
-
-    // Decode each log and find the Transfer from the user's wallet
+    // Decode the USDC Transfer event from the transaction
+    // We'll find the transfer to the club's wallet and validate it
+    let from: string | null = null;
     let to: string | null = null;
     let actualAmount: bigint | null = null;
     
@@ -134,15 +133,15 @@ export async function POST(request: NextRequest) {
           data: log.data,
           topics: log.topics,
         });
-        // @ts-expect-error viem types infer tuple
-        const from = decoded.args.from as string;
+        const transferFrom = (decoded.args as any).from as string;
+        const transferTo = (decoded.args as any).to as string;
+        const transferAmount = (decoded.args as any).value as bigint;
         
-        // Match the transfer from the authenticated user's wallet
-        if (from.toLowerCase() === userWalletAddress) {
-          // @ts-expect-error viem types infer tuple
-          to = decoded.args.to as string;
-          // @ts-expect-error viem types infer tuple
-          actualAmount = decoded.args.value as bigint;
+        // Find the transfer that goes to the club's wallet
+        if (transferTo.toLowerCase() === club.usdc_wallet_address.toLowerCase()) {
+          from = transferFrom;
+          to = transferTo;
+          actualAmount = transferAmount;
           break;
         }
       } catch {
@@ -151,20 +150,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!to || !actualAmount) {
+    if (!from || !to || !actualAmount) {
       return NextResponse.json({ 
-        error: 'No USDC transfer from your wallet found in transaction' 
-      }, { status: 400 });
-    }
-
-    // Verify recipient is the club's wallet
-    if (to.toLowerCase() !== club.usdc_wallet_address.toLowerCase()) {
-      console.error('[USDC Purchase] Recipient mismatch:', {
-        expected: club.usdc_wallet_address,
-        actual: to
-      });
-      return NextResponse.json({ 
-        error: 'Transaction not sent to club wallet' 
+        error: 'No USDC transfer to club wallet found in transaction' 
       }, { status: 400 });
     }
 
@@ -182,9 +170,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[USDC Purchase] Transaction verified:', {
+      sender: from,
       recipient: to,
       amount: credit_amount,
-      txHash: tx_hash
+      txHash: normalizedTxHash
     });
 
     // Create credit purchase record

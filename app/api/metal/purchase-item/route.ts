@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 import crypto from "node:crypto";
+import { metal } from "@/lib/metal/server";
 
 // Proper types for response validation
 interface UserRecord {
@@ -16,6 +17,7 @@ interface TierRewardRecord {
   ticket_cost: number | null;
   is_ticket_campaign: boolean;
   campaign_id: string | null;
+  club_id: string;
 }
 
 interface RewardClaimRecord {
@@ -72,6 +74,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'tx_hash is required for USDC transaction tracking' }, { status: 400 });
     }
 
+    // Validate tx_hash format: must be 32-byte hex string (64 hex chars with or without 0x prefix)
+    const txHashRegex = /^(0x)?[a-fA-F0-9]{64}$/;
+    if (!txHashRegex.test(tx_hash)) {
+      return NextResponse.json({ 
+        error: 'tx_hash must be a 32-byte hex string (64 hex characters, optionally prefixed with 0x)' 
+      }, { status: 400 });
+    }
+
+    // Normalize tx_hash to lowercase with 0x prefix for consistent deduplication
+    const normalizedTxHash = (tx_hash.startsWith('0x') ? tx_hash : `0x${tx_hash}`).toLowerCase();
+
     if (original_price_cents !== undefined && (!Number.isInteger(original_price_cents) || original_price_cents < 0)) {
       return NextResponse.json({ error: 'original_price_cents must be a non-negative integer' }, { status: 400 });
     }
@@ -102,12 +115,99 @@ export async function POST(request: NextRequest) {
     // Get tier reward info
     const { data: tierReward, error: tierRewardError } = await supabaseAny
       .from('tier_rewards')
-      .select('id, title, tier, reward_type, ticket_cost, is_ticket_campaign, campaign_id')
+      .select('id, title, tier, reward_type, ticket_cost, is_ticket_campaign, campaign_id, club_id')
       .eq('id', tier_reward_id)
       .single() as { data: TierRewardRecord | null; error: any };
 
     if (tierRewardError || !tierReward) {
       return NextResponse.json({ error: 'Tier reward not found' }, { status: 404 });
+    }
+
+    // Verify tier reward belongs to the specified club (prevent cross-club claims)
+    if (tierReward.club_id !== club_id) {
+      return NextResponse.json({ 
+        error: 'Tier reward does not belong to the specified club' 
+      }, { status: 400 });
+    }
+
+    // CRITICAL: Verify the USDC transaction through Metal's server API
+    // This ensures the purchase actually happened and prevents fraudulent claims
+    if (metal_holder_id) {
+      try {
+        console.log('[Metal Purchase] Verifying transaction through Metal API:', {
+          holder: metal_holder_id,
+          txHash: normalizedTxHash
+        });
+
+        // Fetch holder's transactions from Metal to verify this purchase
+        const holderTransactions = await metal.getTransactions(metal_holder_id);
+        
+        if (!holderTransactions || !Array.isArray(holderTransactions)) {
+          console.error('[Metal Purchase] Failed to fetch holder transactions');
+          return NextResponse.json({ 
+            error: 'Unable to verify transaction with Metal. Please try again.' 
+          }, { status: 500 });
+        }
+
+        // Find the transaction matching this tx_hash
+        const matchingTransaction = holderTransactions.find((tx: any) => 
+          tx.transactionHash?.toLowerCase() === normalizedTxHash.toLowerCase()
+        );
+
+        if (!matchingTransaction) {
+          console.error('[Metal Purchase] Transaction not found in Metal holder records:', {
+            txHash: normalizedTxHash,
+            holderTransactionsCount: holderTransactions.length
+          });
+          return NextResponse.json({ 
+            error: 'Transaction not found in Metal records. The transaction may still be processing or was not completed through Metal.' 
+          }, { status: 400 });
+        }
+
+        // Verify the transaction amount matches expected
+        // Metal amounts are typically in the token's native units
+        // For USDC (6 decimals), convert cents to USDC
+        const expectedUSDC = amount_paid_cents / 100;
+        const actualAmount = parseFloat(matchingTransaction.amount || '0');
+        
+        // Allow for small floating point differences (within 0.01 USDC)
+        if (Math.abs(actualAmount - expectedUSDC) > 0.01) {
+          console.error('[Metal Purchase] Amount mismatch:', {
+            expected: expectedUSDC,
+            actual: actualAmount,
+            difference: Math.abs(actualAmount - expectedUSDC)
+          });
+          return NextResponse.json({ 
+            error: `Transaction amount mismatch: expected ${expectedUSDC} USDC, got ${actualAmount} USDC` 
+          }, { status: 400 });
+        }
+
+        // Verify transaction was successful
+        if (matchingTransaction.status && matchingTransaction.status !== 'success' && matchingTransaction.status !== 'completed') {
+          console.error('[Metal Purchase] Transaction not successful:', {
+            status: matchingTransaction.status
+          });
+          return NextResponse.json({ 
+            error: `Transaction status is ${matchingTransaction.status}, not successful` 
+          }, { status: 400 });
+        }
+
+        console.log('[Metal Purchase] ✅ Transaction verified through Metal:', {
+          txHash: normalizedTxHash,
+          amount: actualAmount,
+          status: matchingTransaction.status
+        });
+
+      } catch (error) {
+        console.error('[Metal Purchase] Error verifying transaction with Metal:', error);
+        return NextResponse.json({ 
+          error: 'Failed to verify transaction with Metal API. Please try again.' 
+        }, { status: 500 });
+      }
+    } else {
+      // If no metal_holder_id provided, we cannot verify through Metal
+      console.warn('[Metal Purchase] No metal_holder_id provided - skipping Metal verification');
+      // Note: We could add additional on-chain verification here as a fallback
     }
 
     // Generate secure access code
@@ -117,7 +217,9 @@ export async function POST(request: NextRequest) {
 
     // Detect if this is a credit/ticket campaign item
     const isCreditCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
-    const ticketsPurchased = isCreditCampaign ? (tierReward.ticket_cost || 0) : 0;
+    // For ticket campaigns: record ticket_cost as tickets purchased
+    // For item purchases: record 1 item purchased (not inflated by ticket_cost)
+    const ticketsPurchased = isCreditCampaign ? (tierReward.ticket_cost || 0) : 1;
 
     // Create reward claim record
     const claimData = {
@@ -131,7 +233,7 @@ export async function POST(request: NextRequest) {
       original_price_cents: original_price_cents || amount_paid_cents,
       paid_price_cents: amount_paid_cents,
       discount_applied_cents: discount_applied_cents || 0,
-      usdc_tx_hash: tx_hash,
+      usdc_tx_hash: normalizedTxHash,
       payment_method: 'metal_presale',
       upgrade_transaction_id: null,
       upgrade_amount_cents: null,
@@ -163,11 +265,11 @@ export async function POST(request: NextRequest) {
         const { data: existingClaim } = await supabaseAny
           .from('reward_claims')
           .select('id, access_code')
-          .eq('usdc_tx_hash', tx_hash)
+          .eq('usdc_tx_hash', normalizedTxHash)
           .single() as { data: RewardClaimRecord | null; error: any };
         
         if (existingClaim) {
-          console.log(`Metal item purchase already recorded for tx: ${tx_hash}`);
+          console.log(`Metal item purchase already recorded for tx: ${normalizedTxHash}`);
           return NextResponse.json({ 
             success: true,
             message: 'Purchase already recorded',

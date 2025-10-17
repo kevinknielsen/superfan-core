@@ -24,16 +24,16 @@ import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/u
 import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
 import { useFarcaster } from '@/lib/farcaster-context';
 import { navigateToCheckout } from '@/lib/navigation-utils';
-import { useSendUSDC } from '@/hooks/use-usdc-payment';
 import { useToast } from '@/hooks/use-toast';
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
-import { useMetalHolder, useBuyPresale } from '@/hooks/use-metal-holder';
+import { useMetalHolder, useBuyPresale, useBuyTokens } from '@/hooks/use-metal-holder';
 import { useUnifiedAuth } from '@/lib/unified-auth-context';
 import SpendPointsModal from './spend-points-modal';
 
 interface UnifiedPointsWalletProps {
   clubId: string;
   clubName: string;
+  clubTokenAddress?: string; // Metal token address for the club (required for direct token purchases)
   showPurchaseOptions?: boolean;
   showTransferOptions?: boolean;
   className?: string;
@@ -260,7 +260,8 @@ function StatusProgressSection({
 
 export default function UnifiedPointsWallet({ 
   clubId, 
-  clubName, 
+  clubName,
+  clubTokenAddress, // Token address for direct token purchases
   showPurchaseOptions = false,
   showTransferOptions = false,
   className = "",
@@ -271,15 +272,13 @@ export default function UnifiedPointsWallet({
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const { isInWalletApp, openUrl } = useFarcaster();
-  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess, error: usdcError } = useSendUSDC();
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [pendingCreditAmount, setPendingCreditAmount] = useState<number | null>(null);
-  const processedUsdcTxRef = useRef<string | null>(null);
   const { toast } = useToast();
   
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
   const { mutate: buyPresale, isPending: isBuyingPresale } = useBuyPresale();
+  const { mutate: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess } = useBuyTokens();
 
   // Use the hook instead of manual fetch
   const { 
@@ -302,30 +301,17 @@ export default function UnifiedPointsWallet({
     [creditBalances]
   );
 
-  // Process Metal Presale purchase when USDC transaction succeeds
+  // Process Metal token purchase success
   useEffect(() => {
-    if (!isUSDCSuccess || !usdcTxHash || !pendingCreditAmount || !user || !clubId) return;
+    if (!isBuyTokensSuccess || !buyTokensData || !user || !clubId) return;
     
-    // Prevent duplicate processing
-    if (processedUsdcTxRef.current === usdcTxHash) {
-      return;
-    }
-    
-    // Mark as processed immediately to prevent duplicate calls
-    processedUsdcTxRef.current = usdcTxHash;
-    
-    const processMetalPurchase = async () => {
+    const recordPurchase = async () => {
       try {
-        // Step 1: Buy presale with Metal
-        await buyPresale({
-          user,
-          campaignId: clubId, // Use clubId as campaign identifier for direct purchases
-          amount: pendingCreditAmount,
-        });
-
-        // Step 2: Record purchase in our database
+        // Record purchase in our database
         const { getAuthHeaders } = await import('@/app/api/sdk');
         const authHeaders = await getAuthHeaders();
+
+        const tokenData = buyTokensData as any; // Type assertion for Metal API response
 
         const response = await fetch('/api/metal/record-purchase', {
           method: 'POST',
@@ -335,9 +321,9 @@ export default function UnifiedPointsWallet({
           },
           body: JSON.stringify({
             club_id: clubId,
-            campaign_id: clubId, // Direct credit purchase uses clubId
-            credit_amount: pendingCreditAmount,
-            tx_hash: usdcTxHash,
+            // No campaign_id for direct token purchases
+            credit_amount: Math.floor(tokenData.buyAmount || 0), // Tokens received
+            tx_hash: tokenData.transactionHash,
             metal_holder_id: metalHolder.data?.id,
             metal_holder_address: metalHolder.data?.address,
           }),
@@ -351,76 +337,39 @@ export default function UnifiedPointsWallet({
         // Success!
         toast({
           title: "Purchase Successful! 🎉",
-          description: `${pendingCreditAmount} credits added to your account`,
+          description: `${Math.floor(tokenData.buyAmount || 0)} credits added to your account`,
         });
-        setPendingCreditAmount(null);
         setIsPurchasing(false);
         refetch(); // Reload wallet data
       } catch (error) {
-        // Reset transaction tracking to allow retry
-        processedUsdcTxRef.current = null;
-
-        console.error('Metal purchase error:', error);
-        
-        // Persist failed transaction for recovery
-        try {
-          if (typeof window !== 'undefined' && usdcTxHash) {
-            const failedTx = {
-              txHash: usdcTxHash,
-              creditAmount: pendingCreditAmount,
-              timestamp: Date.now(),
-              error: error instanceof Error ? error.message : 'Unknown error'
-            };
-            localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
-          }
-        } catch (storageError) {
-          console.error('Failed to persist transaction to localStorage:', storageError);
-        }
-        
+        console.error('[Metal Purchase] Error recording:', error);
         toast({
-          title: "Purchase Failed",
-          description: error instanceof Error 
-            ? error.message 
-            : `Failed to process purchase. Transaction hash: ${usdcTxHash}. Please contact support.`,
-          variant: "destructive",
+          title: "Purchase Completed",
+          description: "Tokens purchased but recording failed. Please refresh.",
+          variant: "destructive"
         });
-        setPendingCreditAmount(null);
         setIsPurchasing(false);
       }
     };
-    
-    processMetalPurchase();
-  }, [isUSDCSuccess, usdcTxHash, pendingCreditAmount, user, clubId, metalHolder.data, buyPresale, toast, refetch]);
 
-  // Reset state on USDC errors (user rejection, RPC/contract errors)
-  useEffect(() => {
-    if (!usdcError) return;
-    toast({
-      title: 'USDC Transfer Failed',
-      description: usdcError instanceof Error ? usdcError.message : 'Transaction was not sent',
-      variant: 'destructive',
-    });
-    setPendingCreditAmount(null);
-    setIsPurchasing(false);
-    processedUsdcTxRef.current = null;
-  }, [usdcError, toast]);
+    recordPurchase();
+  }, [isBuyTokensSuccess, buyTokensData, user, clubId, metalHolder.data, toast, refetch]);
 
   // Handle credit purchase flow
   const handleCreditPurchase = async (creditAmount: number) => {
     try {
-      if (isPurchasing) return;
+      if (isPurchasing || isBuyingTokens) return;
       setIsPurchasing(true);
       
-      // Wallet app users: Metal Presale flow with USDC
+      // Wallet app users: Metal token buying flow
       if (isInWalletApp) {
-        if (!metalHolder.data?.address) {
-          throw new Error('Metal holder address not available');
+        if (!metalHolder.data?.id) {
+          throw new Error('Metal holder not available');
         }
         
-        // Validate Metal holder address
-        const { isAddress } = await import('viem');
-        if (!isAddress(metalHolder.data.address)) {
-          throw new Error('Invalid Metal holder address');
+        // Validate token address is provided
+        if (!clubTokenAddress) {
+          throw new Error('Club token address not configured. Please contact support.');
         }
         
         // Validate amount
@@ -428,16 +377,15 @@ export default function UnifiedPointsWallet({
           throw new Error('Invalid credit amount');
         }
         
-        // Store pending amount for processing after confirmation
-        setPendingCreditAmount(creditAmount);
-        
-        // Send USDC to Metal holder address
-        sendUSDC({
-          toAddress: metalHolder.data.address as `0x${string}`,
-          amountUSDC: creditAmount
+        // Buy tokens directly from Metal
+        buyTokens({
+          holderId: metalHolder.data.id,
+          tokenAddress: clubTokenAddress,
+          usdcAmount: creditAmount,
+          swapFeeBps: 100, // 1% fee (optional, adjust as needed)
         });
         
-        // Note: Processing continues in useEffect when isUSDCSuccess triggers
+        // Note: Processing continues in useEffect when isBuyTokensSuccess triggers
         return;
       }
       
@@ -467,8 +415,9 @@ export default function UnifiedPointsWallet({
           throw new Error('Missing checkout URL');
         }
         
+        // Reset state before redirect to avoid stuck state if navigation is aborted
+        setIsPurchasing(false);
         await navigateToCheckout(url, isInWalletApp, openUrl);
-        // Note: Page will redirect, so state reset not critical but included for completeness
       } else {
         const errorData = await purchaseResponse.json() as any;
         throw new Error(errorData.error || 'Failed to start credit purchase');
@@ -476,9 +425,10 @@ export default function UnifiedPointsWallet({
     } catch (error) {
       console.error('Credit purchase error:', error);
       toast({ title: 'Purchase Failed', description: error instanceof Error ? error.message : 'Failed to start credit purchase', variant: 'destructive' });
+      setIsPurchasing(false);
     } finally {
-      // Always reset state unless we're waiting for Metal/USDC transaction
-      if (!isInWalletApp || !metalHolder.data?.address) {
+      // Reset state for web users; Metal users reset in useEffect after transaction
+      if (!isInWalletApp) {
         setIsPurchasing(false);
       }
     }
@@ -594,43 +544,37 @@ export default function UnifiedPointsWallet({
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                  disabled={isPurchasing || isBuyingTokens || isBuyingPresale}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {isUSDCLoading && pendingCreditAmount === 25
-                    ? 'Sending...'
-                    : isBuyingPresale && pendingCreditAmount === 25
-                      ? 'Processing...'
-                      : '25'}
+                  {(isBuyingTokens || isBuyingPresale)
+                    ? 'Buying...'
+                    : '25'}
                 </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                  disabled={isPurchasing || isBuyingTokens || isBuyingPresale}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {isUSDCLoading && pendingCreditAmount === 100
-                    ? 'Sending...'
-                    : isBuyingPresale && pendingCreditAmount === 100
-                      ? 'Processing...'
-                      : '100'}
+                  {(isBuyingTokens || isBuyingPresale)
+                    ? 'Buying...'
+                    : '100'}
                 </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                  disabled={isPurchasing || isBuyingTokens || isBuyingPresale}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {isUSDCLoading && pendingCreditAmount === 250
-                    ? 'Sending...'
-                    : isBuyingPresale && pendingCreditAmount === 250
-                      ? 'Processing...'
-                      : '250'}
+                  {(isBuyingTokens || isBuyingPresale)
+                    ? 'Buying...'
+                    : '250'}
                 </Button>
                 </motion.div>
               </div>

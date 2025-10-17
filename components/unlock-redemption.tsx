@@ -42,33 +42,6 @@ import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
 
-// Helper to get current quarter end date in UTC
-const getQuarterEndDate = () => {
-  const now = new Date();
-  const currentYear = now.getUTCFullYear();
-  const currentMonth = now.getUTCMonth(); // 0-based
-  const currentQuarter = Math.floor(currentMonth / 3) + 1; // 1-4
-  
-  // Calculate last day of current quarter
-  const quarterEndMonth = currentQuarter * 3; // 3, 6, 9, 12
-  // Create date using UTC - day 0 means last day of previous month
-  const quarterEndDate = new Date(Date.UTC(currentYear, quarterEndMonth, 0));
-  
-  return quarterEndDate;
-};
-
-// Helper to format quarter end date consistently in UTC
-const formatQuarterEnd = () => {
-  const quarterEnd = getQuarterEndDate();
-  const now = new Date();
-  return quarterEnd.toLocaleDateString('en-US', { 
-    timeZone: 'UTC',
-    month: 'short', 
-    day: 'numeric',
-    year: quarterEnd.getUTCFullYear() !== now.getUTCFullYear() ? 'numeric' : undefined 
-  });
-};
-
 // Extended unlock type with tier reward specific fields
 interface ClaimOption {
   upgrade?: {
@@ -1321,7 +1294,6 @@ export default function UnlockRedemption({
                 variant="outline"
                 onClick={() => setSelectedUnlock(null)}
                 className="sm:w-auto w-full"
-                disabled={isUSDCLoading}
               >
                 Cancel
               </Button>

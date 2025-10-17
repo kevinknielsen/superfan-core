@@ -31,7 +31,7 @@ export async function PUT(
     // Get club details and check ownership/admin permissions
     const { data: club, error: clubError } = await supabase
       .from('clubs')
-      .select('id, owner_id, point_cost_cents, point_settle_cents, guardrail_min_sell, guardrail_max_sell, guardrail_min_settle, guardrail_max_settle')
+      .select('id, owner_id, point_sell_cents, point_settle_cents, guardrail_min_sell, guardrail_max_sell, guardrail_min_settle, guardrail_max_settle')
       .eq('id', clubId)
       .single();
 

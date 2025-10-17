@@ -38,7 +38,57 @@ export function useBuyPresale() {
       if (!data.user.id) {
         throw new Error("User ID is required for presale purchase");
       }
+      if (!metalHolder.data?.id) {
+        throw new Error("Metal holder not initialized");
+      }
       return metal.buyPresale(data.user.id, data.campaignId, data.amount);
+    },
+  });
+}
+
+/**
+ * Hook for buying tokens directly from Metal (not a presale)
+ * Uses Metal's token trading API: POST /holder/:holderId/buy
+ * See: https://docs.metal.build/buy-sell-tokens
+ */
+export function useBuyTokens() {
+  const metalHolder = useMetalHolder();
+
+  return useMutation({
+    mutationKey: ["buy tokens", metalHolder.data?.id],
+    mutationFn: async (data: {
+      holderId: string;
+      tokenAddress: string;
+      usdcAmount: number;
+      swapFeeBps?: number;
+    }) => {
+      if (!metalHolder.data?.id) {
+        throw new Error("Metal holder not initialized");
+      }
+      
+      const response = await fetch(
+        `https://api.metal.build/holder/${data.holderId}/buy`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.NEXT_PUBLIC_METAL_PUBLIC_KEY || '',
+          },
+          body: JSON.stringify({
+            tokenAddress: data.tokenAddress,
+            usdcAmount: data.usdcAmount,
+            swapFeeBps: data.swapFeeBps,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to buy tokens' }));
+        throw new Error(error.message || 'Failed to buy tokens');
+      }
+
+      const result = await response.json();
+      return result;
     },
   });
 }
