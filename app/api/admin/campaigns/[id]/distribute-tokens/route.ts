@@ -67,7 +67,7 @@ export async function POST(
     // Get all Stripe purchases for this campaign that haven't received tokens yet
     const { data: stripePurchases, error: purchasesError } = await supabaseAny
       .from('credit_purchases')
-      .select('id, user_id, credits_purchased, stripe_payment_intent_id')
+      .select('id, user_id, credits_purchased, stripe_payment_intent_id, metadata')
       .eq('campaign_id', campaignId)
       .eq('payment_method', 'stripe')
       .eq('status', 'completed');
@@ -86,17 +86,38 @@ export async function POST(
       });
     }
 
-    console.log(`[Token Distribution] Distributing tokens for ${stripePurchases.length} Stripe purchasers...`);
+    // Filter out purchases that already have tokens distributed
+    const pendingDistributions = stripePurchases.filter(
+      (p: any) => !p.metadata?.tokens_distributed
+    );
+
+    if (pendingDistributions.length === 0) {
+      return NextResponse.json({ 
+        message: 'All Stripe purchases have already received tokens',
+        distributed: 0,
+        already_distributed: stripePurchases.length
+      });
+    }
+
+    console.log(`[Token Distribution] Distributing tokens for ${pendingDistributions.length} Stripe purchasers...`);
 
     const results = {
-      total: stripePurchases.length,
+      total: pendingDistributions.length,
       successful: 0,
       failed: 0,
       errors: [] as any[]
     };
 
+    // Validate Metal secret key before proceeding
+    const metalSecretKey = process.env.METAL_SECRET_KEY;
+    if (!metalSecretKey || metalSecretKey.trim().length === 0) {
+      return NextResponse.json({ 
+        error: 'METAL_SECRET_KEY environment variable is not configured' 
+      }, { status: 500 });
+    }
+
     // Distribute to each Stripe purchaser
-    for (const purchase of stripePurchases) {
+    for (const purchase of pendingDistributions) {
       try {
         console.log(`[Token Distribution] Distributing ${purchase.credits_purchased} tokens to user ${purchase.user_id}`);
 
@@ -107,7 +128,7 @@ export async function POST(
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-api-key': process.env.METAL_SECRET_KEY || '',
+              'x-api-key': metalSecretKey,
             },
             body: JSON.stringify({
               sendToId: purchase.user_id,
@@ -126,7 +147,7 @@ export async function POST(
           .from('credit_purchases')
           .update({ 
             metadata: { 
-              ...purchase.metadata, 
+              ...(purchase.metadata || {}),  // Safely spread existing metadata
               tokens_distributed: true,
               distributed_at: new Date().toISOString()
             }
