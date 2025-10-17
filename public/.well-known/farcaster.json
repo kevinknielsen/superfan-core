@@ -5,9 +5,9 @@
     "signature": "MHg2MTBjMjkyNmM5Zjk4MDZiOTJiNzQ1YmUwMTNiODNlYzhhMmU0YmE0ZWFjYTgwNDlmN2YzOTkyYzM1ZjVmNWQwMDRiOWI5MmU2NDMyOTkyZWFhZTQ4MWZmYzc4YWM5NDE0NTQyM2RiZGQwZDEyNWEyMzNlMjM3ZTVjNzc3NjI2MTFj"
   },
   "baseBuilder": {
-    "allowedAddresses": []
+    "allowedAddresses": ["0x84d572a4c4Ba9164a908c1DD2cD584FDC156E711"]
   },
-  "miniapp": {
+  "frame": {
     "version": "1",
     "name": "Superfan",
     "imageUrl": "https://superfan.one/og-image.png",
@@ -18,7 +18,7 @@
     "webhookUrl": "https://superfan.one/api/farcaster/webhook",
     "buttonTitle": "🎵 Invest In Culture",
     "subtitle": "The Loyalty Rail for Culture",
-    "description": "Participate in campaignsto support artists and creators.",
+    "description": "Join artist clubs, earn points by engaging online and IRL, and help launch vinyl, merch, and presales.",
     "screenshotUrls": [
       "https://superfan.one/og-image.png"
     ],
@@ -30,6 +30,7 @@
     "ogDescription": "Join artist clubs, earn points by engaging, and power campaigns.",
     "ogImageUrl": "https://superfan.one/og-image.png",
     "castShareUrl": "https://superfan.one",
-    "noindex": false
+    "noindex": false,
+    "canonicalDomain": "superfan.one"
   }
 } 
