@@ -24,30 +24,29 @@ export async function GET(request: NextRequest) {
     baseBuilder: {
       allowedAddresses: ["0x84d572a4c4Ba9164a908c1DD2cD584FDC156E711"]
     },
-    miniapp: {
+    frame: {
       version: "1",
       name: "Superfan",
       imageUrl: `${baseUrl}/og-image.png`,
       homeUrl: baseUrl,
-      iconUrl: `${baseUrl}/favicon.png`,
+      iconUrl: `${baseUrl}/app-icon.png`,
       splashImageUrl: `${baseUrl}/splash-new.png`,
       splashBackgroundColor: "#0E0E14",
       webhookUrl: `${baseUrl}/api/farcaster/webhook`,
       buttonTitle: "🎵 Invest In Culture",
       subtitle: "The Loyalty Rail for Culture",
-      description: "Superfan turns fan engagement into points, tiers, and campaigns. Join clubs, earn status by showing up online and IRL, and help launch vinyl, merch, and presales.",
+      description: "Join artist clubs, earn points by engaging online and IRL, and help launch vinyl, merch, and presales.",
       screenshotUrls: [
         `${baseUrl}/og-image.png`
       ],
       primaryCategory: "music",
-      tags: ["music", "clubs", "membership", "points", "campaigns"],
+      tags: ["music", "clubs", "membership", "points", "superfan"],
       heroImageUrl: `${baseUrl}/og-image.png`,
       tagline: "Invest in Culture",
-      ogTitle: "Superfan: Culture Memberships",
+      ogTitle: "Superfan",
       ogDescription: "Join artist clubs, earn points by engaging, and power campaigns.",
       ogImageUrl: `${baseUrl}/og-image.png`,
-      noindex: "false",
-      castShareUrl: baseUrl
+      canonicalDomain: "superfan.one"
     }
   };
   
