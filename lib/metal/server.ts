@@ -1,5 +1,5 @@
 import "server-only";
-import { MetalPresalesServer } from "metal-presale";
+import { MetalPresalesServer } from "metal-presale/server";
 
 let metalServer: MetalPresalesServer | null = null;
 

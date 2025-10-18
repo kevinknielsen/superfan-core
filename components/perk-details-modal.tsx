@@ -77,6 +77,7 @@ export default function PerkDetailsModal({
 }: PerkDetailsModalProps) {
   const { toast } = useToast();
   const [isResending, setIsResending] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
 
   if (!isOpen || !perk) return null;
 
@@ -411,16 +412,25 @@ export default function PerkDetailsModal({
             {isPreviewMode || !isActuallyRedeemed ? (
               // Preview mode - trigger purchase for credit campaigns
               <Button
-                onClick={() => {
+                onClick={async () => {
+                  if (isAdding) return; // Prevent double clicks
+                  setIsAdding(true);
+                  
                   onClose(); // Close modal first
                   if (isCreditCampaignMetadata(perk.metadata) && onPurchase) {
-                    onPurchase(); // Trigger add to cart flow after modal closes
+                    await Promise.resolve(onPurchase()); // Trigger add to cart flow after modal closes
                   }
+                  
+                  // Reset after brief delay to allow re-adding
+                  setTimeout(() => setIsAdding(false), 500);
                 }}
+                disabled={isAdding}
                 size="lg"
-                className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
+                className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl disabled:opacity-50"
               >
-                {isCreditCampaignMetadata(perk.metadata) ? (
+                {isAdding ? (
+                  'Adding...'
+                ) : isCreditCampaignMetadata(perk.metadata) ? (
                   'Add to Cart'
                 ) : (
                   'Close Preview'

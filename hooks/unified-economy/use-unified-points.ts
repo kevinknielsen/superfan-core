@@ -207,13 +207,21 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
       queryKey: ['spending-history', clubId, limit],
       queryFn: async () => {
         const authHeaders = await getAuthHeaders();
-        const response = await fetch(`/api/points/spend?clubId=${clubId}&limit=${limit}`, {
-          headers: authHeaders
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch spending history');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        
+        try {
+          const response = await fetch(`/api/points/spend?clubId=${clubId}&limit=${limit}`, {
+            headers: authHeaders,
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            throw new Error('Failed to fetch spending history');
+          }
+          return response.json();
+        } finally {
+          clearTimeout(timeout);
         }
-        return response.json();
       },
       enabled: options?.enabled !== false && !!clubId,
     });
@@ -225,13 +233,21 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
       queryKey: ['transfer-history', clubId, limit],
       queryFn: async () => {
         const authHeaders = await getAuthHeaders();
-        const response = await fetch(`/api/points/transfer?clubId=${clubId}&limit=${limit}`, {
-          headers: authHeaders
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch transfer history');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        
+        try {
+          const response = await fetch(`/api/points/transfer?clubId=${clubId}&limit=${limit}`, {
+            headers: authHeaders,
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            throw new Error('Failed to fetch transfer history');
+          }
+          return response.json();
+        } finally {
+          clearTimeout(timeout);
         }
-        return response.json();
       },
       enabled: options?.enabled !== false && !!clubId,
     });

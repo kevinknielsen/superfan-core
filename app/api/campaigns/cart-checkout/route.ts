@@ -7,8 +7,8 @@ import { createHash } from "crypto";
 // Type assertion for enhanced schema features not in generated types
 const supabaseAny = supabase as any;
 
-// Resilient base URL resolution - returns null if not configured
-function resolveBaseUrl(): string | null {
+// Resilient base URL resolution
+function resolveBaseUrl(): string {
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
   if (explicit) return explicit;
 
@@ -19,12 +19,30 @@ function resolveBaseUrl(): string | null {
     return 'https://superfan.one';
   }
 
-  // Return null instead of localhost fallback to surface configuration issues
-  if (process.env.NODE_ENV === 'production') {
-    return null;
+  return 'http://localhost:3000';
+}
+
+// Calculate discount based on user tier
+function getDiscountPercentage(userTier: string, tierReward: any): number {
+  const getTierRank = (tier: string): number => {
+    const ranks = { cadet: 0, resident: 1, headliner: 2, superfan: 3 };
+    return ranks[tier as keyof typeof ranks] || 0;
+  };
+
+  const userRank = getTierRank(userTier);
+  const rewardRank = getTierRank(tierReward.tier);
+  
+  if (userRank < rewardRank) {
+    return 0;
   }
 
-  return 'http://localhost:3000';
+  switch (userTier) {
+    case 'superfan': return 40;
+    case 'headliner': return 30;
+    case 'resident': return 20;
+    case 'cadet': return 10;
+    default: return 0;
+  }
 }
 
 /**
@@ -32,11 +50,6 @@ function resolveBaseUrl(): string | null {
  * Create a unified Stripe checkout session for cart items (credits + tier rewards)
  */
 export async function POST(request: NextRequest) {
-  const baseUrl = resolveBaseUrl();
-  if (!baseUrl) {
-    return NextResponse.json({ error: 'BASE_URL is not configured' }, { status: 500 });
-  }
-
   try {
     // Get authenticated user
     const auth = await verifyUnifiedAuth(request);
@@ -75,6 +88,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'items must be an array' }, { status: 400 });
     }
 
+    // Validate each item in the array
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      
+      if (!item || typeof item !== 'object') {
+        return NextResponse.json({ 
+          error: `Invalid item at index ${i}: must be an object` 
+        }, { status: 400 });
+      }
+      
+      if (!item.tier_reward_id || typeof item.tier_reward_id !== 'string') {
+        return NextResponse.json({ 
+          error: `Invalid item at index ${i}: tier_reward_id is required and must be a string` 
+        }, { status: 400 });
+      }
+      
+      if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+        return NextResponse.json({ 
+          error: `Invalid item at index ${i} (tier_reward_id: ${item.tier_reward_id}): quantity must be a positive integer` 
+        }, { status: 400 });
+      }
+    }
+
     if (total_credits === 0 && items.length === 0) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     }
@@ -103,6 +139,55 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Club not found' }, { status: 404 });
     }
 
+    // Get user's actual earned tier from database (for server-side discount calculation)
+    const { data: userTierData, error: tierError } = await supabaseAny
+      .rpc('check_tier_qualification', {
+        p_user_id: user.id,
+        p_club_id: club_id,
+        p_target_tier: 'superfan',
+        p_rolling_window_days: 60
+      });
+      
+    if (tierError) {
+      console.error('Error checking user tier:', tierError);
+      return NextResponse.json({ error: 'Failed to validate user tier' }, { status: 500 });
+    }
+    
+    const userTier = userTierData?.[0]?.effective_tier || userTierData?.[0]?.earned_tier || 'cadet';
+    
+    // Validate and normalize redirect URLs
+    const serverOrigin = resolveBaseUrl();
+    const validateAndNormalizeUrl = (urlInput: string, fieldName: string): string => {
+      // Accept only relative paths or same-origin URLs
+      if (urlInput.startsWith('/')) {
+        // Relative path - build full URL
+        return new URL(urlInput, serverOrigin).toString();
+      }
+      
+      // Full URL - verify it matches server origin
+      try {
+        const url = new URL(urlInput);
+        const serverUrl = new URL(serverOrigin);
+        if (url.origin !== serverUrl.origin) {
+          throw new Error(`${fieldName} must be same origin as server (got ${url.origin}, expected ${serverUrl.origin})`);
+        }
+        return url.toString();
+      } catch (error) {
+        throw new Error(`Invalid ${fieldName}: ${error instanceof Error ? error.message : 'malformed URL'}`);
+      }
+    };
+    
+    let validatedSuccessUrl: string;
+    let validatedCancelUrl: string;
+    try {
+      validatedSuccessUrl = validateAndNormalizeUrl(success_url, 'success_url');
+      validatedCancelUrl = validateAndNormalizeUrl(cancel_url, 'cancel_url');
+    } catch (error) {
+      return NextResponse.json({ 
+        error: error instanceof Error ? error.message : 'Invalid redirect URLs' 
+      }, { status: 400 });
+    }
+
     // Build Stripe line items
     const lineItems = [];
 
@@ -121,11 +206,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Batch fetch all tier rewards for better performance
+    // Batch fetch all tier rewards for better performance (with pricing fields)
     const rewardIds = items.map(item => item.tier_reward_id);
     const { data: rewards, error: rewardsError } = await supabaseAny
       .from('tier_rewards')
-      .select('id, title, description')
+      .select('id, title, description, tier, upgrade_price_cents, ticket_cost, is_ticket_campaign, campaign_id')
       .in('id', rewardIds);
 
     if (rewardsError) {
@@ -138,7 +223,7 @@ export async function POST(request: NextRequest) {
 
     const rewardMap = new Map(rewards?.map((r: any) => [r.id, r]) || []);
 
-    // Add each tier reward item with price validation
+    // Add each tier reward item with SERVER-SIDE price computation
     for (const item of items) {
       const reward = rewardMap.get(item.tier_reward_id) as any;
       if (!reward) {
@@ -147,13 +232,36 @@ export async function POST(request: NextRequest) {
         }, { status: 400 });
       }
 
-      // Validate price - must have a valid positive integer price (no free items by accident)
-      const priceCents = item.final_price_cents ?? item.original_price_cents;
-      if (!priceCents || !Number.isInteger(priceCents) || priceCents <= 0) {
-        console.error(`Invalid price for tier_reward ${item.tier_reward_id}:`, { final_price_cents: item.final_price_cents, original_price_cents: item.original_price_cents });
+      // Compute price SERVER-SIDE (don't trust client)
+      const isCreditCampaign = reward.is_ticket_campaign && reward.campaign_id;
+      let unitPriceCents: number;
+      
+      if (isCreditCampaign) {
+        // Credit campaign: use ticket_cost as credit_cost
+        if (!reward.ticket_cost || !Number.isInteger(reward.ticket_cost) || reward.ticket_cost <= 0) {
+          return NextResponse.json({ 
+            error: `Invalid credit campaign item ${item.tier_reward_id}: credit_cost must be a positive integer` 
+          }, { status: 400 });
+        }
+        unitPriceCents = reward.ticket_cost * 100; // 1 credit = $1
+      } else {
+        // Regular tier reward: apply discount based on user tier
+        const upgradePriceCents = Number(reward.upgrade_price_cents);
+        if (!upgradePriceCents || upgradePriceCents <= 0 || !isFinite(upgradePriceCents)) {
+          return NextResponse.json({ 
+            error: `Invalid tier pricing for ${item.tier_reward_id}: upgrade_price_cents not set` 
+          }, { status: 400 });
+        }
+        
+        const discountPercentage = getDiscountPercentage(userTier, reward);
+        const discountCents = Math.round(upgradePriceCents * discountPercentage / 100);
+        unitPriceCents = Math.max(0, upgradePriceCents - discountCents);
+      }
+      
+      // Validate computed price
+      if (!Number.isInteger(unitPriceCents) || unitPriceCents < 50) {
         return NextResponse.json({ 
-          error: `Invalid or missing price for cart item: tier_reward_id ${item.tier_reward_id}`,
-          details: 'Price must be a positive integer in cents'
+          error: `Computed price for ${item.tier_reward_id} is below Stripe minimum ($0.50)` 
         }, { status: 400 });
       }
 
@@ -164,7 +272,7 @@ export async function POST(request: NextRequest) {
             name: reward.title,
             description: reward.description || `Item from ${club.name}`
           },
-          unit_amount: priceCents
+          unit_amount: unitPriceCents // Use SERVER-COMPUTED price
         },
         quantity: item.quantity
       });
@@ -202,8 +310,8 @@ export async function POST(request: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: lineItems,
-      success_url: success_url,
-      cancel_url: cancel_url,
+      success_url: validatedSuccessUrl,
+      cancel_url: validatedCancelUrl,
       metadata: {
         type: 'cart_checkout',
         club_id: club_id,

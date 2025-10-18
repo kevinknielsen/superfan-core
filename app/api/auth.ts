@@ -15,6 +15,8 @@ export function getPrivyClient(): PrivyClient {
     throw new Error('Missing required Privy environment variables: NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_VERIFICATION_KEY must be configured');
   }
   
+  // PrivyClient accepts (appId, appSecret) positional args
+  // verificationKey is used as the second parameter
   privyClient = new PrivyClient(appId, verificationKey);
   return privyClient;
 }

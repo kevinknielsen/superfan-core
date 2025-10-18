@@ -79,6 +79,7 @@ export function CampaignProgressCard({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Idempotency-Key": usdcTxHash, // Prevent duplicate recording on retries
             ...authHeaders,
           },
           body: JSON.stringify({
@@ -417,72 +418,74 @@ export function CampaignProgressCard({
               Purchase Credits
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Button
-                  onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
-                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isUSDCLoading && pendingCreditAmount === 25
-                    ? "Sending..."
-                    : isBuyingPresale && pendingCreditAmount === 25
-                    ? "Processing..."
-                    : "25"}
-                  {cart.find(item => item.id === 'credits-25')?.quantity && (
-                    <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                      {cart.find(item => item.id === 'credits-25')!.quantity}
-                    </span>
-                  )}
-                </Button>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Button
-                  onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
-                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isUSDCLoading && pendingCreditAmount === 100
-                    ? "Sending..."
-                    : isBuyingPresale && pendingCreditAmount === 100
-                    ? "Processing..."
-                    : "100"}
-                  {cart.find(item => item.id === 'credits-100')?.quantity && (
-                    <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                      {cart.find(item => item.id === 'credits-100')!.quantity}
-                    </span>
-                  )}
-                </Button>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Button
-                  onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
-                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isUSDCLoading && pendingCreditAmount === 250
-                    ? "Sending..."
-                    : isBuyingPresale && pendingCreditAmount === 250
-                    ? "Processing..."
-                    : "250"}
-                  {cart.find(item => item.id === 'credits-250')?.quantity && (
-                    <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                      {cart.find(item => item.id === 'credits-250')!.quantity}
-                    </span>
-                  )}
-                </Button>
-              </motion.div>
+              {(() => {
+                // Cache cart quantities to avoid repeated lookups
+                const qty25 = cart.find(item => item.id === 'credits-25')?.quantity;
+                const qty100 = cart.find(item => item.id === 'credits-100')?.quantity;
+                const qty250 = cart.find(item => item.id === 'credits-250')?.quantity;
+                
+                return (
+                  <>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={() => handleCreditPurchase(25)}
+                        disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                        className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" />
+                        {isUSDCLoading && pendingCreditAmount === 25
+                          ? "Sending..."
+                          : isBuyingPresale && pendingCreditAmount === 25
+                          ? "Processing..."
+                          : "25"}
+                        {qty25 && (
+                          <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                            {qty25}
+                          </span>
+                        )}
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={() => handleCreditPurchase(100)}
+                        disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                        className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" />
+                        {isUSDCLoading && pendingCreditAmount === 100
+                          ? "Sending..."
+                          : isBuyingPresale && pendingCreditAmount === 100
+                          ? "Processing..."
+                          : "100"}
+                        {qty100 && (
+                          <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                            {qty100}
+                          </span>
+                        )}
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={() => handleCreditPurchase(250)}
+                        disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                        className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" />
+                        {isUSDCLoading && pendingCreditAmount === 250
+                          ? "Sending..."
+                          : isBuyingPresale && pendingCreditAmount === 250
+                          ? "Processing..."
+                          : "250"}
+                        {qty250 && (
+                          <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                            {qty250}
+                          </span>
+                        )}
+                      </Button>
+                    </motion.div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Credit Information Tooltip */}

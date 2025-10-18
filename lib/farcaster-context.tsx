@@ -3,6 +3,9 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 
+// Coinbase Wallet client FID from Base docs
+const COINBASE_WALLET_CLIENT_FID = 399519;
+
 interface FarcasterContextType {
   isSDKLoaded: boolean;
   frameContext: Awaited<typeof sdk.context> | null;
@@ -39,35 +42,24 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Call ready to dismiss splash screen in Wallet App context
-        // Detect platform using clientFid (Coinbase Wallet = 399519)
-        const isCoinbaseWallet = result?.client?.clientFid === 399519;
+        // Detect platform using clientFid from Base docs
+        const isCoinbaseWallet = result?.client?.clientFid === COINBASE_WALLET_CLIENT_FID;
         
         if (result && result.client) {
-          if (isCoinbaseWallet) {
-            console.log('🏗️ [FarcasterContext] In Coinbase Wallet (Base), calling sdk.actions.ready()');
-            
-            // For Coinbase Wallet / Base, DON'T disable native gestures - it blocks scrolling
-            setTimeout(async () => {
-              try {
-                await sdk.actions.ready({ disableNativeGestures: false });
-                console.log('✅ [FarcasterContext] Coinbase Wallet sdk.actions.ready() completed (gestures enabled for scroll)');
-              } catch (readyError) {
-                console.error('❌ [FarcasterContext] Coinbase Wallet ready() error:', readyError);
-              }
-            }, 100);
-          } else {
-            console.log('🚀 [FarcasterContext] In Farcaster miniapp context, calling sdk.actions.ready()');
-            
-            // For Farcaster, disable native gestures
-            setTimeout(async () => {
-              try {
-                await sdk.actions.ready({ disableNativeGestures: true });
-                console.log('✅ [FarcasterContext] Farcaster sdk.actions.ready() completed');
-              } catch (readyError) {
-                console.error('❌ [FarcasterContext] Error calling ready():', readyError);
-              }
-            }, 100);
-          }
+          const platformName = isCoinbaseWallet ? 'Coinbase Wallet (Base)' : 'Farcaster miniapp';
+          const disableGestures = !isCoinbaseWallet; // Enable gestures for Coinbase (allow scroll), disable for Farcaster
+          
+          console.log(`🚀 [FarcasterContext] In ${platformName} context, calling sdk.actions.ready()`);
+          
+          // Defer ready() call slightly to ensure render cycle is complete and DOM is ready
+          setTimeout(async () => {
+            try {
+              await sdk.actions.ready({ disableNativeGestures: disableGestures });
+              console.log(`✅ [FarcasterContext] ${platformName} sdk.actions.ready() completed${isCoinbaseWallet ? ' (gestures enabled for scroll)' : ''}`);
+            } catch (readyError) {
+              console.error(`❌ [FarcasterContext] ${platformName} ready() error:`, readyError);
+            }
+          }, 100);
         } else {
           console.log('🌐 [FarcasterContext] Not in miniapp context, skipping ready() call');
         }
@@ -102,13 +94,13 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
   const detectPlatform = (): 'farcaster' | 'coinbase' | 'web' => {
     if (!frameContext) return 'web';
     
-    // Coinbase Wallet returns clientFid: 399519 according to Base docs
-    if (frameContext.client?.clientFid === 399519) {
+    // Coinbase Wallet returns this clientFid according to Base docs
+    if (frameContext.client?.clientFid === COINBASE_WALLET_CLIENT_FID) {
       return 'coinbase';
     }
     
     // All other wallet app contexts are Farcaster
-    return frameContext ? 'farcaster' : 'web';
+    return 'farcaster';
   };
 
   const platform = detectPlatform();

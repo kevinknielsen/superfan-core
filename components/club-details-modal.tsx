@@ -234,6 +234,7 @@ export default function ClubDetailsModal({
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
+                  'Idempotency-Key': usdcTxHash, // Prevent duplicate recording
                   ...authHeaders
                 },
                 body: JSON.stringify({
@@ -277,6 +278,7 @@ export default function ClubDetailsModal({
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
+                  'Idempotency-Key': `${usdcTxHash}-${cartItem.itemId}`, // Prevent duplicate recording
                   ...authHeaders2
                 },
                 body: JSON.stringify({
@@ -432,14 +434,24 @@ export default function ClubDetailsModal({
       throw new Error("Invalid Metal holder address");
     }
     
-    // Calculate total USDC needed
-    const totalUSDC = cart.reduce((sum, item) => {
+    // Calculate total USDC using integer math (USDC has 6 decimals)
+    // Convert everything to micro-USDC (smallest unit), sum, then convert back
+    let totalMicroUSDC = BigInt(0);
+    
+    for (const item of cart) {
       if (item.type === 'credits') {
-        return sum + (item.amount * item.quantity); // Credits = USDC 1:1
+        // Credits: 1 credit = 1 USDC = 1,000,000 micro-USDC
+        const itemMicroUSDC = BigInt(item.amount) * BigInt(item.quantity) * BigInt(1_000_000);
+        totalMicroUSDC += itemMicroUSDC;
       } else {
-        return sum + ((item.amount * item.quantity) / 100); // Convert cents to USDC
+        // Items: price in cents, convert to micro-USDC (cents * 10,000)
+        const itemMicroUSDC = BigInt(item.amount) * BigInt(item.quantity) * BigInt(10_000);
+        totalMicroUSDC += itemMicroUSDC;
       }
-    }, 0);
+    }
+    
+    // Convert micro-USDC to USDC (divide by 1,000,000)
+    const totalUSDC = Number(totalMicroUSDC) / 1_000_000;
     
     if (!Number.isFinite(totalUSDC) || totalUSDC <= 0) {
       throw new Error("Invalid total amount");
@@ -468,11 +480,15 @@ export default function ClubDetailsModal({
     // Get all items
     const items = cart.filter(item => item.type === 'item');
     
+    // Generate idempotency key for cart checkout
+    const idempotencyKey = `cart:${club.id}:${getTotalItems()}:${getTotalAmount()}`;
+    
     // Create unified cart checkout
     const response = await fetch(`/api/campaigns/cart-checkout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey, // Prevent duplicate sessions on retries
         ...authHeaders
       },
       body: JSON.stringify({
@@ -810,10 +826,20 @@ export default function ClubDetailsModal({
                     setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
                   }}
                   onAddToCart={(item) => {
-                    // Calculate the actual price in cents
+                    // Calculate the actual price in cents with validation
                     const priceCents = item.isCreditCampaign 
-                      ? (item.creditCost || 0) * 100 // 1 credit = $1 = 100 cents
-                      : (item.finalPriceCents || item.upgradePriceCents || 0);
+                      ? (item.creditCost ?? 0) * 100 // 1 credit = $1 = 100 cents
+                      : (item.finalPriceCents ?? item.upgradePriceCents ?? 0);
+                    
+                    // Validate price exists
+                    if (!priceCents || priceCents <= 0) {
+                      toast({
+                        title: "Error",
+                        description: "Item has invalid pricing",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
                     
                     addToCart({
                       id: `item-${item.id}`,
@@ -822,11 +848,11 @@ export default function ClubDetailsModal({
                       title: item.title,
                       itemId: item.id,
                       isCreditCampaign: item.isCreditCampaign,
-                      creditCost: item.creditCost,
+                      creditCost: item.creditCost ?? 0,
                       campaignId: item.campaignId,
                       finalPriceCents: priceCents, // Store the calculated price for Stripe
-                      originalPriceCents: item.upgradePriceCents || (item.creditCost || 0) * 100,
-                      discountCents: item.discountCents || 0
+                      originalPriceCents: item.upgradePriceCents ?? (item.creditCost ?? 0) * 100,
+                      discountCents: item.discountCents ?? 0
                     });
                     toast({
                       title: "Added to Cart",
@@ -1020,7 +1046,7 @@ export default function ClubDetailsModal({
                     ) : cart.length === 0 ? (
                       "Checkout"
                     ) : (
-                      `Checkout (${getTotalItems()} ${getTotalItems() === 1 ? 'item' : 'items'} - $${(getTotalAmount() / 100).toFixed(0)})`
+                      `Checkout (${getTotalItems()} ${getTotalItems() === 1 ? 'item' : 'items'} - $${(getTotalAmount() / 100).toFixed(2)})`
                     )}
                   </button>
                 ) : (
