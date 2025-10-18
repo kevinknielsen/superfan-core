@@ -116,6 +116,27 @@ export async function POST(
       }, { status: 500 });
     }
 
+    // Clear stale locks before starting distribution (locks older than 5 minutes)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: clearedLocks, error: clearError } = await supabaseAny
+      .from('credit_purchases')
+      .update({ 
+        metadata: supabaseAny.raw(`
+          COALESCE(metadata, '{}'::jsonb) || 
+          '{"distribution_in_progress": false, "distribution_error": "Previous attempt timed out - cleared for retry"}'::jsonb
+        `)
+      })
+      .eq('campaign_id', campaignId)
+      .eq('metadata->distribution_in_progress', true)
+      .lt('metadata->distribution_started_at', fiveMinutesAgo)
+      .select('id');
+
+    if (clearError) {
+      console.warn(`[Token Distribution] Failed to clear stale locks:`, clearError);
+    } else if (clearedLocks && clearedLocks.length > 0) {
+      console.log(`[Token Distribution] Cleared ${clearedLocks.length} stale lock(s)`);
+    }
+
     // Distribute to each Stripe purchaser
     for (const purchase of pendingDistributions) {
       try {
@@ -133,12 +154,28 @@ export async function POST(
           })
           .eq('id', purchase.id)
           .eq('metadata->tokens_distributed', false) // Only lock if not already distributed
+          .is('metadata->distribution_in_progress', null)
           .select('id')
           .single();
 
         if (lockError || !locked) {
-          // Already being processed or distributed
-          console.log(`[Token Distribution] Skipping ${purchase.user_id} (already processing or distributed)`);
+          // Check if already distributed vs lock failed
+          const { data: checkPurchase } = await supabaseAny
+            .from('credit_purchases')
+            .select('metadata')
+            .eq('id', purchase.id)
+            .single();
+          
+          const alreadyDistributed = checkPurchase?.metadata?.tokens_distributed === true;
+          const lockInProgress = checkPurchase?.metadata?.distribution_in_progress === true;
+          
+          if (alreadyDistributed) {
+            console.log(`[Token Distribution] ℹ️ Skipping ${purchase.user_id} - already distributed`);
+          } else if (lockInProgress) {
+            console.log(`[Token Distribution] ⏳ Skipping ${purchase.user_id} - currently being processed`);
+          } else {
+            console.log(`[Token Distribution] ⚠️ Skipping ${purchase.user_id} - lock acquisition failed`);
+          }
           continue;
         }
 
@@ -191,6 +228,21 @@ export async function POST(
         if (updateError) {
           // Critical: Metal distributed but DB update failed
           console.error(`[Token Distribution] ⚠️ DB update failed after Metal distribution for ${purchase.user_id}:`, updateError);
+          
+          // Attempt to clear the lock to allow manual retry of the DB update
+          await supabaseAny
+            .from('credit_purchases')
+            .update({ 
+              metadata: { 
+                ...(purchase.metadata || {}),
+                distribution_in_progress: false,
+                distribution_error: `DB update failed: ${updateError.message}`,
+                requires_manual_verification: true
+              }
+            })
+            .eq('id', purchase.id)
+            .catch((e: unknown) => console.error('Failed to clear lock:', e));
+          
           // Don't retry - tokens already sent, just log the issue
           results.failed++;
           results.errors.push({

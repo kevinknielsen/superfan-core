@@ -14,6 +14,10 @@ export interface TreasuryInfo {
 }
 
 // Helper to add timeout to async operations
+// Note: This uses Promise.race which does not cancel the underlying operation.
+// The Metal API client does not currently support AbortSignal, so the underlying
+// request may continue running even after timeout. Application-level code should
+// monitor and log hung requests.
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   const timeoutPromise = new Promise<T>((_, reject) => {
     setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
@@ -46,20 +50,21 @@ export async function getOrCreateTreasury(): Promise<TreasuryInfo> {
             metal.createUser(TREASURY_HOLDER_ID),
             TREASURY_TIMEOUT_MS
           );
-        } catch (e: any) {
+        } catch (e: unknown) {
           // If concurrently created, re-fetch
           // Metal API returns 409 status code for conflicts
-          const isConflict = e?.code === 409 || 
-                           e?.status === 409 || 
-                           e?.statusCode === 409 ||
+          const errorObj = e as any; // Type assertion for error object inspection
+          const isConflict = errorObj?.code === 409 || 
+                           errorObj?.status === 409 || 
+                           errorObj?.statusCode === 409 ||
                            // Fallback to message parsing (less reliable)
-                           /exists|conflict|duplicate/i.test(String(e?.message || ''));
+                           /exists|conflict|duplicate/i.test(String(errorObj?.message || ''));
           
           if (isConflict) {
             console.log('[Treasury] Holder created concurrently (409 or exists), re-fetching...', {
-              errorCode: e?.code,
-              errorStatus: e?.status,
-              errorMessage: e?.message
+              errorCode: errorObj?.code,
+              errorStatus: errorObj?.status,
+              errorMessage: errorObj?.message
             });
             holder = await withTimeout(
               metal.getHolder(TREASURY_HOLDER_ID),
@@ -69,9 +74,9 @@ export async function getOrCreateTreasury(): Promise<TreasuryInfo> {
             // Unknown error - log and rethrow
             console.error('[Treasury] Unexpected error creating holder:', {
               error: e,
-              code: e?.code,
-              status: e?.status,
-              message: e?.message
+              code: errorObj?.code,
+              status: errorObj?.status,
+              message: errorObj?.message
             });
             throw e;
           }

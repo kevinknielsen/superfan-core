@@ -353,17 +353,6 @@ export default function UnifiedPointsWallet({
     recordPurchase();
   }, [isBuyTokensSuccess, buyTokensData, user, clubId, metalHolder.data, toast, refetch]);
 
-  // Handle buyTokens errors
-  useEffect(() => {
-    if (!buyTokensError) return;
-    toast({
-      title: 'Purchase Failed',
-      description: buyTokensError instanceof Error ? buyTokensError.message : 'Failed to buy tokens',
-      variant: 'destructive',
-    });
-    setIsPurchasing(false);
-  }, [buyTokensError, toast]);
-
   // Handle credit purchase flow
   const handleCreditPurchase = async (creditAmount: number) => {
     try {

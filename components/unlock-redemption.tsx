@@ -245,24 +245,38 @@ export default function UnlockRedemption({
           ? '/api/metal/record-purchase'
           : '/api/metal/purchase-item';
         
-        // Validate pricing for item purchases
-        const amountPaidCents = pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0;
-        const originalPriceCents = pendingItemPurchase.upgrade_price_cents || 0;
-        const discountCents = pendingItemPurchase.user_discount_amount_cents || 0;
+        // Validate pricing ONLY for item purchases (not credit campaigns)
+        let amountPaidCents = 0;
+        let originalPriceCents = 0;
+        let discountCents = 0;
         
-        // Ensure valid integers
-        if (!Number.isInteger(amountPaidCents) || amountPaidCents < 0) {
-          throw new Error('Invalid amount_paid_cents');
-        }
-        if (!Number.isInteger(originalPriceCents) || originalPriceCents < 0) {
-          throw new Error('Invalid original_price_cents');
-        }
-        if (!Number.isInteger(discountCents) || discountCents < 0) {
-          throw new Error('Invalid discount_applied_cents');
-        }
-        // Ensure original >= paid (after discount)
-        if (originalPriceCents < amountPaidCents) {
-          throw new Error('Invalid pricing: original_price cannot be less than amount_paid');
+        if (!pendingItemPurchase.is_credit_campaign) {
+          // Assert required fields exist for item purchases
+          if (pendingItemPurchase.upgrade_price_cents === undefined || pendingItemPurchase.upgrade_price_cents === null) {
+            throw new Error('Missing upgrade_price_cents for item purchase');
+          }
+          if (pendingItemPurchase.user_final_price_cents === undefined || pendingItemPurchase.user_final_price_cents === null) {
+            throw new Error('Missing user_final_price_cents for item purchase');
+          }
+          
+          amountPaidCents = pendingItemPurchase.user_final_price_cents;
+          originalPriceCents = pendingItemPurchase.upgrade_price_cents;
+          discountCents = pendingItemPurchase.user_discount_amount_cents || 0;
+          
+          // Ensure valid integers
+          if (!Number.isInteger(amountPaidCents) || amountPaidCents < 0) {
+            throw new Error('Invalid amount_paid_cents');
+          }
+          if (!Number.isInteger(originalPriceCents) || originalPriceCents < 0) {
+            throw new Error('Invalid original_price_cents');
+          }
+          if (!Number.isInteger(discountCents) || discountCents < 0) {
+            throw new Error('Invalid discount_applied_cents');
+          }
+          // Ensure original >= paid (after discount)
+          if (originalPriceCents < amountPaidCents) {
+            throw new Error('Invalid pricing: original_price cannot be less than amount_paid');
+          }
         }
         
         const requestBody = pendingItemPurchase.is_credit_campaign
