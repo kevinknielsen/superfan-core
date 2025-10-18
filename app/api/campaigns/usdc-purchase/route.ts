@@ -15,6 +15,11 @@ const publicClient = createPublicClient({
 // USDC contract address on Base
 const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
+// Validate required environment variables
+if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID || !process.env.PRIVY_APP_SECRET) {
+  throw new Error('Missing required Privy environment variables: NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET must be configured');
+}
+
 // Privy client for user data queries
 const privy = new PrivyClient(
   process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
@@ -65,11 +70,9 @@ async function verifyWalletOwnership(
       // Query Farcaster user data from Neynar API
       const neynarApiKey = process.env.NEYNAR_API_KEY;
       if (!neynarApiKey) {
-        console.error('[Wallet Verification] NEYNAR_API_KEY not configured');
-        // For now, we'll be permissive if Neynar is not configured
-        // TODO: Make this strict once Neynar is set up
-        console.warn('[Wallet Verification] Skipping Farcaster wallet verification - Neynar not configured');
-        return true;
+        console.error('[Wallet Verification] NEYNAR_API_KEY not configured - rejecting Farcaster verification');
+        // Reject verification if Neynar is not configured to prevent security bypass
+        return false;
       }
       
       const response = await fetch(`https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`, {
