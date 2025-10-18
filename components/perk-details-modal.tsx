@@ -412,18 +412,16 @@ export default function PerkDetailsModal({
               // Preview mode - trigger purchase for credit campaigns
               <Button
                 onClick={() => {
+                  onClose(); // Close modal first
                   if (isCreditCampaignMetadata(perk.metadata) && onPurchase) {
-                    onClose();
-                    onPurchase(); // Trigger purchase flow
-                  } else {
-                    onClose();
+                    onPurchase(); // Trigger add to cart flow after modal closes
                   }
                 }}
                 size="lg"
                 className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
               >
                 {isCreditCampaignMetadata(perk.metadata) ? (
-                  'Commit Credits'
+                  'Add to Cart'
                 ) : (
                   'Close Preview'
                 )}

@@ -1,4 +1,4 @@
-import { MetalPresalesClient } from "metal-presale/client";
+import { MetalPresalesClient } from "metal-presale";
 
 let metalClient: MetalPresalesClient | null = null;
 

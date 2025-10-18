@@ -39,36 +39,35 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Call ready to dismiss splash screen in Wallet App context
-        // Check for Base app context (different from Farcaster)
-        const isInBaseApp = typeof window !== "undefined" && 
-          (window.location.href.includes('base.') || 
-           navigator.userAgent.includes('base') ||
-           window.parent !== window); // Detect if in iframe
+        // Detect platform using clientFid (Coinbase Wallet = 399519)
+        const isCoinbaseWallet = result?.client?.clientFid === 399519;
         
         if (result && result.client) {
-          console.log('🚀 [FarcasterContext] In Farcaster miniapp context, calling sdk.actions.ready()');
-          
-          // Give the UI a moment to render before calling ready
-          setTimeout(async () => {
-            try {
-              await sdk.actions.ready({ disableNativeGestures: true });
-              console.log('✅ [FarcasterContext] Farcaster sdk.actions.ready() completed');
-            } catch (readyError) {
-              console.error('❌ [FarcasterContext] Error calling ready():', readyError);
-            }
-          }, 100);
-        } else if (isInBaseApp) {
-          console.log('🏗️ [FarcasterContext] In Base app context, calling sdk.actions.ready()');
-          
-          // For Base app, DON'T disable native gestures - it blocks scrolling
-          setTimeout(async () => {
-            try {
-              await sdk.actions.ready({ disableNativeGestures: false });
-              console.log('✅ [FarcasterContext] Base sdk.actions.ready() completed (gestures enabled for scroll)');
-            } catch (readyError) {
-              console.error('❌ [FarcasterContext] Base ready() error:', readyError);
-            }
-          }, 100);
+          if (isCoinbaseWallet) {
+            console.log('🏗️ [FarcasterContext] In Coinbase Wallet (Base), calling sdk.actions.ready()');
+            
+            // For Coinbase Wallet / Base, DON'T disable native gestures - it blocks scrolling
+            setTimeout(async () => {
+              try {
+                await sdk.actions.ready({ disableNativeGestures: false });
+                console.log('✅ [FarcasterContext] Coinbase Wallet sdk.actions.ready() completed (gestures enabled for scroll)');
+              } catch (readyError) {
+                console.error('❌ [FarcasterContext] Coinbase Wallet ready() error:', readyError);
+              }
+            }, 100);
+          } else {
+            console.log('🚀 [FarcasterContext] In Farcaster miniapp context, calling sdk.actions.ready()');
+            
+            // For Farcaster, disable native gestures
+            setTimeout(async () => {
+              try {
+                await sdk.actions.ready({ disableNativeGestures: true });
+                console.log('✅ [FarcasterContext] Farcaster sdk.actions.ready() completed');
+              } catch (readyError) {
+                console.error('❌ [FarcasterContext] Error calling ready():', readyError);
+              }
+            }, 100);
+          }
         } else {
           console.log('🌐 [FarcasterContext] Not in miniapp context, skipping ready() call');
         }

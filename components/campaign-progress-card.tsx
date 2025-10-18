@@ -19,6 +19,8 @@ interface CampaignProgressCardProps {
   clubId?: string;
   isAuthenticated?: boolean;
   onLoginRequired?: () => void;
+  onAddToCart?: (creditAmount: number) => void;
+  cart?: Array<{ id: string; quantity: number }>;
 }
 
 export function CampaignProgressCard({
@@ -26,6 +28,8 @@ export function CampaignProgressCard({
   clubId,
   isAuthenticated = false,
   onLoginRequired,
+  onAddToCart,
+  cart = [],
 }: CampaignProgressCardProps) {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const { toast } = useToast();
@@ -176,6 +180,12 @@ export function CampaignProgressCard({
     // Prompt login if not authenticated
     if (!isAuthenticated && onLoginRequired) {
       onLoginRequired();
+      return;
+    }
+
+    // If cart mode is enabled, add to cart instead of immediate purchase
+    if (onAddToCart) {
+      onAddToCart(creditAmount);
       return;
     }
 
@@ -414,7 +424,7 @@ export function CampaignProgressCard({
                 <Button
                   onClick={() => handleCreditPurchase(25)}
                   disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
-                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
                   {isUSDCLoading && pendingCreditAmount === 25
@@ -422,6 +432,11 @@ export function CampaignProgressCard({
                     : isBuyingPresale && pendingCreditAmount === 25
                     ? "Processing..."
                     : "25"}
+                  {cart.find(item => item.id === 'credits-25')?.quantity && (
+                    <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                      {cart.find(item => item.id === 'credits-25')!.quantity}
+                    </span>
+                  )}
                 </Button>
               </motion.div>
               <motion.div
@@ -431,7 +446,7 @@ export function CampaignProgressCard({
                 <Button
                   onClick={() => handleCreditPurchase(100)}
                   disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
-                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
                   {isUSDCLoading && pendingCreditAmount === 100
@@ -439,6 +454,11 @@ export function CampaignProgressCard({
                     : isBuyingPresale && pendingCreditAmount === 100
                     ? "Processing..."
                     : "100"}
+                  {cart.find(item => item.id === 'credits-100')?.quantity && (
+                    <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                      {cart.find(item => item.id === 'credits-100')!.quantity}
+                    </span>
+                  )}
                 </Button>
               </motion.div>
               <motion.div
@@ -448,7 +468,7 @@ export function CampaignProgressCard({
                 <Button
                   onClick={() => handleCreditPurchase(250)}
                   disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
-                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3"
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-3 relative"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
                   {isUSDCLoading && pendingCreditAmount === 250
@@ -456,6 +476,11 @@ export function CampaignProgressCard({
                     : isBuyingPresale && pendingCreditAmount === 250
                     ? "Processing..."
                     : "250"}
+                  {cart.find(item => item.id === 'credits-250')?.quantity && (
+                    <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                      {cart.find(item => item.id === 'credits-250')!.quantity}
+                    </span>
+                  )}
                 </Button>
               </motion.div>
             </div>

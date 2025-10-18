@@ -30,12 +30,32 @@ import PerkRedemptionConfirmation from "./perk-redemption-confirmation";
 import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
 import { formatDate } from "@/lib/utils";
-import { StatusProgressionCard } from "./status-progression-card";
 import { CampaignProgressCard } from "./campaign-progress-card";
+import { useFarcaster } from "@/lib/farcaster-context";
+import { navigateToCheckout } from "@/lib/navigation-utils";
+import { useSendUSDC } from "@/hooks/use-usdc-payment";
+import { useMetalHolder, useBuyPresale } from "@/hooks/use-metal-holder";
 
 // Use compatible types with existing components
 type RedemptionData = any; // Keep flexible for now since it comes from API
 type UnlockData = any;     // Keep flexible for now since it comes from API
+
+// Cart item types
+interface CartItem {
+  id: string;
+  type: 'credits' | 'item';
+  amount: number; // For credits: number of credits; For items: price in cents
+  quantity: number; // How many times added
+  title: string;
+  // For items only
+  itemId?: string;
+  isCreditCampaign?: boolean;
+  creditCost?: number;
+  campaignId?: string;
+  finalPriceCents?: number;
+  originalPriceCents?: number;
+  discountCents?: number;
+}
 
 interface ClubDetailsModalProps {
   club: Club;
@@ -43,7 +63,6 @@ interface ClubDetailsModalProps {
   onClose: () => void;
   isOpen: boolean;
   scrollToRewards?: boolean;
-  autoOpenWallet?: boolean;
 }
 
 // Status icon mapping
@@ -78,11 +97,18 @@ export default function ClubDetailsModal({
   onClose,
   isOpen,
   scrollToRewards = false,
-  autoOpenWallet = false,
 }: ClubDetailsModalProps) {
   const { user, isAuthenticated } = useUnifiedAuth();
   const { login } = usePrivy();
   const { toast } = useToast();
+  const { isInWalletApp, openUrl } = useFarcaster();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess } = useSendUSDC();
+  const metalHolder = useMetalHolder();
+  const { mutateAsync: buyPresaleAsync } = useBuyPresale();
+  
+  // Cart state management
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   
   // Clear campaign data on club change to avoid stale UI
   const [campaignData, setCampaignData] = useState<CampaignData | null>(null);
@@ -90,7 +116,6 @@ export default function ClubDetailsModal({
   
   const modalRef = useRef<HTMLDivElement>(null);
   const rewardsRef = useRef<HTMLDivElement>(null);
-  const [showPurchaseOverlay, setShowPurchaseOverlay] = useState(false);
   const [redemptionConfirmation, setRedemptionConfirmation] = useState<{
     redemption: RedemptionData;
     unlock: UnlockData;
@@ -118,33 +143,158 @@ export default function ClubDetailsModal({
   const enabled = Boolean(club.id && membership && isAuthenticated);
   const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
 
-  // Clear campaign data when switching clubs
-  useEffect(() => { 
-    setCampaignData(null); 
-  }, [club.id]);
+  // Status calculations - must be before useEffect that uses currentStatus
+  const currentStatus = (breakdown?.status.current || membership?.current_status || 'cadet') as ClubStatus;
+  const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
+  const nextStatus = (breakdown?.status.next_status || getNextStatus(currentStatus)) as ClubStatus | null;
+  const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
+  const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
 
-  // Auto-open wallet after successful purchase
+  // Clear campaign data and cart when switching clubs
+  useEffect(() => { 
+    setCampaignData(null);
+    setCart([]);
+  }, [club.id]);
+  
+  // Monitor USDC transaction success and process all cart items
+  const processedCartTxRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isOpen && autoOpenWallet && membership) {
-      const timer = setTimeout(() => {
-        setShowPurchaseOverlay(true);
-      }, 800); // Wait for modal animation
-      return () => clearTimeout(timer);
+    if (!isUSDCSuccess || !usdcTxHash || cart.length === 0 || !user) return;
+    
+    // Prevent duplicate processing
+    if (processedCartTxRef.current === usdcTxHash) {
+      return;
     }
-  }, [isOpen, autoOpenWallet, membership]);
+    
+    processedCartTxRef.current = usdcTxHash;
+    
+    const processCartPurchases = async () => {
+      try {
+        // Process each cart item
+        for (const cartItem of cart) {
+          if (cartItem.type === 'credits') {
+            // Buy presale for credits
+            const totalCredits = cartItem.amount * cartItem.quantity;
+            if (cartItem.campaignId) {
+              await buyPresaleAsync({
+                user,
+                campaignId: cartItem.campaignId,
+                amount: totalCredits
+              });
+            }
+            
+            // Record credit purchase
+            const { getAuthHeaders } = await import('@/app/api/sdk');
+            const authHeaders = await getAuthHeaders();
+            
+            await fetch('/api/metal/record-purchase', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders
+              },
+              body: JSON.stringify({
+                club_id: club.id,
+                campaign_id: cartItem.campaignId,
+                credit_amount: totalCredits,
+                tx_hash: usdcTxHash,
+                metal_holder_id: metalHolder.data?.id,
+                metal_holder_address: metalHolder.data?.address
+              })
+            });
+          } else if (cartItem.itemId) {
+            // Buy presale for item
+            if (cartItem.campaignId) {
+              const amountUSDC = (cartItem.amount * cartItem.quantity) / 100;
+              await buyPresaleAsync({
+                user,
+                campaignId: cartItem.campaignId,
+                amount: amountUSDC
+              });
+            }
+            
+            // Record item purchase
+            const { getAuthHeaders } = await import('@/app/api/sdk');
+            const authHeaders = await getAuthHeaders();
+            
+            await fetch('/api/metal/purchase-item', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders
+              },
+              body: JSON.stringify({
+                tier_reward_id: cartItem.itemId,
+                club_id: club.id,
+                campaign_id: cartItem.campaignId,
+                amount_paid_cents: cartItem.finalPriceCents || cartItem.originalPriceCents || 0,
+                original_price_cents: cartItem.originalPriceCents || 0,
+                discount_applied_cents: cartItem.discountCents || 0,
+                tx_hash: usdcTxHash,
+                metal_holder_id: metalHolder.data?.id,
+                metal_holder_address: metalHolder.data?.address,
+                user_tier: currentStatus
+              })
+            });
+          }
+        }
+        
+        // Success - clear cart and show confirmation
+        toast({
+          title: "Purchase Successful! 🎉",
+          description: `${cart.length} item(s) purchased`,
+        });
+        clearCart();
+        setIsCheckingOut(false);
+        await refetch(); // Refresh points/wallet data
+        
+      } catch (error) {
+        // Reset for retry
+        processedCartTxRef.current = null;
+        console.error('Cart processing error:', error);
+        toast({
+          title: "Processing Failed",
+          description: error instanceof Error ? error.message : "Failed to process cart. Transaction hash: " + usdcTxHash,
+          variant: "destructive",
+        });
+        setIsCheckingOut(false);
+      }
+    };
+    
+    processCartPurchases();
+  }, [isUSDCSuccess, usdcTxHash, cart, user, club.id, metalHolder.data, buyPresaleAsync, currentStatus, toast, refetch]);
+  
+  // Cart helper functions
+  const addToCart = (item: Omit<CartItem, 'quantity'>) => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === item.id);
+      if (existing) {
+        // Increment quantity for existing item
+        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+      }
+      // Add new item with quantity 1
+      return [...prev, { ...item, quantity: 1 }];
+    });
+  };
+  
+  const getTotalItems = () => cart.reduce((sum, item) => sum + item.quantity, 0);
+  
+  const getTotalAmount = () => {
+    return cart.reduce((sum, item) => {
+      if (item.type === 'credits') {
+        return sum + (item.amount * item.quantity * 100); // Credits to cents
+      } else {
+        return sum + (item.amount * item.quantity); // Already in cents
+      }
+    }, 0);
+  };
+  
+  const clearCart = () => setCart([]);
+
 
   // REMOVED: Auto-trigger login (we now only prompt on interaction)
   // Login is triggered when user clicks items or purchase buttons
 
-  // Status calculations - use unified points data if available (now includes temporary boosts)
-  const currentStatus = (breakdown?.status.current || membership?.current_status || 'cadet') as ClubStatus;
-  const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
-  const nextStatus = (breakdown?.status.next_status || getNextStatus(currentStatus)) as ClubStatus | null;
-  // Use unified points data if available, fallback to manual calculation
-  const rawPointsToNext = breakdown?.status.points_to_next ?? getPointsToNext(currentPoints, currentStatus);
-  const pointsToNext = rawPointsToNext != null ? Math.max(0, rawPointsToNext) : null;
-
-  
   const StatusIcon = STATUS_ICONS[currentStatus as keyof typeof STATUS_ICONS] ?? Users;
 
 
@@ -178,6 +328,120 @@ export default function ClubDetailsModal({
         variant: "destructive",
       });
     }
+  };
+  
+  // Handle checkout - process all cart items
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    
+    setIsCheckingOut(true);
+    
+    try {
+      if (isInWalletApp) {
+        // Wallet users: Process with USDC (sequential transactions)
+        await handleWalletCheckout();
+      } else {
+        // Web users: Process with Stripe (sequential sessions)
+        await handleStripeCheckout();
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast({
+        title: "Checkout Failed",
+        description: error instanceof Error ? error.message : "Failed to process checkout",
+        variant: "destructive",
+      });
+      setIsCheckingOut(false);
+    }
+  };
+  
+  // Wallet checkout: One USDC transaction for total cart amount
+  const handleWalletCheckout = async () => {
+    if (!metalHolder.data?.address) {
+      throw new Error("Metal holder not initialized");
+    }
+    
+    // Validate Metal holder address
+    const { isAddress } = await import('viem');
+    if (!isAddress(metalHolder.data.address)) {
+      throw new Error("Invalid Metal holder address");
+    }
+    
+    // Calculate total USDC needed
+    const totalUSDC = cart.reduce((sum, item) => {
+      if (item.type === 'credits') {
+        return sum + (item.amount * item.quantity); // Credits = USDC 1:1
+      } else {
+        return sum + ((item.amount * item.quantity) / 100); // Convert cents to USDC
+      }
+    }, 0);
+    
+    if (!Number.isFinite(totalUSDC) || totalUSDC <= 0) {
+      throw new Error("Invalid total amount");
+    }
+    
+    // Send ONE USDC transaction for the entire cart
+    sendUSDC({
+      toAddress: metalHolder.data.address as `0x${string}`,
+      amountUSDC: totalUSDC,
+    });
+    
+    // Transaction monitoring will happen in useEffect
+    // Keep cart until transaction succeeds
+  };
+  
+  // Stripe checkout: Create one unified checkout session for all cart items
+  const handleStripeCheckout = async () => {
+    const { getAuthHeaders } = await import('@/app/api/sdk');
+    const authHeaders = await getAuthHeaders();
+    
+    // Combine all credits into total amount
+    const totalCredits = cart
+      .filter(item => item.type === 'credits')
+      .reduce((sum, item) => sum + (item.amount * item.quantity), 0);
+    
+    // Get all items
+    const items = cart.filter(item => item.type === 'item');
+    
+    // Create unified cart checkout
+    const response = await fetch(`/api/campaigns/cart-checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        club_id: club.id,
+        total_credits: totalCredits,
+        items: items.map(item => ({
+          tier_reward_id: item.itemId,
+          quantity: item.quantity,
+          final_price_cents: item.finalPriceCents,
+          original_price_cents: item.originalPriceCents,
+          discount_cents: item.discountCents,
+          campaign_id: item.campaignId
+        })),
+        success_url: `${window.location.origin}${window.location.pathname}?club_id=${club.id}&purchase_success=true&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${window.location.origin}${window.location.pathname}?club_id=${club.id}&purchase_cancelled=true`
+      })
+    });
+    
+    if (response.ok) {
+      const result = await response.json() as any;
+      const url = result?.stripe_session_url;
+      if (url) {
+        // Clear cart on successful redirect to Stripe
+        clearCart();
+        await navigateToCheckout(url, isInWalletApp, openUrl);
+      } else {
+        throw new Error('Missing checkout URL from server');
+      }
+    } else {
+      const errorData = await response.json() as any;
+      throw new Error(errorData.error || 'Failed to create unified checkout session');
+    }
+    
+    setIsCheckingOut(false);
   };
 
 
@@ -478,6 +742,31 @@ export default function ClubDetailsModal({
                   onShowPerkDetails={(unlock, redemption, onPurchase) => {
                     setPerkDetails({ isOpen: true, unlock, redemption, onPurchase });
                   }}
+                  onAddToCart={(item) => {
+                    // Calculate the actual price in cents
+                    const priceCents = item.isCreditCampaign 
+                      ? (item.creditCost || 0) * 100 // 1 credit = $1 = 100 cents
+                      : (item.finalPriceCents || item.upgradePriceCents || 0);
+                    
+                    addToCart({
+                      id: `item-${item.id}`,
+                      type: 'item',
+                      amount: priceCents,
+                      title: item.title,
+                      itemId: item.id,
+                      isCreditCampaign: item.isCreditCampaign,
+                      creditCost: item.creditCost,
+                      campaignId: item.campaignId,
+                      finalPriceCents: priceCents, // Store the calculated price for Stripe
+                      originalPriceCents: item.upgradePriceCents || (item.creditCost || 0) * 100,
+                      discountCents: item.discountCents || 0
+                    });
+                    toast({
+                      title: "Added to Cart",
+                      description: `${item.title} added`,
+                    });
+                  }}
+                  cart={cart}
                 />
                 
                 {/* Campaign Name and Description */}
@@ -497,19 +786,42 @@ export default function ClubDetailsModal({
                     clubId={club.id}
                     isAuthenticated={isAuthenticated}
                     onLoginRequired={() => login()}
+                    onAddToCart={(creditAmount) => {
+                      addToCart({
+                        id: `credits-${creditAmount}`,
+                        type: 'credits',
+                        amount: creditAmount,
+                        title: `${creditAmount} Credits`
+                      });
+                      toast({
+                        title: "Added to Cart",
+                        description: `${creditAmount} credits added`,
+                      });
+                    }}
+                    cart={cart}
                   />
                 )}
               </div>
 
-            {/* Your Status Section - Moved Below Campaign Rewards */}
+            {/* Wallet Section - Moved Below Campaign Rewards */}
             {membership != null ? (
-              <StatusProgressionCard 
-                currentStatus={currentStatus}
-                currentPoints={currentPoints}
-                nextStatus={nextStatus}
-                pointsToNext={pointsToNext}
-                statusIcon={StatusIcon}
-              />
+              <div className="mb-8">
+                <h3 className="mb-4 text-xl font-semibold">Wallet</h3>
+                <UnifiedPointsWallet 
+                  clubId={club.id}
+                  clubName={club.name}
+                  showPurchaseOptions={true}
+                  showTransferOptions={false}
+                  isAuthenticated={isAuthenticated}
+                  creditBalances={creditBalances}
+                  onCloseWallet={() => {
+                    // Scroll to campaign items
+                    setTimeout(() => {
+                      rewardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 300);
+                  }}
+                />
+              </div>
             ) : (
               <div className="mb-8">
                 <h3 className="mb-4 text-xl font-semibold">Join Club</h3>
@@ -626,11 +938,25 @@ export default function ClubDetailsModal({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setShowPurchaseOverlay(true);
+                      if (cart.length === 0) {
+                        toast({
+                          title: "Cart is Empty",
+                          description: "Add items or credits to checkout",
+                        });
+                        return;
+                      }
+                      handleCheckout();
                     }}
-                    className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90"
+                    disabled={isCheckingOut || cart.length === 0}
+                    className="w-full rounded-xl bg-primary py-4 text-center font-semibold text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Your Stuff
+                    {isCheckingOut ? (
+                      "Processing..."
+                    ) : cart.length === 0 ? (
+                      "Checkout"
+                    ) : (
+                      `Checkout (${getTotalItems()} ${getTotalItems() === 1 ? 'item' : 'items'} - $${(getTotalAmount() / 100).toFixed(0)})`
+                    )}
                   </button>
                 ) : (
                   <button
@@ -657,48 +983,6 @@ export default function ClubDetailsModal({
         </motion.div>
       </motion.div>
       
-      {/* Purchase Overlay */}
-              {showPurchaseOverlay && (
-          <div 
-            key="purchase-overlay"
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
-            onClick={() => setShowPurchaseOverlay(false)}
-          >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="relative w-full max-w-md bg-[#0E0E14] rounded-2xl shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowPurchaseOverlay(false)}
-              className="absolute right-3 top-3 rounded-full bg-gray-800 p-2 text-white hover:bg-gray-700 transition-colors z-10"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-white mb-6">Wallet</h2>
-              
-              <UnifiedPointsWallet 
-                clubId={club.id}
-                clubName={club.name}
-                showPurchaseOptions={true}
-                showTransferOptions={false}
-                isAuthenticated={isAuthenticated}
-                creditBalances={creditBalances}
-                onCloseWallet={() => {
-                  setShowPurchaseOverlay(false);
-                  // Scroll to campaign items
-                  setTimeout(() => {
-                    rewardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }, 300);
-                }}
-              />
-            </div>
-          </motion.div>
-        </div>
-      )}
       
       {/* Perk Redemption Confirmation */}
       {redemptionConfirmation && (

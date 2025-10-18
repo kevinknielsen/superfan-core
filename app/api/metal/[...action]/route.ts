@@ -1,1 +1,1 @@
-export { GET, POST } from "metal-presale/next";
+export { GET, POST } from "metal-presale";
