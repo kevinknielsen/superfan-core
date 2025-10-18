@@ -1012,8 +1012,9 @@ export default function UnlockRedemption({
       setIsRedeeming(false);
       setPendingItemPurchase(null);
     } finally {
-      // Always reset state unless we're waiting for Metal/USDC transaction
-      if (!isInWalletApp) {
+      // Reset state for web users OR if wallet checkout failed before sending USDC
+      // For successful wallet flows, state is reset in the USDC success useEffect
+      if (!isInWalletApp || !pendingItemPurchase) {
         setIsRedeeming(false);
       }
     }

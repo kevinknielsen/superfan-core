@@ -264,8 +264,7 @@ export default function UnifiedPointsWallet({
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const [isPurchasing, setIsPurchasing] = useState(false); // For Metal purchase processing
-  const { isInWalletApp, openUrl } = useFarcaster();
+  const [isPurchasing, setIsPurchasing] = useState(false); // For Metal purchase processing state
   const { toast } = useToast();
   
   const { user } = useUnifiedAuth();
@@ -316,8 +315,12 @@ export default function UnifiedPointsWallet({
         const { getAuthHeaders } = await import('@/app/api/sdk');
         const authHeaders = await getAuthHeaders();
 
-        // Preserve two-decimal precision
-        const creditAmount = Number((tokenData.sellAmount || 0).toFixed(2));
+        // Validate and extract USDC amount from Metal response
+        const raw = Number(tokenData?.sellAmount ?? tokenData?.usdcAmount ?? 0);
+        if (!Number.isFinite(raw) || raw <= 0) {
+          throw new Error('Invalid purchase amount from Metal response');
+        }
+        const creditAmount = Math.round(raw * 100) / 100; // 2-decimal precision
 
         // Add timeout to prevent hanging UI
         const controller = new AbortController();

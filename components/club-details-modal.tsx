@@ -35,6 +35,7 @@ import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
 import { useSendUSDC } from "@/hooks/use-usdc-payment";
 import { useMetalHolder, useBuyPresale } from "@/hooks/use-metal-holder";
+import { getAuthHeaders } from "@/app/api/sdk";
 
 // Use compatible types with existing components
 type RedemptionData = any; // Keep flexible for now since it comes from API
@@ -108,6 +109,7 @@ export default function ClubDetailsModal({
   
   // Cart state management
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartCreatedAt, setCartCreatedAt] = useState<number | null>(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   
   // Clear campaign data on club change to avoid stale UI
@@ -152,48 +154,83 @@ export default function ClubDetailsModal({
 
   // Clear campaign data and cart when switching clubs
   useEffect(() => { 
-    setCampaignData(null);
-    setCart([]);
+    setCampaignData(null); 
+    clearCart();
   }, [club.id]);
-  
-  // Clear cart on successful payment (URL parameter from Stripe redirect)
+
+  // Clear cart on successful payment (validate via backend, not untrusted URL params)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('purchase_success') === 'true' && params.get('club_id') === club.id) {
-        // Clear cart on confirmed successful payment
-        clearCart();
+      const sessionId = params.get('session_id');
+      const urlClubId = params.get('club_id');
+      
+      if (params.get('purchase_success') === 'true' && sessionId && urlClubId === club.id) {
+        // Validate payment with backend before clearing cart
+        const validateAndClearCart = async () => {
+          try {
+            const authHeaders = await getAuthHeaders();
+            
+            const response = await fetch('/api/validate-purchase', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders
+              },
+              body: JSON.stringify({
+                session_id: sessionId,
+                club_id: urlClubId
+              })
+            });
+            
+            if (response.ok) {
+              const result = await response.json() as { validated: boolean };
+              if (result.validated) {
+                // Payment confirmed by server - safe to clear cart
+                clearCart();
+              }
+            }
+            
+            // Clean up URL parameters regardless of validation result
+            const newParams = new URLSearchParams(window.location.search);
+            newParams.delete('purchase_success');
+            newParams.delete('club_id');
+            newParams.delete('session_id');
+            
+            const newSearch = newParams.toString();
+            const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+            window.history.replaceState({}, '', newUrl);
+          } catch (error) {
+            console.error('Error validating purchase:', error);
+            // Don't clear cart on error - preserve for retry
+          }
+        };
         
-        // Clean up URL parameters to prevent repeated clears on refresh/back
-        const newParams = new URLSearchParams(window.location.search);
-        newParams.delete('purchase_success');
-        newParams.delete('club_id');
-        newParams.delete('session_id');
-        
-        const newSearch = newParams.toString();
-        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
-        window.history.replaceState({}, '', newUrl);
+        validateAndClearCart();
       }
     }
   }, [club.id]);
   
-  // Stale cart cleanup - clear cart after 24 hours of inactivity
+  // Stale cart cleanup - clear cart 24 hours after FIRST item added
   useEffect(() => {
     const CART_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
     
-    if (cart.length > 0) {
+    if (cart.length > 0 && cartCreatedAt) {
+      const elapsed = Date.now() - cartCreatedAt;
+      const remaining = Math.max(0, CART_EXPIRY_MS - elapsed);
+      
       const timer = setTimeout(() => {
-        console.log('[ClubDetailsModal] Clearing stale cart after 24h');
+        console.log('[ClubDetailsModal] Clearing stale cart after 24h from first item');
         clearCart();
         toast({
           title: "Cart Cleared",
           description: "Your cart was cleared due to inactivity",
         });
-      }, CART_EXPIRY_MS);
+      }, remaining);
       
       return () => clearTimeout(timer);
     }
-  }, [cart, toast]);
+  }, [cart.length > 0, cartCreatedAt, toast]);
   
   // Monitor USDC transaction success and process all cart items
   const processedCartTxRef = useRef<string | null>(null);
@@ -205,10 +242,11 @@ export default function ClubDetailsModal({
       return;
     }
     
-    processedCartTxRef.current = usdcTxHash;
-    
     const processCartPurchases = async () => {
       try {
+        // Mark as processing AFTER validation but BEFORE async work
+        processedCartTxRef.current = usdcTxHash;
+        
         // Process each cart item
         for (const cartItem of cart) {
           if (cartItem.type === 'credits') {
@@ -223,7 +261,6 @@ export default function ClubDetailsModal({
             }
             
             // Record credit purchase with timeout protection
-            const { getAuthHeaders } = await import('@/app/api/sdk');
             const authHeaders = await getAuthHeaders();
             
             const controller1 = new AbortController();
@@ -267,8 +304,7 @@ export default function ClubDetailsModal({
             }
             
             // Record item purchase with timeout protection
-            const { getAuthHeaders: getAuthHeaders2 } = await import('@/app/api/sdk');
-            const authHeaders2 = await getAuthHeaders2();
+            const authHeaders2 = await getAuthHeaders();
             
             const controller2 = new AbortController();
             const timeout2 = setTimeout(() => controller2.abort(), 15_000);
@@ -334,6 +370,11 @@ export default function ClubDetailsModal({
   // Cart helper functions
   const addToCart = (item: Omit<CartItem, 'quantity'>) => {
     setCart(prev => {
+      // Track cart creation time on first item
+      if (prev.length === 0) {
+        setCartCreatedAt(Date.now());
+      }
+      
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
         // Increment quantity for existing item
@@ -356,12 +397,15 @@ export default function ClubDetailsModal({
     }, 0);
   };
   
-  const clearCart = () => setCart([]);
+  const clearCart = () => {
+    setCart([]);
+    setCartCreatedAt(null);
+  };
 
 
   // REMOVED: Auto-trigger login (we now only prompt on interaction)
   // Login is triggered when user clicks items or purchase buttons
-
+  
   const StatusIcon = STATUS_ICONS[currentStatus as keyof typeof STATUS_ICONS] ?? Users;
 
 
@@ -396,7 +440,7 @@ export default function ClubDetailsModal({
       });
     }
   };
-  
+
   // Handle checkout - process all cart items
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -429,13 +473,13 @@ export default function ClubDetailsModal({
     }
     
     // Validate Metal holder address
-    const { isAddress } = await import('viem');
+    const { isAddress, parseUnits } = await import('viem');
     if (!isAddress(metalHolder.data.address)) {
       throw new Error("Invalid Metal holder address");
     }
     
     // Calculate total USDC using integer math (USDC has 6 decimals)
-    // Convert everything to micro-USDC (smallest unit), sum, then convert back
+    // Keep as BigInt throughout to avoid precision errors
     let totalMicroUSDC = BigInt(0);
     
     for (const item of cart) {
@@ -450,8 +494,11 @@ export default function ClubDetailsModal({
       }
     }
     
-    // Convert micro-USDC to USDC (divide by 1,000,000)
-    const totalUSDC = Number(totalMicroUSDC) / 1_000_000;
+    // Convert BigInt to USDC string without losing precision
+    const wholePart = totalMicroUSDC / BigInt(1_000_000);
+    const fractionalPart = totalMicroUSDC % BigInt(1_000_000);
+    const totalUSDCString = `${wholePart}.${fractionalPart.toString().padStart(6, '0')}`;
+    const totalUSDC = parseFloat(totalUSDCString);
     
     if (!Number.isFinite(totalUSDC) || totalUSDC <= 0) {
       throw new Error("Invalid total amount");
@@ -469,7 +516,6 @@ export default function ClubDetailsModal({
   
   // Stripe checkout: Create one unified checkout session for all cart items
   const handleStripeCheckout = async () => {
-    const { getAuthHeaders } = await import('@/app/api/sdk');
     const authHeaders = await getAuthHeaders();
     
     // Combine all credits into total amount
@@ -480,8 +526,12 @@ export default function ClubDetailsModal({
     // Get all items
     const items = cart.filter(item => item.type === 'item');
     
-    // Generate idempotency key for cart checkout
-    const idempotencyKey = `cart:${club.id}:${getTotalItems()}:${getTotalAmount()}`;
+    // Generate deterministic idempotency key from cart contents
+    const sortedCartIds = [...cart]
+      .sort((a, b) => a.id.localeCompare(b.id, 'en-US', { numeric: true }))
+      .map(item => `${item.id}:${item.quantity}`)
+      .join('|');
+    const idempotencyKey = `cart:${club.id}:${sortedCartIds}`;
     
     // Create unified cart checkout
     const response = await fetch(`/api/campaigns/cart-checkout`, {
@@ -512,7 +562,7 @@ export default function ClubDetailsModal({
       const url = result?.stripe_session_url;
       if (url) {
         // DO NOT clear cart here - preserve until payment confirmation
-        // Cart will be cleared by webhook on successful payment or by user on return
+        // Cart is cleared via URL parameters on successful return (lines 163-178)
         // This allows retry if redirect fails or user backs out
         await navigateToCheckout(url, isInWalletApp, openUrl);
         // Note: navigateToCheckout redirects the page, so code after won't execute
@@ -884,7 +934,8 @@ export default function ClubDetailsModal({
                         id: `credits-${creditAmount}`,
                         type: 'credits',
                         amount: creditAmount,
-                        title: `${creditAmount} Credits`
+                        title: `${creditAmount} Credits`,
+                        campaignId: campaignData.campaign_id // Include for buyPresaleAsync
                       });
                       toast({
                         title: "Added to Cart",

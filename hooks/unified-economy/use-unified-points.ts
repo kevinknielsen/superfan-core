@@ -219,6 +219,11 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
             throw new Error('Failed to fetch spending history');
           }
           return response.json();
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error('Request timed out - please try again');
+          }
+          throw error;
         } finally {
           clearTimeout(timeout);
         }
@@ -245,6 +250,11 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
             throw new Error('Failed to fetch transfer history');
           }
           return response.json();
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error('Request timed out - please try again');
+          }
+          throw error;
         } finally {
           clearTimeout(timeout);
         }

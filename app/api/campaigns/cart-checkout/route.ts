@@ -164,11 +164,16 @@ export async function POST(request: NextRequest) {
         return new URL(urlInput, serverOrigin).toString();
       }
       
-      // Full URL - verify it matches server origin
+      // Full URL - verify it matches server origin (relaxed in development)
       try {
         const url = new URL(urlInput);
         const serverUrl = new URL(serverOrigin);
-        if (url.origin !== serverUrl.origin) {
+        
+        // In development, allow localhost regardless of configured BASE_URL
+        const isDev = process.env.NODE_ENV !== 'production';
+        const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+        
+        if (url.origin !== serverUrl.origin && !(isDev && isLocalhost)) {
           throw new Error(`${fieldName} must be same origin as server (got ${url.origin}, expected ${serverUrl.origin})`);
         }
         return url.toString();
@@ -293,14 +298,13 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       club_id: club_id,
       total_credits: total_credits,
-      success_url: success_url,
-      cancel_url: cancel_url,
+      success_url: validatedSuccessUrl,
+      cancel_url: validatedCancelUrl,
       items: sortedItems.map(i => ({
         tier_reward_id: i.tier_reward_id,
         quantity: i.quantity,
-        final_price_cents: i.final_price_cents,
-        original_price_cents: i.original_price_cents,
         campaign_id: i.campaign_id
+        // Exclude price fields - server computes them
       }))
     });
     const hash = createHash('sha256').update(canonicalData).digest('hex');
@@ -329,9 +333,14 @@ export async function POST(request: NextRequest) {
       idempotencyKey
     });
     
+    // Compute total from server-computed line items (authoritative)
+    const total_amount = lineItems.reduce((sum, li) => 
+      sum + (li.price_data.unit_amount * li.quantity), 0
+    );
+    
     return NextResponse.json({
       stripe_session_url: session.url,
-      total_amount: getTotalCartAmount(total_credits, items),
+      total_amount,
       item_count: lineItems.length
     });
 
@@ -342,13 +351,5 @@ export async function POST(request: NextRequest) {
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
-}
-
-function getTotalCartAmount(credits: number, items: Array<{ final_price_cents?: number; original_price_cents?: number; quantity: number }>) {
-  const creditsCents = credits * 100;
-  const itemsCents = items.reduce((sum, item) => 
-    sum + ((item.final_price_cents || item.original_price_cents || 0) * item.quantity), 0
-  );
-  return creditsCents + itemsCents;
 }
 

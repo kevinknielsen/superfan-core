@@ -187,6 +187,10 @@ export function CampaignProgressCard({
     // If cart mode is enabled, add to cart instead of immediate purchase
     if (onAddToCart) {
       onAddToCart(creditAmount);
+      toast({
+        title: "Added to Cart",
+        description: `${creditAmount} credits added`,
+      });
       return;
     }
 
@@ -419,10 +423,10 @@ export function CampaignProgressCard({
             </div>
             <div className="grid grid-cols-3 gap-3">
               {(() => {
-                // Cache cart quantities to avoid repeated lookups
-                const qty25 = cart.find(item => item.id === 'credits-25')?.quantity;
-                const qty100 = cart.find(item => item.id === 'credits-100')?.quantity;
-                const qty250 = cart.find(item => item.id === 'credits-250')?.quantity;
+                // Cache cart quantities to avoid repeated lookups (coerce to number for safety)
+                const qty25 = Number(cart.find(item => item.id === 'credits-25')?.quantity ?? 0);
+                const qty100 = Number(cart.find(item => item.id === 'credits-100')?.quantity ?? 0);
+                const qty250 = Number(cart.find(item => item.id === 'credits-250')?.quantity ?? 0);
                 
                 return (
                   <>
@@ -438,7 +442,7 @@ export function CampaignProgressCard({
                           : isBuyingPresale && pendingCreditAmount === 25
                           ? "Processing..."
                           : "25"}
-                        {qty25 && (
+                        {qty25 > 0 && (
                           <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
                             {qty25}
                           </span>
@@ -457,7 +461,7 @@ export function CampaignProgressCard({
                           : isBuyingPresale && pendingCreditAmount === 100
                           ? "Processing..."
                           : "100"}
-                        {qty100 && (
+                        {qty100 > 0 && (
                           <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
                             {qty100}
                           </span>
@@ -476,7 +480,7 @@ export function CampaignProgressCard({
                           : isBuyingPresale && pendingCreditAmount === 250
                           ? "Processing..."
                           : "250"}
-                        {qty250 && (
+                        {qty250 > 0 && (
                           <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
                             {qty250}
                           </span>
