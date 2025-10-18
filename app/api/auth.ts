@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 // Lazy initialization to avoid requiring env vars at build time
 let privyClient: PrivyClient | null = null;
 
-function getPrivyClient(): PrivyClient {
+export function getPrivyClient(): PrivyClient {
   if (privyClient) return privyClient;
   
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
@@ -38,8 +38,14 @@ export async function verifyPrivyToken(req: NextRequest) {
     console.log('[Auth] Privy token claims:', { userId: claims.userId, appId: claims.appId });
     return claims;
   } catch (error) {
-    console.error("[Server]: Error verifying Privy token:", error);
-    console.error("[Server]: Token verification failed");
+    // Rethrow configuration errors (missing env vars) - these should fail fast
+    if (error instanceof Error && error.message.includes('Missing required Privy environment variables')) {
+      console.error('[Auth] CRITICAL: Privy configuration error - missing environment variables');
+      throw error; // Fail fast on misconfiguration
+    }
+    
+    // Log authentication failures (invalid tokens)
+    console.error("[Auth] Token verification failed:", error instanceof Error ? error.message : error);
     return null;
   }
 }

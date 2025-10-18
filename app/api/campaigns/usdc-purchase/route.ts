@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyUnifiedAuth } from '@/app/api/auth';
+import { verifyUnifiedAuth, getPrivyClient } from '@/app/api/auth';
 import { supabase } from '@/app/api/supabase';
 import { getOrCreateUserFromAuth } from '@/lib/user-management';
 import { createPublicClient, http, decodeEventLog, parseAbi, formatUnits } from 'viem';
 import { base } from 'viem/chains';
-import { PrivyClient } from '@privy-io/server-auth';
 
 // Base RPC client for transaction verification
 const publicClient = createPublicClient({
@@ -15,114 +14,6 @@ const publicClient = createPublicClient({
 // USDC contract address on Base
 const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
-// Validate required environment variables
-if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID || !process.env.PRIVY_APP_SECRET) {
-  throw new Error('Missing required Privy environment variables: NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET must be configured');
-}
-
-// Privy client for user data queries
-const privy = new PrivyClient(
-  process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
-  process.env.PRIVY_APP_SECRET!
-);
-
-/**
- * Verify that a wallet address belongs to the authenticated user
- * @param auth - Authentication result from verifyUnifiedAuth
- * @param walletAddress - Address to verify ownership of
- * @returns true if the wallet belongs to the user, false otherwise
- */
-async function verifyWalletOwnership(
-  auth: { userId: string; type: 'privy' | 'farcaster' },
-  walletAddress: string
-): Promise<boolean> {
-  try {
-    if (auth.type === 'privy') {
-      // For Privy: Query user's linked wallets
-      const privyUser = await privy.getUserById(auth.userId);
-      
-      if (!privyUser || !privyUser.linkedAccounts) {
-        console.error('[Wallet Verification] No linked accounts found for Privy user:', auth.userId);
-        return false;
-      }
-      
-      // Check if wallet address matches any linked wallet
-      const linkedWallets = privyUser.linkedAccounts
-        .filter((account: any) => account.type === 'wallet')
-        .map((account: any) => account.address?.toLowerCase());
-      
-      const isOwned = linkedWallets.includes(walletAddress.toLowerCase());
-      
-      console.log('[Wallet Verification] Privy wallet check:', {
-        userId: auth.userId,
-        walletAddress,
-        linkedWallets,
-        isOwned
-      });
-      
-      return isOwned;
-      
-    } else if (auth.type === 'farcaster') {
-      // For Farcaster: Query verified addresses from Farcaster
-      // Extract FID from userId (format: "farcaster:12345")
-      const fid = auth.userId.replace('farcaster:', '');
-      
-      // Query Farcaster user data from Neynar API
-      const neynarApiKey = process.env.NEYNAR_API_KEY;
-      if (!neynarApiKey) {
-        console.error('[Wallet Verification] NEYNAR_API_KEY not configured - rejecting Farcaster verification');
-        // Reject verification if Neynar is not configured to prevent security bypass
-        return false;
-      }
-      
-      const response = await fetch(`https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`, {
-        headers: {
-          'accept': 'application/json',
-          'api_key': neynarApiKey
-        }
-      });
-      
-      if (!response.ok) {
-        console.error('[Wallet Verification] Neynar API error:', response.status);
-        return false;
-      }
-      
-      const data = await response.json() as any;
-      const user = data.users?.[0];
-      
-      if (!user) {
-        console.error('[Wallet Verification] Farcaster user not found:', fid);
-        return false;
-      }
-      
-      // Get custody address and verified addresses
-      const custodyAddress = user.custody_address?.toLowerCase();
-      const verifiedAddresses = (user.verified_addresses?.eth_addresses || [])
-        .map((addr: string) => addr.toLowerCase());
-      
-      const allAddresses = [custodyAddress, ...verifiedAddresses].filter(Boolean);
-      const isOwned = allAddresses.includes(walletAddress.toLowerCase());
-      
-      console.log('[Wallet Verification] Farcaster wallet check:', {
-        fid,
-        walletAddress,
-        custodyAddress,
-        verifiedAddresses,
-        isOwned
-      });
-      
-      return isOwned;
-    }
-    
-    console.error('[Wallet Verification] Unknown auth type:', auth.type);
-    return false;
-    
-  } catch (error) {
-    console.error('[Wallet Verification] Error verifying wallet ownership:', error);
-    return false;
-  }
-}
-
 /**
  * POST /api/campaigns/usdc-purchase
  * Process USDC payment for campaign credits
@@ -130,6 +21,102 @@ async function verifyWalletOwnership(
  * Accepts any verified authentication (Privy or Farcaster)
  */
 export async function POST(request: NextRequest) {
+  /**
+   * Verify that a wallet address belongs to the authenticated user
+   * Defined inside handler to avoid module-level evaluation during build
+   */
+  async function verifyWalletOwnership(
+    auth: { userId: string; type: 'privy' | 'farcaster' },
+    walletAddress: string
+  ): Promise<boolean> {
+    try {
+      if (auth.type === 'privy') {
+        // For Privy: Query user's linked wallets
+        const privy = getPrivyClient();
+        const privyUser = await privy.getUserById(auth.userId);
+        
+        if (!privyUser || !privyUser.linkedAccounts) {
+          console.error('[Wallet Verification] No linked accounts found for Privy user:', auth.userId);
+          return false;
+        }
+        
+        // Check if wallet address matches any linked wallet
+        const linkedWallets = privyUser.linkedAccounts
+          .filter((account: any) => account.type === 'wallet')
+          .map((account: any) => account.address?.toLowerCase());
+        
+        const isOwned = linkedWallets.includes(walletAddress.toLowerCase());
+        
+        console.log('[Wallet Verification] Privy wallet check:', {
+          userId: auth.userId,
+          walletAddress,
+          linkedWallets,
+          isOwned
+        });
+        
+        return isOwned;
+        
+      } else if (auth.type === 'farcaster') {
+        // For Farcaster: Query verified addresses from Farcaster
+        // Extract FID from userId (format: "farcaster:12345")
+        const fid = auth.userId.replace('farcaster:', '');
+        
+        // Query Farcaster user data from Neynar API
+        const neynarApiKey = process.env.NEYNAR_API_KEY;
+        if (!neynarApiKey) {
+          console.error('[Wallet Verification] NEYNAR_API_KEY not configured - rejecting Farcaster verification');
+          // Reject verification if Neynar is not configured to prevent security bypass
+          return false;
+        }
+        
+        const response = await fetch(`https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`, {
+          headers: {
+            'accept': 'application/json',
+            'api_key': neynarApiKey
+          }
+        });
+        
+        if (!response.ok) {
+          console.error('[Wallet Verification] Neynar API error:', response.status);
+          return false;
+        }
+        
+        const data = await response.json() as any;
+        const user = data.users?.[0];
+        
+        if (!user) {
+          console.error('[Wallet Verification] Farcaster user not found:', fid);
+          return false;
+        }
+        
+        // Get custody address and verified addresses
+        const custodyAddress = user.custody_address?.toLowerCase();
+        const verifiedAddresses = (user.verified_addresses?.eth_addresses || [])
+          .map((addr: string) => addr.toLowerCase());
+        
+        const allAddresses = [custodyAddress, ...verifiedAddresses].filter(Boolean);
+        const isOwned = allAddresses.includes(walletAddress.toLowerCase());
+        
+        console.log('[Wallet Verification] Farcaster wallet check:', {
+          fid,
+          walletAddress,
+          custodyAddress,
+          verifiedAddresses,
+          isOwned
+        });
+        
+        return isOwned;
+      }
+      
+      console.error('[Wallet Verification] Unknown auth type:', auth.type);
+      return false;
+      
+    } catch (error) {
+      console.error('[Wallet Verification] Error verifying wallet ownership:', error);
+      return false;
+    }
+  }
+
   try {
     // Verify authentication (supports both Privy and Farcaster)
     const auth = await verifyUnifiedAuth(request);
