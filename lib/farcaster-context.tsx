@@ -47,11 +47,12 @@ export function FarcasterProvider({ children }: { children: React.ReactNode }) {
         // Call ready to dismiss splash screen in Wallet App context
         // Detect platform using clientFid from Base docs
         const clientFid = result?.client?.clientFid;
-        const isCoinbaseWallet = clientFid === COINBASE_WALLET_CLIENT_FID;
+        const KNOWN_COINBASE_FIDS = [COINBASE_WALLET_CLIENT_FID, 399519]; // Current + legacy
+        const isCoinbaseWallet = clientFid && KNOWN_COINBASE_FIDS.includes(clientFid);
         
-        // Log unknown client FIDs for diagnostics
-        if (clientFid && !isCoinbaseWallet && clientFid !== COINBASE_WALLET_CLIENT_FID) {
-          console.warn(`[FarcasterContext] Unknown client FID detected: ${clientFid}. Expected Coinbase: ${COINBASE_WALLET_CLIENT_FID}`);
+        // Log unknown client FIDs for diagnostics (only if not in known list)
+        if (clientFid && !KNOWN_COINBASE_FIDS.includes(clientFid)) {
+          console.warn(`[FarcasterContext] Unknown client FID detected: ${clientFid}. Known Coinbase FIDs: ${KNOWN_COINBASE_FIDS.join(', ')}`);
         }
         
         if (result && result.client) {

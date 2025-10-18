@@ -83,16 +83,11 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
         if (process.env.NODE_ENV === 'development') console.log(`[useUnifiedPoints] Fetching breakdown for club ${clubId}...`);
         const response = await fetch(`/api/points/breakdown?clubId=${clubId}`, {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders,
-          },
+          headers: authHeaders,
           signal: controller.signal,
         });
         
         if (process.env.NODE_ENV === 'development') console.log(`[useUnifiedPoints] Response status: ${response.status}`);
-        
-        clearTimeout(timeoutId);
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({})) as any;
@@ -101,11 +96,12 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
         
         return response.json() as Promise<PointsBreakdown>;
       } catch (error) {
-        clearTimeout(timeoutId);
         if (error instanceof Error && error.name === 'AbortError') {
           throw new Error('Request timed out - please try again');
         }
         throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
     },
     enabled: options?.enabled !== false && !!clubId,
@@ -119,31 +115,45 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
   const spendPointsMutation = useMutation({
     mutationFn: async (request: SpendPointsRequest) => {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('/api/points/spend', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify(request),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      
+      try {
+        const response = await fetch('/api/points/spend', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...authHeaders,
+            ...(request.referenceId ? { 'x-idempotency-key': request.referenceId } : {}),
+          },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        let errorPayload: any;
-        try {
-          errorPayload = await response.json();
-        } catch {
-          const text = await response.text().catch(() => '');
-          errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+        if (!response.ok) {
+          let errorPayload: any;
+          try {
+            errorPayload = await response.json();
+          } catch {
+            const text = await response.text().catch(() => '');
+            errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+          }
+          const message = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
+          const error = new Error(message);
+          (error as any).status = response.status;
+          (error as any).payload = errorPayload;
+          throw error;
         }
-        const message = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
-        const error = new Error(message);
-        (error as any).status = response.status;
-        (error as any).payload = errorPayload;
-        throw error;
-      }
 
-      return response.json() as any;
+        return response.json() as any;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Request timed out - please try again');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId, user?.id || 'anonymous'] });
@@ -161,33 +171,46 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
   const transferPointsMutation = useMutation({
     mutationFn: async (request: TransferPointsRequest) => {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch('/api/points/transfer', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify(request),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      
+      try {
+        const response = await fetch('/api/points/transfer', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...authHeaders,
+          },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        let errorPayload: any;
-        try {
-          errorPayload = await response.json();
-        } catch {
-          const text = await response.text().catch(() => '');
-          errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+        if (!response.ok) {
+          let errorPayload: any;
+          try {
+            errorPayload = await response.json();
+          } catch {
+            const text = await response.text().catch(() => '');
+            errorPayload = text ? { error: text } : { error: `HTTP ${response.status}` };
+          }
+          const baseMessage = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
+          const payloadSnippet = errorPayload ? ` (${JSON.stringify(errorPayload)})` : '';
+          const message = `${baseMessage}${payloadSnippet}`;
+          const error = new Error(message);
+          (error as any).status = response.status;
+          (error as any).payload = errorPayload;
+          throw error;
         }
-        const baseMessage = typeof errorPayload?.error === 'string' ? errorPayload.error : `HTTP ${response.status}`;
-        const payloadSnippet = errorPayload ? ` (${JSON.stringify(errorPayload)})` : '';
-        const message = `${baseMessage}${payloadSnippet}`;
-        const error = new Error(message);
-        (error as any).status = response.status;
-        (error as any).payload = errorPayload;
-        throw error;
-      }
 
-      return response.json() as any;
+        return response.json() as any;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Request timed out - please try again');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['points-breakdown', clubId, user?.id || 'anonymous'] });
@@ -216,7 +239,8 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
             signal: controller.signal,
           });
           if (!response.ok) {
-            throw new Error('Failed to fetch spending history');
+            const data = await response.json().catch(() => ({})) as any;
+            throw new Error(data?.error || `HTTP ${response.status}: Failed to fetch spending history`);
           }
           return response.json();
         } catch (error) {
@@ -247,7 +271,8 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
             signal: controller.signal,
           });
           if (!response.ok) {
-            throw new Error('Failed to fetch transfer history');
+            const data = await response.json().catch(() => ({})) as any;
+            throw new Error(data?.error || `HTTP ${response.status}: Failed to fetch transfer history`);
           }
           return response.json();
         } catch (error) {

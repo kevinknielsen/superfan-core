@@ -230,119 +230,146 @@ export default function ClubDetailsModal({
       
       return () => clearTimeout(timer);
     }
-  }, [cart.length > 0, cartCreatedAt, toast]);
+  }, [cart.length, cartCreatedAt, toast]);
   
   // Monitor USDC transaction success and process all cart items
   const processedCartTxRef = useRef<string | null>(null);
+  const processedCartItemsRef = useRef<Set<string>>(new Set());
+  
   useEffect(() => {
     if (!isUSDCSuccess || !usdcTxHash || cart.length === 0 || !user) return;
     
-    // Prevent duplicate processing
+    // Prevent duplicate processing of same transaction
     if (processedCartTxRef.current === usdcTxHash) {
       return;
     }
     
     const processCartPurchases = async () => {
+      const successfulItems = new Set<string>();
+      
       try {
-        // Mark as processing AFTER validation but BEFORE async work
-        processedCartTxRef.current = usdcTxHash;
-        
-        // Process each cart item
+        // Process each cart item (skip already processed ones on retry)
         for (const cartItem of cart) {
-          if (cartItem.type === 'credits') {
-            // Buy presale for credits
-            const totalCredits = cartItem.amount * cartItem.quantity;
-            if (cartItem.campaignId) {
-              await buyPresaleAsync({
-                user,
-                campaignId: cartItem.campaignId,
-                amount: totalCredits
-              });
-            }
-            
-            // Record credit purchase with timeout protection
-            const authHeaders = await getAuthHeaders();
-            
-            const controller1 = new AbortController();
-            const timeout1 = setTimeout(() => controller1.abort(), 15_000);
-            
-            try {
-              const response = await fetch('/api/metal/record-purchase', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Idempotency-Key': usdcTxHash, // Prevent duplicate recording
-                  ...authHeaders
-                },
-                body: JSON.stringify({
-                  club_id: club.id,
-                  campaign_id: cartItem.campaignId,
-                  credit_amount: totalCredits,
-                  tx_hash: usdcTxHash,
-                  metal_holder_id: metalHolder.data?.id,
-                  metal_holder_address: metalHolder.data?.address
-                }),
-                signal: controller1.signal
-              });
-              
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({})) as any;
-                throw new Error(errorData.error || 'Failed to record credit purchase');
+          const itemKey = `${usdcTxHash}:${cartItem.id}`;
+          
+          // Skip if already processed in a previous attempt
+          if (processedCartItemsRef.current.has(itemKey)) {
+            console.log(`[Cart] Skipping already processed item: ${cartItem.id}`);
+            successfulItems.add(itemKey);
+            continue;
+          }
+          
+          try {
+            if (cartItem.type === 'credits') {
+              // Buy presale for credits
+              const totalCredits = cartItem.amount * cartItem.quantity;
+              if (cartItem.campaignId) {
+                await buyPresaleAsync({
+                  user,
+                  campaignId: cartItem.campaignId,
+                  amount: totalCredits
+                });
               }
-            } finally {
-              clearTimeout(timeout1);
-            }
-          } else if (cartItem.itemId) {
-            // Buy presale for item
-            if (cartItem.campaignId) {
-              const amountUSDC = (cartItem.amount * cartItem.quantity) / 100;
-              await buyPresaleAsync({
-                user,
-                campaignId: cartItem.campaignId,
-                amount: amountUSDC
-              });
-            }
-            
-            // Record item purchase with timeout protection
-            const authHeaders2 = await getAuthHeaders();
-            
-            const controller2 = new AbortController();
-            const timeout2 = setTimeout(() => controller2.abort(), 15_000);
-            
-            try {
-              const response = await fetch('/api/metal/purchase-item', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Idempotency-Key': `${usdcTxHash}-${cartItem.itemId}`, // Prevent duplicate recording
-                  ...authHeaders2
-                },
-                body: JSON.stringify({
-                  tier_reward_id: cartItem.itemId,
-                  club_id: club.id,
-                  campaign_id: cartItem.campaignId,
-                  amount_paid_cents: cartItem.finalPriceCents || cartItem.originalPriceCents || 0,
-                  original_price_cents: cartItem.originalPriceCents || 0,
-                  discount_applied_cents: cartItem.discountCents || 0,
-                  tx_hash: usdcTxHash,
-                  metal_holder_id: metalHolder.data?.id,
-                  metal_holder_address: metalHolder.data?.address,
-                  user_tier: currentStatus
-                }),
-                signal: controller2.signal
-              });
               
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({})) as any;
-                throw new Error(errorData.error || 'Failed to record item purchase');
+              // Record credit purchase with timeout protection
+              const authHeaders = await getAuthHeaders();
+              
+              const controller1 = new AbortController();
+              const timeout1 = setTimeout(() => controller1.abort(), 15_000);
+              
+              try {
+                const response = await fetch('/api/metal/record-purchase', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Idempotency-Key': usdcTxHash, // Prevent duplicate recording
+                    ...authHeaders
+                  },
+                  body: JSON.stringify({
+                    club_id: club.id,
+                    campaign_id: cartItem.campaignId,
+                    credit_amount: totalCredits,
+                    tx_hash: usdcTxHash,
+                    metal_holder_id: metalHolder.data?.id,
+                    metal_holder_address: metalHolder.data?.address
+                  }),
+                  signal: controller1.signal
+                });
+                
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({})) as any;
+                  throw new Error(errorData.error || 'Failed to record credit purchase');
+                }
+                
+                // Mark as successfully processed
+                successfulItems.add(itemKey);
+              } finally {
+                clearTimeout(timeout1);
               }
-            } finally {
-              clearTimeout(timeout2);
+            } else if (cartItem.itemId) {
+              // Buy presale for item
+              if (cartItem.campaignId) {
+                const amountUSDC = (cartItem.amount * cartItem.quantity) / 100;
+                await buyPresaleAsync({
+                  user,
+                  campaignId: cartItem.campaignId,
+                  amount: amountUSDC
+                });
+              }
+              
+              // Record item purchase with timeout protection
+              const authHeaders2 = await getAuthHeaders();
+              
+              const controller2 = new AbortController();
+              const timeout2 = setTimeout(() => controller2.abort(), 15_000);
+              
+              try {
+                const response = await fetch('/api/metal/purchase-item', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Idempotency-Key': `${usdcTxHash}-${cartItem.itemId}`, // Prevent duplicate recording
+                    ...authHeaders2
+                  },
+                  body: JSON.stringify({
+                    tier_reward_id: cartItem.itemId,
+                    club_id: club.id,
+                    campaign_id: cartItem.campaignId,
+                    amount_paid_cents: cartItem.finalPriceCents || cartItem.originalPriceCents || 0,
+                    original_price_cents: cartItem.originalPriceCents || 0,
+                    discount_applied_cents: cartItem.discountCents || 0,
+                    tx_hash: usdcTxHash,
+                    metal_holder_id: metalHolder.data?.id,
+                    metal_holder_address: metalHolder.data?.address,
+                    user_tier: currentStatus
+                  }),
+                  signal: controller2.signal
+                });
+                
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({})) as any;
+                  throw new Error(errorData.error || 'Failed to record item purchase');
+                }
+                
+                // Mark as successfully processed
+                successfulItems.add(itemKey);
+              } finally {
+                clearTimeout(timeout2);
+              }
             }
+          } catch (itemError) {
+            // Log item-specific error but continue processing other items
+            console.error(`[Cart] Failed to process item ${cartItem.id}:`, itemError);
+            throw itemError; // Re-throw to trigger outer catch
           }
         }
         
-        // Success - clear cart and show confirmation
+        // All items processed successfully - mark transaction complete and clear cart
+        processedCartTxRef.current = usdcTxHash;
+        
+        // Store successfully processed items to prevent reprocessing
+        successfulItems.forEach(key => processedCartItemsRef.current.add(key));
+        
         toast({
           title: "Purchase Successful! 🎉",
           description: `${cart.length} item(s) purchased`,
@@ -352,12 +379,16 @@ export default function ClubDetailsModal({
         await refetch(); // Refresh points/wallet data
         
       } catch (error) {
-        // Reset for retry
-        processedCartTxRef.current = null;
+        // Don't mark transaction as processed - allow retry
+        // But keep track of successfully processed items to avoid reprocessing
+        successfulItems.forEach(key => processedCartItemsRef.current.add(key));
+        
         console.error('Cart processing error:', error);
         toast({
           title: "Processing Failed",
-          description: error instanceof Error ? error.message : "Failed to process cart. Transaction hash: " + usdcTxHash,
+          description: error instanceof Error 
+            ? `${error.message}. Some items may have been processed. Transaction: ${usdcTxHash}`
+            : `Failed to process cart. Transaction hash: ${usdcTxHash}`,
           variant: "destructive",
         });
         setIsCheckingOut(false);
@@ -562,7 +593,7 @@ export default function ClubDetailsModal({
       const url = result?.stripe_session_url;
       if (url) {
         // DO NOT clear cart here - preserve until payment confirmation
-        // Cart is cleared via URL parameters on successful return (lines 163-178)
+        // Cart is cleared after backend validation on successful return (see lines 162-212)
         // This allows retry if redirect fails or user backs out
         await navigateToCheckout(url, isInWalletApp, openUrl);
         // Note: navigateToCheckout redirects the page, so code after won't execute

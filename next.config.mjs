@@ -57,17 +57,19 @@ const nextConfig = {
                          !isDev;
     const isDevOrPreview = isDev || isVercelPreview || !isProduction;
     
-    // Debug logging with more environment info
-    console.log('CSP Environment Check:', {
-      NODE_ENV: process.env.NODE_ENV,
-      VERCEL_ENV: process.env.VERCEL_ENV,
-      VERCEL_URL: !!process.env.VERCEL_URL,
-      VERCEL: process.env.VERCEL,
-      isDev,
-      isVercelPreview,
-      isProduction,
-      isDevOrPreview
-    });
+    // Debug logging (development/preview only)
+    if (isDevOrPreview) {
+      console.log('CSP Environment Check:', {
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL_ENV: process.env.VERCEL_ENV,
+        VERCEL_URL: !!process.env.VERCEL_URL,
+        VERCEL: process.env.VERCEL,
+        isDev,
+        isVercelPreview,
+        isProduction,
+        isDevOrPreview
+      });
+    }
     
     // Development and Preview CSP is more permissive for hot reloading, debugging, and Vercel features
     const scriptSrc = isDevOrPreview 
@@ -140,12 +142,8 @@ const nextConfig = {
             key: 'Strict-Transport-Security',
             value: 'max-age=31536000; includeSubDomains',
           },
-          // Remove X-Frame-Options to allow CSP frame-ancestors to work
+          // Omit X-Frame-Options entirely; CSP frame-ancestors governs embedding
           // This is critical for Farcaster and Coinbase Wallet App support
-          {
-            key: 'X-Frame-Options',
-            value: '',
-          },
         ],
       },
     ];

@@ -431,7 +431,16 @@ export default function PerkDetailsModal({
                   
                   onClose(); // Close modal first
                   if (isCreditCampaignMetadata(perk.metadata) && onPurchase) {
-                    await Promise.resolve(onPurchase()); // Trigger add to cart flow after modal closes
+                    try {
+                      await Promise.resolve(onPurchase());
+                    } catch (e) {
+                      console.error('Add to cart error:', e);
+                      toast({
+                        title: 'Failed to add',
+                        description: e instanceof Error ? e.message : 'Please try again.',
+                        variant: 'destructive',
+                      });
+                    }
                   }
                   
                   // Reset after brief delay to allow re-adding (with unmount protection)
@@ -442,6 +451,7 @@ export default function PerkDetailsModal({
                   }, 500);
                 }}
                 disabled={isAdding}
+                aria-busy={isAdding}
                 size="lg"
                 className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl disabled:opacity-50"
               >
