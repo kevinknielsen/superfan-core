@@ -45,13 +45,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if we have a credit_purchases record for this session
-    const { data: purchase } = await supabaseAny
+    const { data: purchase, error: purchaseError } = await supabaseAny
       .from('credit_purchases')
       .select('id, status, stripe_session_id, club_id, user_id')
       .eq('stripe_session_id', session_id)
       .eq('club_id', club_id)
       .eq('user_id', user.id)
       .single();
+
+    // Handle database errors
+    if (purchaseError) {
+      // If it's a "not found" error (PGRST116), that's expected - return not validated
+      if (purchaseError.code === 'PGRST116') {
+        return NextResponse.json({ 
+          validated: false,
+          message: 'Payment not found'
+        });
+      }
+      
+      // Other database errors should be reported
+      console.error('Database error checking purchase:', purchaseError);
+      return NextResponse.json({ 
+        error: 'Database error validating purchase',
+        details: purchaseError.message
+      }, { status: 500 });
+    }
 
     if (purchase && purchase.status === 'completed') {
       return NextResponse.json({ 
@@ -60,10 +78,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // If no purchase record found, return false
+    // Purchase exists but not completed
     return NextResponse.json({ 
       validated: false,
-      message: 'Payment not found or not completed yet'
+      message: 'Payment not completed yet'
     });
 
   } catch (error) {

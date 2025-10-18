@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,19 @@ export default function PerkDetailsModal({
   const { toast } = useToast();
   const [isResending, setIsResending] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const isMountedRef = useRef(true);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen || !perk) return null;
 
@@ -421,8 +434,12 @@ export default function PerkDetailsModal({
                     await Promise.resolve(onPurchase()); // Trigger add to cart flow after modal closes
                   }
                   
-                  // Reset after brief delay to allow re-adding
-                  setTimeout(() => setIsAdding(false), 500);
+                  // Reset after brief delay to allow re-adding (with unmount protection)
+                  timeoutRef.current = setTimeout(() => {
+                    if (isMountedRef.current) {
+                      setIsAdding(false);
+                    }
+                  }, 500);
                 }}
                 disabled={isAdding}
                 size="lg"

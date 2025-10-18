@@ -34,12 +34,7 @@ const nextConfig = {
   },
   async redirects() {
     return [
-      // Redirect to dynamic manifest API route
-      {
-        source: '/.well-known/farcaster.json',
-        destination: '/api/.well-known/farcaster',
-        permanent: false,
-      },
+      // Remove farcaster.json redirect - serve static file from /public/.well-known/
       {
         source: '/projects',
         has: [{ type: 'query', key: 'projectId' }],
