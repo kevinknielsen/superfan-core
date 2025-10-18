@@ -245,6 +245,26 @@ export default function UnlockRedemption({
           ? '/api/metal/record-purchase'
           : '/api/metal/purchase-item';
         
+        // Validate pricing for item purchases
+        const amountPaidCents = pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0;
+        const originalPriceCents = pendingItemPurchase.upgrade_price_cents || 0;
+        const discountCents = pendingItemPurchase.user_discount_amount_cents || 0;
+        
+        // Ensure valid integers
+        if (!Number.isInteger(amountPaidCents) || amountPaidCents < 0) {
+          throw new Error('Invalid amount_paid_cents');
+        }
+        if (!Number.isInteger(originalPriceCents) || originalPriceCents < 0) {
+          throw new Error('Invalid original_price_cents');
+        }
+        if (!Number.isInteger(discountCents) || discountCents < 0) {
+          throw new Error('Invalid discount_applied_cents');
+        }
+        // Ensure original >= paid (after discount)
+        if (originalPriceCents < amountPaidCents) {
+          throw new Error('Invalid pricing: original_price cannot be less than amount_paid');
+        }
+        
         const requestBody = pendingItemPurchase.is_credit_campaign
           ? {
               club_id: clubId,
@@ -258,23 +278,28 @@ export default function UnlockRedemption({
               tier_reward_id: pendingItemPurchase.id,
               club_id: clubId,
               campaign_id: pendingItemPurchase.campaign_id,
-              amount_paid_cents: pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0,
-              original_price_cents: pendingItemPurchase.upgrade_price_cents || 0,
-              discount_applied_cents: pendingItemPurchase.user_discount_amount_cents || 0,
+              amount_paid_cents: amountPaidCents,
+              original_price_cents: originalPriceCents,
+              discount_applied_cents: discountCents,
               tx_hash: usdcTxHash,
               metal_holder_id: metalHolder.data?.id,
               metal_holder_address: metalHolder.data?.address,
               user_tier: userStatus
             };
 
+        // Add timeout to prevent indefinite hangs
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 15_000);
+        
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...authHeaders
           },
-          body: JSON.stringify(requestBody)
-        });
+          body: JSON.stringify(requestBody),
+          signal: ac.signal
+        }).finally(() => clearTimeout(t));
 
         if (!response.ok) {
           const errorData = await response.json() as any;
@@ -1056,8 +1081,14 @@ export default function UnlockRedemption({
                     )}
                   </div>
                   
-                  {/* Pricing display - Credit campaigns show credit count, not discount */}
-                  {!unlock.is_credit_campaign && unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
+              {/* Pricing display - Show credit count for campaigns, USD for tier rewards */}
+              {unlock.is_credit_campaign ? (
+                <div className="mb-2">
+                  <div className="text-green-400 font-bold text-lg">
+                    {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              ) : unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
                     <div className="mb-2 text-xs">
                       <div className="flex items-center justify-between text-white/60">
                         <span className="line-through">${((unlock.upgrade_price_cents || 0) / 100).toFixed(0)}</span>
@@ -1217,7 +1248,12 @@ export default function UnlockRedemption({
                 <span className="text-sm font-medium text-muted-foreground">Price</span>
                 <div className="text-right">
                   <div className="text-3xl font-bold text-foreground">
-                    {selectedUnlock.credit_cost || 0} Credits
+                    {selectedUnlock.is_credit_campaign
+                      ? `${selectedUnlock.credit_cost || 0} Credit${(selectedUnlock.credit_cost || 0) !== 1 ? 's' : ''}`
+                      : formatCurrency(
+                          (selectedUnlock.user_final_price_cents ??
+                           selectedUnlock.upgrade_price_cents ?? 0)
+                        )}
                   </div>
                 </div>
               </div>

@@ -121,6 +121,27 @@ export async function POST(
       try {
         console.log(`[Token Distribution] Distributing ${purchase.credits_purchased} tokens to user ${purchase.user_id}`);
 
+        // IDEMPOTENCY: Lock this purchase row before distribution
+        const { data: locked, error: lockError } = await supabaseAny
+          .from('credit_purchases')
+          .update({ 
+            metadata: { 
+              ...(purchase.metadata || {}),
+              distribution_in_progress: true,
+              distribution_started_at: new Date().toISOString()
+            }
+          })
+          .eq('id', purchase.id)
+          .eq('metadata->tokens_distributed', false) // Only lock if not already distributed
+          .select('id')
+          .single();
+
+        if (lockError || !locked) {
+          // Already being processed or distributed
+          console.log(`[Token Distribution] Skipping ${purchase.user_id} (already processing or distributed)`);
+          continue;
+        }
+
         // Get or create Metal holder for the user
         const recipient = await metal.getHolder(purchase.user_id) 
           ?? await metal.createUser(purchase.user_id);
@@ -155,16 +176,30 @@ export async function POST(
         }
 
         // Update purchase record to mark tokens distributed
-        await supabaseAny
+        const { error: updateError } = await supabaseAny
           .from('credit_purchases')
           .update({ 
             metadata: { 
               ...(purchase.metadata || {}),  // Safely spread existing metadata
               tokens_distributed: true,
-              distributed_at: new Date().toISOString()
+              distributed_at: new Date().toISOString(),
+              distribution_in_progress: false
             }
           })
           .eq('id', purchase.id);
+
+        if (updateError) {
+          // Critical: Metal distributed but DB update failed
+          console.error(`[Token Distribution] ⚠️ DB update failed after Metal distribution for ${purchase.user_id}:`, updateError);
+          // Don't retry - tokens already sent, just log the issue
+          results.failed++;
+          results.errors.push({
+            user_id: purchase.user_id,
+            credits: purchase.credits_purchased,
+            error: 'Tokens sent but DB update failed - manual verification needed'
+          });
+          continue;
+        }
 
         results.successful++;
         console.log(`[Token Distribution] ✅ Distributed to ${purchase.user_id}`);

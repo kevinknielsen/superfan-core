@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { User } from "@privy-io/react-auth";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { metal } from "@/lib/metal/client";
+import { isAddress } from "viem";
 
 async function getOrCreateMetalHolder(id: string) {
   if (!id) {
@@ -68,8 +69,8 @@ export function useBuyTokens() {
       }
       
       // Client-side validation
-      if (!data.tokenAddress || typeof data.tokenAddress !== 'string') {
-        throw new Error('tokenAddress is required');
+      if (!data.tokenAddress || typeof data.tokenAddress !== 'string' || !isAddress(data.tokenAddress)) {
+        throw new Error('Valid tokenAddress is required');
       }
       if (!(Number.isFinite(data.usdcAmount) && data.usdcAmount > 0)) {
         throw new Error('usdcAmount must be > 0');
@@ -79,6 +80,10 @@ export function useBuyTokens() {
       if (!apiKey) {
         throw new Error('Metal public API key is not configured');
       }
+      
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
       
       const response = await fetch(
         `https://api.metal.build/holder/${metalHolder.data.id}/buy`,
@@ -90,11 +95,12 @@ export function useBuyTokens() {
           },
           body: JSON.stringify({
             tokenAddress: data.tokenAddress,
-            usdcAmount: data.usdcAmount,
+            usdcAmount: Number(data.usdcAmount.toFixed(2)), // Stable decimal
             swapFeeBps: data.swapFeeBps,
           }),
+          signal: controller.signal,
         }
-      );
+      ).finally(() => clearTimeout(timeout));
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: 'Failed to buy tokens' }));

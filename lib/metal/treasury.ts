@@ -6,10 +6,19 @@ const TREASURY_HOLDER_ID = 'treasury_superfan';
 // In-flight promise to prevent concurrent treasury creation
 let treasuryInFlight: Promise<TreasuryInfo> | null = null;
 
+const TREASURY_TIMEOUT_MS = 15_000;
+
 export interface TreasuryInfo {
   holderId: string;
   address: string;
-  isReady: boolean;
+}
+
+// Helper to add timeout to async operations
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]);
 }
 
 /**
@@ -24,19 +33,46 @@ export async function getOrCreateTreasury(): Promise<TreasuryInfo> {
   
   treasuryInFlight = (async () => {
     try {
-      // Try to get existing treasury holder
-      let holder = await metal.getHolder(TREASURY_HOLDER_ID);
+      // Try to get existing treasury holder (with timeout)
+      let holder = await withTimeout(
+        metal.getHolder(TREASURY_HOLDER_ID),
+        TREASURY_TIMEOUT_MS
+      );
       
       if (!holder) {
         console.log('[Treasury] Creating new treasury Metal holder...');
         try {
-          holder = await metal.createUser(TREASURY_HOLDER_ID);
+          holder = await withTimeout(
+            metal.createUser(TREASURY_HOLDER_ID),
+            TREASURY_TIMEOUT_MS
+          );
         } catch (e: any) {
-          // If concurrently created (409 or "exists" error), re-fetch
-          if (e?.code === 409 || /exists/i.test(String(e?.message))) {
-            console.log('[Treasury] Holder created concurrently, re-fetching...');
-            holder = await metal.getHolder(TREASURY_HOLDER_ID);
+          // If concurrently created, re-fetch
+          // Metal API returns 409 status code for conflicts
+          const isConflict = e?.code === 409 || 
+                           e?.status === 409 || 
+                           e?.statusCode === 409 ||
+                           // Fallback to message parsing (less reliable)
+                           /exists|conflict|duplicate/i.test(String(e?.message || ''));
+          
+          if (isConflict) {
+            console.log('[Treasury] Holder created concurrently (409 or exists), re-fetching...', {
+              errorCode: e?.code,
+              errorStatus: e?.status,
+              errorMessage: e?.message
+            });
+            holder = await withTimeout(
+              metal.getHolder(TREASURY_HOLDER_ID),
+              TREASURY_TIMEOUT_MS
+            );
           } else {
+            // Unknown error - log and rethrow
+            console.error('[Treasury] Unexpected error creating holder:', {
+              error: e,
+              code: e?.code,
+              status: e?.status,
+              message: e?.message
+            });
             throw e;
           }
         }
@@ -53,8 +89,7 @@ export async function getOrCreateTreasury(): Promise<TreasuryInfo> {
       
       return {
         holderId: holder.id,
-        address: holder.address,
-        isReady: true
+        address: holder.address
       };
       
     } catch (error) {

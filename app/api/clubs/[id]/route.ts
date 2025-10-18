@@ -44,7 +44,7 @@ export async function GET(
       throw error;
     }
 
-    // Narrow type for the selected shape
+    // Narrow type for the selected shape (usdc_wallet_address undefined for unauthed)
     const clubData: {
       id: string;
       name: string;
@@ -54,7 +54,7 @@ export async function GET(
       is_active: boolean;
       created_at: string;
       updated_at: string;
-      usdc_wallet_address: string | null;
+      usdc_wallet_address?: string | null;
     } = club;
 
     // For unauthenticated users, only return active clubs
@@ -65,22 +65,7 @@ export async function GET(
       );
     }
 
-    // For unauthenticated users, filter out sensitive fields
-    if (!isAuthenticated) {
-      const publicFields = {
-        id: clubData.id,
-        name: clubData.name,
-        description: clubData.description,
-        city: clubData.city,
-        image_url: clubData.image_url,
-        is_active: clubData.is_active,
-        created_at: clubData.created_at,
-        updated_at: clubData.updated_at
-      };
-      return NextResponse.json(publicFields);
-    }
-
-    // Authenticated users get all fields
+    // Return the data as-is (already filtered by selectFields)
     return NextResponse.json(clubData);
   } catch (error) {
     console.error('[Club API] Error', { clubId, isAuthenticated }, error);

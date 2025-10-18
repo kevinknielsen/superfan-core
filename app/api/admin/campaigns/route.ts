@@ -369,7 +369,7 @@ export async function PATCH(request: NextRequest) {
           deposit_address: treasury.address,
           required_usdc_deposit: totalStripeCredits,
           message: totalStripeCredits > 0 
-            ? `IMPORTANT: Deposit ${totalStripeCredits} USDC to ${treasury.address} to cover existing Stripe purchases, then buy presale on behalf of treasury.`
+            ? `IMPORTANT: 1) Deposit ${totalStripeCredits} USDC to ${treasury.address}, 2) Buy ${totalStripeCredits} presale tokens using metal.buyPresale('${treasury.holderId}', '${campaignId}', ${totalStripeCredits}), 3) After lock period, call POST /api/admin/campaigns/${campaignId}/distribute-tokens to send tokens to Stripe buyers.`
             : 'No existing Stripe purchases - no deposit needed'
         }
       });

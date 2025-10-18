@@ -276,7 +276,7 @@ export default function UnifiedPointsWallet({
   
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
-  const { mutate: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess } = useBuyTokens();
+  const { mutateAsync: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess, error: buyTokensError } = useBuyTokens();
 
   // Use the hook instead of manual fetch
   const { 
@@ -353,6 +353,17 @@ export default function UnifiedPointsWallet({
     recordPurchase();
   }, [isBuyTokensSuccess, buyTokensData, user, clubId, metalHolder.data, toast, refetch]);
 
+  // Handle buyTokens errors
+  useEffect(() => {
+    if (!buyTokensError) return;
+    toast({
+      title: 'Purchase Failed',
+      description: buyTokensError instanceof Error ? buyTokensError.message : 'Failed to buy tokens',
+      variant: 'destructive',
+    });
+    setIsPurchasing(false);
+  }, [buyTokensError, toast]);
+
   // Handle credit purchase flow
   const handleCreditPurchase = async (creditAmount: number) => {
     try {
@@ -381,7 +392,7 @@ export default function UnifiedPointsWallet({
         }
         
         // Buy tokens directly from Metal
-        buyTokens({
+        await buyTokens({
           tokenAddress: clubTokenAddress,
           usdcAmount: creditAmount,
           swapFeeBps: 100, // 1% fee (optional, adjust as needed)
