@@ -273,6 +273,16 @@ export async function PATCH(request: NextRequest) {
       // Credits: 1 credit = $1 = 1 presale token
       const fundingGoalUSDC = (existingCampaign.funding_goal_cents || 0) / 100;
       
+      // Sanity check: Stripe credits shouldn't exceed 2x funding goal (possible data issue)
+      if (totalStripeCredits > fundingGoalUSDC * 2) {
+        console.warn('[Campaigns API] ⚠️ Stripe credits anomaly detected:', {
+          totalStripeCredits,
+          fundingGoalUSDC,
+          ratio: totalStripeCredits / fundingGoalUSDC,
+          campaignId
+        });
+      }
+      
       // Validate funding goal is positive
       if (fundingGoalUSDC <= 0) {
         console.error('[Campaigns API] Cannot create presale with zero funding goal');

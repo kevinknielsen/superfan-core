@@ -118,23 +118,36 @@ export async function POST(
 
     // Clear stale locks before starting distribution (locks older than 5 minutes)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { data: clearedLocks, error: clearError } = await supabaseAny
+    
+    // Step 1: Find stale locks using proper JSON text operators
+    const { data: stalePurchases, error: staleError } = await supabaseAny
       .from('credit_purchases')
-      .update({ 
-        metadata: supabaseAny.raw(`
-          COALESCE(metadata, '{}'::jsonb) || 
-          '{"distribution_in_progress": false, "distribution_error": "Previous attempt timed out - cleared for retry"}'::jsonb
-        `)
-      })
+      .select('id, metadata')
       .eq('campaign_id', campaignId)
-      .eq('metadata->distribution_in_progress', true)
-      .lt('metadata->distribution_started_at', fiveMinutesAgo)
-      .select('id');
+      .eq('metadata->>distribution_in_progress', 'true')
+      .lt('metadata->>distribution_started_at', fiveMinutesAgo);
 
-    if (clearError) {
-      console.warn(`[Token Distribution] Failed to clear stale locks:`, clearError);
-    } else if (clearedLocks && clearedLocks.length > 0) {
-      console.log(`[Token Distribution] Cleared ${clearedLocks.length} stale lock(s)`);
+    if (staleError) {
+      console.warn(`[Token Distribution] Failed to query stale locks:`, staleError);
+    } else if (stalePurchases && stalePurchases.length > 0) {
+      console.log(`[Token Distribution] Found ${stalePurchases.length} stale lock(s), clearing...`);
+      
+      // Step 2: Clear locks by merging metadata for each stale purchase
+      for (const purchase of stalePurchases) {
+        const updatedMetadata = {
+          ...(purchase.metadata || {}),
+          distribution_in_progress: false,
+          distribution_error: 'Previous attempt timed out - cleared for retry'
+        };
+        
+        await supabaseAny
+          .from('credit_purchases')
+          .update({ metadata: updatedMetadata })
+          .eq('id', purchase.id)
+          .catch((e: unknown) => console.error('[Token Distribution] Failed to clear stale lock:', e));
+      }
+      
+      console.log(`[Token Distribution] Cleared ${stalePurchases.length} stale lock(s)`);
     }
 
     // Distribute to each Stripe purchaser
@@ -143,18 +156,27 @@ export async function POST(
         console.log(`[Token Distribution] Distributing ${purchase.credits_purchased} tokens to user ${purchase.user_id}`);
 
         // IDEMPOTENCY: Lock this purchase row before distribution
+        // Fetch current metadata first to merge properly
+        const { data: currentPurchase } = await supabaseAny
+          .from('credit_purchases')
+          .select('metadata')
+          .eq('id', purchase.id)
+          .single();
+        
         const { data: locked, error: lockError } = await supabaseAny
           .from('credit_purchases')
           .update({ 
             metadata: { 
-              ...(purchase.metadata || {}),
+              ...(currentPurchase?.metadata || purchase.metadata || {}),
               distribution_in_progress: true,
               distribution_started_at: new Date().toISOString()
             }
           })
           .eq('id', purchase.id)
-          .eq('metadata->tokens_distributed', false) // Only lock if not already distributed
-          .is('metadata->distribution_in_progress', null)
+          // Not distributed: missing or false
+          .or('metadata->>tokens_distributed.is.null,metadata->>tokens_distributed.eq.false')
+          // No in-flight lock: missing or false
+          .or('metadata->>distribution_in_progress.is.null,metadata->>distribution_in_progress.eq.false')
           .select('id')
           .single();
 
@@ -212,15 +234,26 @@ export async function POST(
           throw new Error(errorData.message || 'Failed to distribute tokens');
         }
 
+        // Capture Metal API response for auditability
+        const metalResult = await response.json().catch(() => ({})) as any;
+
+        // Fetch current metadata to ensure proper merge
+        const { data: latestPurchase } = await supabaseAny
+          .from('credit_purchases')
+          .select('metadata')
+          .eq('id', purchase.id)
+          .single();
+
         // Update purchase record to mark tokens distributed
         const { error: updateError } = await supabaseAny
           .from('credit_purchases')
           .update({ 
             metadata: { 
-              ...(purchase.metadata || {}),  // Safely spread existing metadata
+              ...(latestPurchase?.metadata || purchase.metadata || {}),  // Merge with latest metadata
               tokens_distributed: true,
               distributed_at: new Date().toISOString(),
-              distribution_in_progress: false
+              distribution_in_progress: false,
+              metal_distribution_ref: metalResult?.id ?? metalResult?.reference ?? null
             }
           })
           .eq('id', purchase.id);

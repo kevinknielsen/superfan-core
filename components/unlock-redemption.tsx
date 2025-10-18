@@ -806,6 +806,11 @@ export default function UnlockRedemption({
 
   const handleMetalPurchase = async (reward: Unlock) => {
     try {
+      // Prevent double-click races
+      if (isRedeeming || isUSDCLoading) {
+        return;
+      }
+      
       if (!metalHolder.data?.address) {
         throw new Error('Metal holder not initialized');
       }

@@ -40,6 +40,7 @@ interface UnifiedPointsWalletProps {
   className?: string;
   creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
   onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
+  isAuthenticated?: boolean; // Whether the user is authenticated
 }
 
 // Enhanced status icons mapping
@@ -300,8 +301,21 @@ export default function UnifiedPointsWallet({
   );
 
   // Process Metal token purchase success
+  const processedTxRef = useRef<Set<string>>(new Set());
+  
   useEffect(() => {
     if (!isBuyTokensSuccess || !buyTokensData || !user || !clubId) return;
+    
+    const tokenData = buyTokensData as any; // Type assertion for Metal API response
+    const txHash = tokenData.transactionHash;
+    
+    // Prevent duplicate processing of the same transaction
+    if (!txHash || processedTxRef.current.has(txHash)) {
+      return;
+    }
+    
+    // Mark as processed immediately
+    processedTxRef.current.add(txHash);
     
     const recordPurchase = async () => {
       try {
@@ -309,23 +323,41 @@ export default function UnifiedPointsWallet({
         const { getAuthHeaders } = await import('@/app/api/sdk');
         const authHeaders = await getAuthHeaders();
 
-        const tokenData = buyTokensData as any; // Type assertion for Metal API response
+        // Preserve two-decimal precision
+        const creditAmount = Number((tokenData.sellAmount || 0).toFixed(2));
 
+        // Add timeout to prevent hanging UI
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        
         const response = await fetch('/api/metal/record-purchase', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Idempotency-Key': txHash, // Prevent duplicate processing
             ...authHeaders,
           },
           body: JSON.stringify({
             club_id: clubId,
             // No campaign_id for direct token purchases
-            credit_amount: Math.floor(tokenData.sellAmount || 0), // Actual USDC spent (accounts for slippage/fees)
-            tx_hash: tokenData.transactionHash,
+            credit_amount: creditAmount, // Actual USDC spent (accounts for slippage/fees)
+            tx_hash: txHash,
             metal_holder_id: metalHolder.data?.id,
             metal_holder_address: metalHolder.data?.address,
           }),
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
+
+        // Treat 409 Conflict as success (already recorded)
+        if (response.status === 409) {
+          toast({
+            title: "Purchase Already Recorded",
+            description: `${creditAmount.toFixed(2)} credits already in your account`,
+          });
+          setIsPurchasing(false);
+          refetch();
+          return;
+        }
 
         if (!response.ok) {
           const errorData = await response.json() as any;
@@ -335,11 +367,14 @@ export default function UnifiedPointsWallet({
         // Success!
         toast({
           title: "Purchase Successful! 🎉",
-          description: `${Math.floor(tokenData.sellAmount || 0)} credits added to your account`,
+          description: `${creditAmount.toFixed(2)} credits added to your account`,
         });
         setIsPurchasing(false);
         refetch(); // Reload wallet data
       } catch (error) {
+        // Remove from processed set to allow retry
+        processedTxRef.current.delete(txHash);
+        
         console.error('[Metal Purchase] Error recording:', error);
         toast({
           title: "Purchase Completed",
@@ -356,7 +391,7 @@ export default function UnifiedPointsWallet({
   // Handle credit purchase flow
   const handleCreditPurchase = async (creditAmount: number) => {
     try {
-      if (isPurchasing || isBuyingTokens) return;
+      if (isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)) return;
       setIsPurchasing(true);
       
       // Wallet app users: Metal token buying flow
@@ -472,7 +507,7 @@ export default function UnifiedPointsWallet({
     );
   }
 
-  const { wallet, status, spending_power } = breakdown;
+  const { wallet, status } = breakdown;
   const statusInfo = getStatusInfo(status.current);
 
   // Calculate effective points when user has temporary boost
@@ -546,36 +581,36 @@ export default function UnifiedPointsWallet({
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing || isBuyingTokens}
+                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens
-                    ? 'Buying...'
+                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
+                    ? 'Preparing...'
                     : '25'}
                 </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing || isBuyingTokens}
+                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens
-                    ? 'Buying...'
+                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
+                    ? 'Preparing...'
                     : '100'}
                 </Button>
                 </motion.div>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button 
                   onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing || isBuyingTokens}
+                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
                   className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                 >
                   <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens
-                    ? 'Buying...'
+                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
+                    ? 'Preparing...'
                     : '250'}
                 </Button>
                 </motion.div>

@@ -2,6 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/app/api/supabase';
 import { verifyUnifiedAuth } from '@/app/api/auth';
 
+// Type definitions for explicit response shapes
+type PublicClubData = {
+  id: string;
+  name: string;
+  description: string | null;
+  city: string | null;
+  image_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type AuthenticatedClubData = PublicClubData & {
+  usdc_wallet_address: string | null;
+};
+
 /**
  * GET /api/clubs/[id]
  * Get a specific club's details
@@ -28,6 +44,8 @@ export async function GET(
       : 'id, name, description, city, image_url, is_active, created_at, updated_at';
 
     // Select only needed fields to avoid exposing unnecessary data
+    // Note: Using 'as any' here because Supabase types don't include 'clubs' table
+    // The explicit type definitions above (PublicClubData/AuthenticatedClubData) provide compile-time safety
     const { data: club, error } = await (supabase as any)
       .from('clubs')
       .select(selectFields)
@@ -44,18 +62,8 @@ export async function GET(
       throw error;
     }
 
-    // Narrow type for the selected shape (usdc_wallet_address undefined for unauthed)
-    const clubData: {
-      id: string;
-      name: string;
-      description: string | null;
-      city: string | null;
-      image_url: string | null;
-      is_active: boolean;
-      created_at: string;
-      updated_at: string;
-      usdc_wallet_address?: string | null;
-    } = club;
+    // Narrow type for the selected shape (usdc_wallet_address present for authenticated)
+    const clubData: PublicClubData | AuthenticatedClubData = club;
 
     // For unauthenticated users, only return active clubs
     if (!isAuthenticated && !clubData.is_active) {

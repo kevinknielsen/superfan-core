@@ -4,6 +4,7 @@ import { supabase } from '@/app/api/supabase';
 import { getOrCreateUserFromAuth } from '@/lib/user-management';
 import { createPublicClient, http, decodeEventLog, parseAbi, formatUnits } from 'viem';
 import { base } from 'viem/chains';
+import { PrivyClient } from '@privy-io/server-auth';
 
 // Base RPC client for transaction verification
 const publicClient = createPublicClient({
@@ -13,6 +14,111 @@ const publicClient = createPublicClient({
 
 // USDC contract address on Base
 const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+// Privy client for user data queries
+const privy = new PrivyClient(
+  process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+  process.env.PRIVY_APP_SECRET!
+);
+
+/**
+ * Verify that a wallet address belongs to the authenticated user
+ * @param auth - Authentication result from verifyUnifiedAuth
+ * @param walletAddress - Address to verify ownership of
+ * @returns true if the wallet belongs to the user, false otherwise
+ */
+async function verifyWalletOwnership(
+  auth: { userId: string; type: 'privy' | 'farcaster' },
+  walletAddress: string
+): Promise<boolean> {
+  try {
+    if (auth.type === 'privy') {
+      // For Privy: Query user's linked wallets
+      const privyUser = await privy.getUserById(auth.userId);
+      
+      if (!privyUser || !privyUser.linkedAccounts) {
+        console.error('[Wallet Verification] No linked accounts found for Privy user:', auth.userId);
+        return false;
+      }
+      
+      // Check if wallet address matches any linked wallet
+      const linkedWallets = privyUser.linkedAccounts
+        .filter((account: any) => account.type === 'wallet')
+        .map((account: any) => account.address?.toLowerCase());
+      
+      const isOwned = linkedWallets.includes(walletAddress.toLowerCase());
+      
+      console.log('[Wallet Verification] Privy wallet check:', {
+        userId: auth.userId,
+        walletAddress,
+        linkedWallets,
+        isOwned
+      });
+      
+      return isOwned;
+      
+    } else if (auth.type === 'farcaster') {
+      // For Farcaster: Query verified addresses from Farcaster
+      // Extract FID from userId (format: "farcaster:12345")
+      const fid = auth.userId.replace('farcaster:', '');
+      
+      // Query Farcaster user data from Neynar API
+      const neynarApiKey = process.env.NEYNAR_API_KEY;
+      if (!neynarApiKey) {
+        console.error('[Wallet Verification] NEYNAR_API_KEY not configured');
+        // For now, we'll be permissive if Neynar is not configured
+        // TODO: Make this strict once Neynar is set up
+        console.warn('[Wallet Verification] Skipping Farcaster wallet verification - Neynar not configured');
+        return true;
+      }
+      
+      const response = await fetch(`https://api.neynar.com/v2/farcaster/user/bulk?fids=${fid}`, {
+        headers: {
+          'accept': 'application/json',
+          'api_key': neynarApiKey
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('[Wallet Verification] Neynar API error:', response.status);
+        return false;
+      }
+      
+      const data = await response.json() as any;
+      const user = data.users?.[0];
+      
+      if (!user) {
+        console.error('[Wallet Verification] Farcaster user not found:', fid);
+        return false;
+      }
+      
+      // Get custody address and verified addresses
+      const custodyAddress = user.custody_address?.toLowerCase();
+      const verifiedAddresses = (user.verified_addresses?.eth_addresses || [])
+        .map((addr: string) => addr.toLowerCase());
+      
+      const allAddresses = [custodyAddress, ...verifiedAddresses].filter(Boolean);
+      const isOwned = allAddresses.includes(walletAddress.toLowerCase());
+      
+      console.log('[Wallet Verification] Farcaster wallet check:', {
+        fid,
+        walletAddress,
+        custodyAddress,
+        verifiedAddresses,
+        isOwned
+      });
+      
+      return isOwned;
+    }
+    
+    console.error('[Wallet Verification] Unknown auth type:', auth.type);
+    return false;
+    
+  } catch (error) {
+    console.error('[Wallet Verification] Error verifying wallet ownership:', error);
+    return false;
+  }
+}
 
 /**
  * POST /api/campaigns/usdc-purchase
@@ -92,6 +198,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Validate club wallet address format
+    const { isAddress: checkAddress, getAddress } = await import('viem');
+    if (!checkAddress(club.usdc_wallet_address)) {
+      return NextResponse.json({ 
+        error: 'Club USDC wallet misconfigured' 
+      }, { status: 400 });
+    }
+    const clubWallet = getAddress(club.usdc_wallet_address).toLowerCase();
+
     // Verify transaction on Base blockchain
     console.log('[USDC Purchase] Verifying transaction:', normalizedTxHash);
     
@@ -150,7 +265,7 @@ export async function POST(request: NextRequest) {
         const transferAmount = (decoded.args as any).value as bigint;
         
         // Find the transfer that goes to the club's wallet
-        if (transferTo.toLowerCase() === club.usdc_wallet_address.toLowerCase()) {
+        if (transferTo.toLowerCase() === clubWallet) {
           from = transferFrom;
           to = transferTo;
           actualAmount = transferAmount;
@@ -180,11 +295,20 @@ export async function POST(request: NextRequest) {
     }
 
     // CRITICAL: Verify sender_address belongs to the authenticated user
-    // Query user's verified wallets/linked accounts from Privy or Farcaster
-    // For now, we trust the on-chain verification above as the primary security check
-    // TODO: Add Privy linked wallet verification or store verified wallets in DB
-    // This prevents stealing credits but requires additional user wallet mapping
-    console.log('[USDC Purchase] Verified sender:', {
+    // This prevents an attacker from claiming credits for someone else's transaction
+    const isWalletOwned = await verifyWalletOwnership(auth, sender_address);
+    if (!isWalletOwned) {
+      console.error('[USDC Purchase] Wallet ownership verification failed:', {
+        userId: auth.userId,
+        authType: auth.type,
+        senderAddress: sender_address
+      });
+      return NextResponse.json({ 
+        error: 'You do not own the wallet that sent this transaction. Please use a wallet linked to your account.' 
+      }, { status: 403 });
+    }
+
+    console.log('[USDC Purchase] ✅ Wallet ownership verified:', {
       userId: user.id,
       senderAddress: sender_address,
       authType: auth.type

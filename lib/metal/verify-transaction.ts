@@ -84,7 +84,25 @@ export async function verifyMetalTransaction(
 
     // Verify the transaction amount matches expected
     // Use fixed-decimal math (USDC has 6 decimals) for precise comparison
-    const actualMicros = Math.round(parseFloat(matchingTransaction.amount || '0') * 1_000_000);
+    
+    // Safely parse amount with validation
+    const amountString = matchingTransaction.amount || '0';
+    const parsedAmount = parseFloat(amountString);
+    
+    // Check for NaN or invalid numeric values
+    if (!Number.isFinite(parsedAmount)) {
+      console.error('[Metal Verification] Invalid transaction amount:', {
+        amountString,
+        parsedAmount
+      });
+      return {
+        success: false,
+        error: 'Transaction amount is not a valid number',
+        status: 400
+      };
+    }
+    
+    const actualMicros = Math.round(parsedAmount * 1_000_000);
     const expectedMicros = Math.round(expected_amount_usdc * 1_000_000);
     const toleranceMicros = Math.round(tolerance * 1_000_000);
     const actualAmount = actualMicros / 1_000_000; // Compute once for reuse

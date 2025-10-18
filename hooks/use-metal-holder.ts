@@ -8,8 +8,29 @@ async function getOrCreateMetalHolder(id: string) {
   if (!id) {
     throw new Error("User ID is required to create or fetch metal holder");
   }
-  const holder = await metal.getHolder(id);
-  if (holder) return holder;
+  
+  try {
+    const holder = await metal.getHolder(id);
+    if (holder) return holder;
+  } catch (error: unknown) {
+    // If holder doesn't exist (404), create it
+    // Check for 404 status or "not found" error
+    const isNotFound = 
+      (error as any)?.status === 404 ||
+      (error as any)?.statusCode === 404 ||
+      (error as any)?.code === 404 ||
+      /not found|404/i.test((error as any)?.message || '');
+    
+    if (isNotFound) {
+      console.log('[Metal Holder] Holder not found, creating new holder for:', id);
+      return metal.createUser(id);
+    }
+    
+    // For other errors, rethrow
+    throw error;
+  }
+  
+  // Fallback: if getHolder returned falsy but didn't throw, create holder
   return metal.createUser(id);
 }
 
@@ -44,10 +65,19 @@ export function useBuyPresale() {
       if (!metalHolder.data?.id) {
         throw new Error("Metal holder not initialized");
       }
+      if (!(Number.isFinite(data.amount) && data.amount > 0)) {
+        throw new Error("amount must be > 0");
+      }
       return metal.buyPresale(data.user.id, data.campaignId, data.amount);
     },
   });
 }
+
+export type MetalBuyResponse = {
+  transactionHash: string;
+  sellAmount: number; // USDC spent
+  buyAmount: number;  // tokens received
+};
 
 /**
  * Hook for buying tokens directly from Metal (not a presale)
@@ -57,13 +87,13 @@ export function useBuyPresale() {
 export function useBuyTokens() {
   const metalHolder = useMetalHolder();
 
-  return useMutation({
+  return useMutation<MetalBuyResponse, Error, {
+    tokenAddress: string;
+    usdcAmount: number;
+    swapFeeBps?: number;
+  }>({
     mutationKey: ["buy tokens", metalHolder.data?.id],
-    mutationFn: async (data: {
-      tokenAddress: string;
-      usdcAmount: number;
-      swapFeeBps?: number;
-    }) => {
+    mutationFn: async (data) => {
       if (!metalHolder.data?.id) {
         throw new Error("Metal holder not initialized");
       }
@@ -108,7 +138,7 @@ export function useBuyTokens() {
       }
 
       const result = await response.json();
-      return result;
+      return result as MetalBuyResponse;
     },
   });
 }
