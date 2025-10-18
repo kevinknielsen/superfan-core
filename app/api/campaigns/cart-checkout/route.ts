@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { supabase } from "../../supabase";
 import { stripe } from "@/lib/stripe";
-import { randomUUID } from "crypto";
+import { createHash } from "crypto";
 
-// Resilient base URL resolution
-function resolveBaseUrl() {
+// Resilient base URL resolution - returns null if not configured
+function resolveBaseUrl(): string | null {
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
   if (explicit) return explicit;
 
@@ -16,10 +16,13 @@ function resolveBaseUrl() {
     return 'https://superfan.one';
   }
 
+  // Return null instead of localhost fallback to surface configuration issues
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
+
   return 'http://localhost:3000';
 }
-
-const supabaseAny = supabase as any;
 
 /**
  * POST /api/campaigns/cart-checkout
@@ -75,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     // Get the user from database
     const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabaseAny
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
       .eq(userColumn, auth.userId)
@@ -87,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify club exists
-    const { data: club, error: clubError } = await supabaseAny
+    const { data: club, error: clubError } = await supabase
       .from('clubs')
       .select('id, name')
       .eq('id', club_id)
@@ -118,29 +121,50 @@ export async function POST(request: NextRequest) {
     // Add each tier reward item
     for (const item of items) {
       // Fetch item details
-      const { data: reward } = await supabaseAny
+      const { data: reward, error: rewardError } = await supabase
         .from('tier_rewards')
         .select('title, description')
         .eq('id', item.tier_reward_id)
         .single();
       
-      if (reward) {
-        lineItems.push({
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: reward.title,
-              description: reward.description || `Item from ${club.name}`
-            },
-            unit_amount: item.final_price_cents || item.original_price_cents || 0
-          },
-          quantity: item.quantity
-        });
+      // Fail fast if item not found or DB error
+      if (rewardError || !reward) {
+        console.error(`Tier reward not found: ${item.tier_reward_id}`, rewardError);
+        return NextResponse.json({ 
+          error: `Cart item not found: tier_reward_id ${item.tier_reward_id}`,
+          details: rewardError?.message || 'Item does not exist'
+        }, { status: 400 });
       }
+      
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: reward.title,
+            description: reward.description || `Item from ${club.name}`
+          },
+          unit_amount: item.final_price_cents || item.original_price_cents || 0
+        },
+        quantity: item.quantity
+      });
     }
 
-    // Generate idempotency key
-    const idempotencyKey = `cart_checkout_${randomUUID()}`;
+    // Generate deterministic idempotency key from stable request data
+    // Sort items by tier_reward_id to ensure canonical ordering
+    const sortedItems = [...items].sort((a, b) => a.tier_reward_id.localeCompare(b.tier_reward_id));
+    const canonicalData = JSON.stringify({
+      user_id: user.id,
+      club_id: club_id,
+      total_credits: total_credits,
+      items: sortedItems.map(i => ({
+        tier_reward_id: i.tier_reward_id,
+        quantity: i.quantity,
+        final_price_cents: i.final_price_cents,
+        campaign_id: i.campaign_id
+      }))
+    });
+    const hash = createHash('sha256').update(canonicalData).digest('hex');
+    const idempotencyKey = `cart_checkout_${hash}`;
     
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -154,7 +178,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         total_credits: total_credits.toString(),
         item_count: items.length.toString(),
-        items: JSON.stringify(items.map(i => ({
+        items: JSON.stringify(sortedItems.map(i => ({
           id: i.tier_reward_id,
           qty: i.quantity,
           campaign_id: i.campaign_id

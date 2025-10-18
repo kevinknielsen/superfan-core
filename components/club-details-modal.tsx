@@ -156,6 +156,17 @@ export default function ClubDetailsModal({
     setCart([]);
   }, [club.id]);
   
+  // Clear cart on successful payment (URL parameter from Stripe redirect)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('purchase_success') === 'true' && params.get('club_id') === club.id) {
+        // Clear cart on confirmed successful payment
+        clearCart();
+      }
+    }
+  }, [club.id]);
+  
   // Monitor USDC transaction success and process all cart items
   const processedCartTxRef = useRef<string | null>(null);
   useEffect(() => {
@@ -183,25 +194,38 @@ export default function ClubDetailsModal({
               });
             }
             
-            // Record credit purchase
+            // Record credit purchase with timeout protection
             const { getAuthHeaders } = await import('@/app/api/sdk');
             const authHeaders = await getAuthHeaders();
             
-            await fetch('/api/metal/record-purchase', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...authHeaders
-              },
-              body: JSON.stringify({
-                club_id: club.id,
-                campaign_id: cartItem.campaignId,
-                credit_amount: totalCredits,
-                tx_hash: usdcTxHash,
-                metal_holder_id: metalHolder.data?.id,
-                metal_holder_address: metalHolder.data?.address
-              })
-            });
+            const controller1 = new AbortController();
+            const timeout1 = setTimeout(() => controller1.abort(), 15_000);
+            
+            try {
+              const response = await fetch('/api/metal/record-purchase', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...authHeaders
+                },
+                body: JSON.stringify({
+                  club_id: club.id,
+                  campaign_id: cartItem.campaignId,
+                  credit_amount: totalCredits,
+                  tx_hash: usdcTxHash,
+                  metal_holder_id: metalHolder.data?.id,
+                  metal_holder_address: metalHolder.data?.address
+                }),
+                signal: controller1.signal
+              });
+              
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({})) as any;
+                throw new Error(errorData.error || 'Failed to record credit purchase');
+              }
+            } finally {
+              clearTimeout(timeout1);
+            }
           } else if (cartItem.itemId) {
             // Buy presale for item
             if (cartItem.campaignId) {
@@ -213,29 +237,42 @@ export default function ClubDetailsModal({
               });
             }
             
-            // Record item purchase
-            const { getAuthHeaders } = await import('@/app/api/sdk');
-            const authHeaders = await getAuthHeaders();
+            // Record item purchase with timeout protection
+            const { getAuthHeaders: getAuthHeaders2 } = await import('@/app/api/sdk');
+            const authHeaders2 = await getAuthHeaders2();
             
-            await fetch('/api/metal/purchase-item', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...authHeaders
-              },
-              body: JSON.stringify({
-                tier_reward_id: cartItem.itemId,
-                club_id: club.id,
-                campaign_id: cartItem.campaignId,
-                amount_paid_cents: cartItem.finalPriceCents || cartItem.originalPriceCents || 0,
-                original_price_cents: cartItem.originalPriceCents || 0,
-                discount_applied_cents: cartItem.discountCents || 0,
-                tx_hash: usdcTxHash,
-                metal_holder_id: metalHolder.data?.id,
-                metal_holder_address: metalHolder.data?.address,
-                user_tier: currentStatus
-              })
-            });
+            const controller2 = new AbortController();
+            const timeout2 = setTimeout(() => controller2.abort(), 15_000);
+            
+            try {
+              const response = await fetch('/api/metal/purchase-item', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...authHeaders2
+                },
+                body: JSON.stringify({
+                  tier_reward_id: cartItem.itemId,
+                  club_id: club.id,
+                  campaign_id: cartItem.campaignId,
+                  amount_paid_cents: cartItem.finalPriceCents || cartItem.originalPriceCents || 0,
+                  original_price_cents: cartItem.originalPriceCents || 0,
+                  discount_applied_cents: cartItem.discountCents || 0,
+                  tx_hash: usdcTxHash,
+                  metal_holder_id: metalHolder.data?.id,
+                  metal_holder_address: metalHolder.data?.address,
+                  user_tier: currentStatus
+                }),
+                signal: controller2.signal
+              });
+              
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({})) as any;
+                throw new Error(errorData.error || 'Failed to record item purchase');
+              }
+            } finally {
+              clearTimeout(timeout2);
+            }
           }
         }
         
@@ -430,9 +467,11 @@ export default function ClubDetailsModal({
       const result = await response.json() as any;
       const url = result?.stripe_session_url;
       if (url) {
-        // Clear cart on successful redirect to Stripe
-        clearCart();
+        // DO NOT clear cart here - preserve until payment confirmation
+        // Cart will be cleared by webhook on successful payment or by user on return
+        // This allows retry if redirect fails or user backs out
         await navigateToCheckout(url, isInWalletApp, openUrl);
+        // Note: navigateToCheckout redirects the page, so code after won't execute
       } else {
         throw new Error('Missing checkout URL from server');
       }

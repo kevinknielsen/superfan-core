@@ -574,74 +574,76 @@ export default function UnifiedPointsWallet({
               </div>
             </div>
 
-            {/* Credit Purchase Buttons */}
-            <div className="space-y-3">
-              <div className="text-sm text-slate-300 text-center mb-3">Purchase Credits</div>
-              <div className="grid grid-cols-3 gap-2">
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
-                    ? 'Preparing...'
-                    : '25'}
-                </Button>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
-                    ? 'Preparing...'
-                    : '100'}
-                </Button>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
-                    ? 'Preparing...'
-                    : '250'}
-                </Button>
-                </motion.div>
-              </div>
-              
-              {/* Credit Information */}
-              <div className="text-xs text-slate-400 text-center px-2 py-2 bg-white/5 rounded-lg">
-                ✨ Credits never expire and can be used to claim future drops and items
-              </div>
-              
-              {totalCampaignCredits > 0 && (
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-3">
+            {/* Credit Purchase Buttons - Hidden (shown in CampaignProgressCard instead) */}
+            {false && (
+              <div className="space-y-3">
+                <div className="text-sm text-slate-300 text-center mb-3">Purchase Credits</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                   <Button 
-                    variant="outline" 
-                    className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Close wallet and scroll to campaign items to redeem
-                      onCloseWallet?.();
-                      toast({
-                        title: "View Items",
-                        description: "You can claim items when the campaign reaches its goal",
-                      });
-                    }}
+                    onClick={() => handleCreditPurchase(25)}
+                    disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
                   >
-                    <Gift className="w-4 h-4 mr-2" />
-                    Redeem Items
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
+                      ? 'Preparing...'
+                      : '25'}
                   </Button>
-                </motion.div>
-              )}
-            </div>
+                  </motion.div>
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button 
+                    onClick={() => handleCreditPurchase(100)}
+                    disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
+                  >
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
+                      ? 'Preparing...'
+                      : '100'}
+                  </Button>
+                  </motion.div>
+                  <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button 
+                    onClick={() => handleCreditPurchase(250)}
+                    disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
+                    className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
+                  >
+                    <CreditCard className="w-3 h-3 mr-1" />
+                    {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
+                      ? 'Preparing...'
+                      : '250'}
+                  </Button>
+                  </motion.div>
+                </div>
+                
+                {/* Credit Information */}
+                <div className="text-xs text-slate-400 text-center px-2 py-2 bg-white/5 rounded-lg">
+                  ✨ Credits never expire and can be used to claim future drops and items
+                </div>
+                
+                {totalCampaignCredits > 0 && (
+                  <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-3">
+                    <Button 
+                      variant="outline" 
+                      className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Close wallet and scroll to campaign items to redeem
+                        onCloseWallet?.();
+                        toast({
+                          title: "View Items",
+                          description: "You can claim items when the campaign reaches its goal",
+                        });
+                      }}
+                    >
+                      <Gift className="w-4 h-4 mr-2" />
+                      Redeem Items
+                    </Button>
+                  </motion.div>
+                )}
+              </div>
+            )}
           </div>
         </Card>
       </motion.div>
