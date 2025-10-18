@@ -5,27 +5,32 @@ import { verifyUnifiedAuth } from '@/app/api/auth';
 /**
  * GET /api/clubs/[id]
  * Get a specific club's details
- * - Authenticated: Returns all fields including sensitive data (usdc_wallet_address)
+ * - Authenticated: Returns selected fields including sensitive data (usdc_wallet_address)
  * - Unauthenticated: Returns only public fields for active clubs
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
+  const { id: clubId } = params;
+  let isAuthenticated = false;
+  
   try {
-    const { id: clubId } = await params;
-
     // Check authentication status
-    let isAuthenticated = false;
     const auth = await verifyUnifiedAuth(request);
     isAuthenticated = !!auth;
     // Note: verifyUnifiedAuth returns null for unauthenticated users (not an error)
     // Any actual errors (token validation failures, etc.) will propagate
 
+    // Build select query - only include sensitive fields for authenticated users
+    const selectFields = isAuthenticated 
+      ? 'id, name, description, city, image_url, is_active, created_at, updated_at, usdc_wallet_address'
+      : 'id, name, description, city, image_url, is_active, created_at, updated_at';
+
     // Select only needed fields to avoid exposing unnecessary data
     const { data: club, error } = await (supabase as any)
       .from('clubs')
-      .select('id, name, description, city, image_url, is_active, created_at, updated_at, usdc_wallet_address')
+      .select(selectFields)
       .eq('id', clubId)
       .single();
 
@@ -78,7 +83,7 @@ export async function GET(
     // Authenticated users get all fields
     return NextResponse.json(clubData);
   } catch (error) {
-    console.error('[Club API] Error:', error);
+    console.error('[Club API] Error', { clubId, isAuthenticated }, error);
     return NextResponse.json(
       { error: 'Failed to fetch club' },
       { status: 500 }

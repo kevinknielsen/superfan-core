@@ -207,6 +207,16 @@ export async function PATCH(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Validate status if provided
+    if (body.status) {
+      const allowedStatuses = ['draft', 'active', 'funded', 'failed', 'paused', 'completed'];
+      if (typeof body.status !== 'string' || !allowedStatuses.includes(body.status)) {
+        return NextResponse.json({ 
+          error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}` 
+        }, { status: 400 });
+      }
+    }
+
     const campaignId = body.campaign_id;
 
     // Get current campaign data
@@ -262,6 +272,15 @@ export async function PATCH(request: NextRequest) {
       // Calculate presale size based on funding goal
       // Credits: 1 credit = $1 = 1 presale token
       const fundingGoalUSDC = (existingCampaign.funding_goal_cents || 0) / 100;
+      
+      // Validate funding goal is positive
+      if (fundingGoalUSDC <= 0) {
+        console.error('[Campaigns API] Cannot create presale with zero funding goal');
+        return NextResponse.json({ 
+          error: 'Cannot create presale: funding goal must be greater than zero' 
+        }, { status: 400 });
+      }
+      
       const totalSupply = Math.ceil(fundingGoalUSDC * 1.5); // 50% buffer for oversubscription
       
       console.log(`[Campaigns API] Calculated presale supply:`, {

@@ -59,7 +59,6 @@ export function useBuyTokens() {
   return useMutation({
     mutationKey: ["buy tokens", metalHolder.data?.id],
     mutationFn: async (data: {
-      holderId: string;
       tokenAddress: string;
       usdcAmount: number;
       swapFeeBps?: number;
@@ -68,13 +67,21 @@ export function useBuyTokens() {
         throw new Error("Metal holder not initialized");
       }
       
+      // Client-side validation
+      if (!data.tokenAddress || typeof data.tokenAddress !== 'string') {
+        throw new Error('tokenAddress is required');
+      }
+      if (!(Number.isFinite(data.usdcAmount) && data.usdcAmount > 0)) {
+        throw new Error('usdcAmount must be > 0');
+      }
+      
       const apiKey = process.env.NEXT_PUBLIC_METAL_PUBLIC_KEY;
       if (!apiKey) {
         throw new Error('Metal public API key is not configured');
       }
       
       const response = await fetch(
-        `https://api.metal.build/holder/${data.holderId}/buy`,
+        `https://api.metal.build/holder/${metalHolder.data.id}/buy`,
         {
           method: 'POST',
           headers: {

@@ -18,10 +18,11 @@ const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
  * POST /api/campaigns/usdc-purchase
  * Process USDC payment for campaign credits
  * Verifies blockchain transaction and grants credits
+ * Accepts any verified authentication (Privy or Farcaster)
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication (Farcaster users only for this flow)
+    // Verify authentication (supports both Privy and Farcaster)
     const auth = await verifyUnifiedAuth(request);
     if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

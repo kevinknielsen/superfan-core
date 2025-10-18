@@ -87,9 +87,9 @@ export async function verifyMetalTransaction(
     const actualMicros = Math.round(parseFloat(matchingTransaction.amount || '0') * 1_000_000);
     const expectedMicros = Math.round(expected_amount_usdc * 1_000_000);
     const toleranceMicros = Math.round(tolerance * 1_000_000);
+    const actualAmount = actualMicros / 1_000_000; // Compute once for reuse
     
     if (Math.abs(actualMicros - expectedMicros) > toleranceMicros) {
-      const actualAmount = actualMicros / 1_000_000;
       console.error('[Metal Verification] Amount mismatch:', {
         expected: expected_amount_usdc,
         actual: actualAmount,
@@ -103,16 +103,15 @@ export async function verifyMetalTransaction(
       };
     }
 
-    // Verify transaction was successful
-    if (matchingTransaction.status && 
-        matchingTransaction.status !== 'success' && 
-        matchingTransaction.status !== 'completed') {
+    // Verify transaction was successful (require explicit status)
+    const okStatuses = new Set(['success', 'completed']);
+    if (!okStatuses.has((matchingTransaction.status || '').toLowerCase())) {
       console.error('[Metal Verification] Transaction not successful:', {
-        status: matchingTransaction.status
+        status: matchingTransaction.status || 'undefined'
       });
       return {
         success: false,
-        error: `Transaction status is ${matchingTransaction.status}, not successful`,
+        error: `Transaction status is ${matchingTransaction.status || 'undefined'}, not successful`,
         status: 400
       };
     }

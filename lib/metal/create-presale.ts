@@ -30,16 +30,25 @@ export async function createMetalPresale(
 
   try {
     // Validate inputs
+    if (!campaignId?.trim()) {
+      return { success: false, error: 'Invalid campaignId' };
+    }
     if (!isAddress(tokenAddress)) {
       return { success: false, error: 'Invalid tokenAddress' };
     }
     if (!(Number.isFinite(price) && price > 0)) {
       return { success: false, error: 'Invalid price' };
     }
+    if (totalSupply !== undefined && (!Number.isInteger(totalSupply) || totalSupply <= 0)) {
+      return { success: false, error: 'Invalid totalSupply' };
+    }
+    if (lockDuration !== undefined && (!Number.isInteger(lockDuration) || lockDuration < 0)) {
+      return { success: false, error: 'Invalid lockDuration' };
+    }
     
     const checksummedToken = getAddress(tokenAddress);
-    // Round to 2 decimals to avoid float artifacts
-    const stablePrice = Number(price.toFixed(2));
+    // Use canonical decimal string to avoid float artifacts
+    const stablePrice = price.toFixed(2);
 
     console.log('[Metal Presale] Creating presale:', {
       campaignId,

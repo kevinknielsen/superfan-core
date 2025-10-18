@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isAddress } from 'viem';
 import { 
   Wallet, 
   TrendingUp, 
@@ -370,7 +371,6 @@ export default function UnifiedPointsWallet({
         }
         
         // Validate token address format
-        const { isAddress } = await import('viem');
         if (!isAddress(clubTokenAddress)) {
           throw new Error('Invalid club token address');
         }
@@ -382,7 +382,6 @@ export default function UnifiedPointsWallet({
         
         // Buy tokens directly from Metal
         buyTokens({
-          holderId: metalHolder.data.id,
           tokenAddress: clubTokenAddress,
           usdcAmount: creditAmount,
           swapFeeBps: 100, // 1% fee (optional, adjust as needed)

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { isAddress } from "viem";
 import { 
   Gift, 
   Lock, 
@@ -771,7 +772,6 @@ export default function UnlockRedemption({
       }
       
       // Validate Metal holder address
-      const { isAddress } = await import('viem');
       if (!isAddress(metalHolder.data.address)) {
         throw new Error('Invalid Metal holder address format');
       }

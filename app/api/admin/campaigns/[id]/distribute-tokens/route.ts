@@ -32,7 +32,7 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 
-    const { id: campaignId } = await params;
+    const { id: campaignId } = params;
 
     // Get campaign details
     const { data: campaign, error: campaignError } = await supabaseAny
@@ -121,7 +121,18 @@ export async function POST(
       try {
         console.log(`[Token Distribution] Distributing ${purchase.credits_purchased} tokens to user ${purchase.user_id}`);
 
+        // Get or create Metal holder for the user
+        const recipient = await metal.getHolder(purchase.user_id) 
+          ?? await metal.createUser(purchase.user_id);
+        
+        if (!recipient?.id) {
+          throw new Error(`Failed to get Metal holder for user ${purchase.user_id}`);
+        }
+
         // Distribute from treasury to user's Metal holder
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        
         const response = await fetch(
           `https://api.metal.build/token/${club.metal_token_address}/distribute`,
           {
@@ -131,15 +142,16 @@ export async function POST(
               'x-api-key': metalSecretKey,
             },
             body: JSON.stringify({
-              sendToId: purchase.user_id,
+              sendToId: recipient.id,
               amount: purchase.credits_purchased
             }),
+            signal: controller.signal,
           }
-        );
+        ).finally(() => clearTimeout(timeout));
 
         if (!response.ok) {
-          const error = await response.json().catch(() => ({ message: 'Distribution failed' }));
-          throw new Error(error.message || 'Failed to distribute tokens');
+          const errorData = await response.json().catch(() => ({ message: 'Distribution failed' })) as { message?: string };
+          throw new Error(errorData.message || 'Failed to distribute tokens');
         }
 
         // Update purchase record to mark tokens distributed
@@ -157,7 +169,7 @@ export async function POST(
         results.successful++;
         console.log(`[Token Distribution] ✅ Distributed to ${purchase.user_id}`);
 
-      } catch (error) {
+      } catch (error: unknown) {
         results.failed++;
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         console.error(`[Token Distribution] ❌ Failed for ${purchase.user_id}:`, errorMsg);
