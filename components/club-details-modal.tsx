@@ -685,6 +685,7 @@ export default function ClubDetailsModal({
                 clubName={club.name}
                 showPurchaseOptions={true}
                 showTransferOptions={false}
+                isAuthenticated={isAuthenticated}
                 creditBalances={creditBalances}
                 onCloseWallet={() => {
                   setShowPurchaseOverlay(false);

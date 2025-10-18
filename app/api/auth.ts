@@ -2,10 +2,22 @@ import { AuthTokenClaims, PrivyClient } from "@privy-io/server-auth";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-const privy = new PrivyClient(
-  process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
-  process.env.PRIVY_APP_SECRET!
-);
+// Lazy initialization to avoid requiring env vars at build time
+let privyClient: PrivyClient | null = null;
+
+export function getPrivyClient(): PrivyClient {
+  if (privyClient) return privyClient;
+  
+  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+  const appSecret = process.env.PRIVY_APP_SECRET;
+  
+  if (!appId || !appSecret) {
+    throw new Error('Missing required Privy environment variables: NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET must be configured');
+  }
+  
+  privyClient = new PrivyClient(appId, appSecret);
+  return privyClient;
+}
 
 export async function verifyPrivyToken(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -21,12 +33,19 @@ export async function verifyPrivyToken(req: NextRequest) {
   });
 
   try {
+    const privy = getPrivyClient();
     const claims = await privy.verifyAuthToken(token);
     console.log('[Auth] Privy token claims:', { userId: claims.userId, appId: claims.appId });
     return claims;
   } catch (error) {
-    console.error("[Server]: Error verifying Privy token:", error);
-    console.error("[Server]: Token verification failed");
+    // Rethrow configuration errors (missing env vars) - these should fail fast
+    if (error instanceof Error && error.message.includes('Missing required Privy environment variables')) {
+      console.error('[Auth] CRITICAL: Privy configuration error - missing environment variables');
+      throw error; // Fail fast on misconfiguration
+    }
+    
+    // Log authentication failures (invalid tokens)
+    console.error("[Auth] Token verification failed:", error instanceof Error ? error.message : error);
     return null;
   }
 }

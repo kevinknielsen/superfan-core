@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { isAddress } from "viem";
 import { 
   Gift, 
   Lock, 
@@ -35,35 +36,12 @@ import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
+import { useSendUSDC } from "@/hooks/use-usdc-payment";
+import { useRef } from "react";
+import { useMetalHolder, useBuyPresale } from "@/hooks/use-metal-holder";
+import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import type { Unlock as BaseUnlock } from "@/types/club.types";
 import type { TierRewardsResponse, PurchaseResponse, TierReward, ClaimedReward } from "@/types/campaign.types";
-
-// Helper to get current quarter end date in UTC
-const getQuarterEndDate = () => {
-  const now = new Date();
-  const currentYear = now.getUTCFullYear();
-  const currentMonth = now.getUTCMonth(); // 0-based
-  const currentQuarter = Math.floor(currentMonth / 3) + 1; // 1-4
-  
-  // Calculate last day of current quarter
-  const quarterEndMonth = currentQuarter * 3; // 3, 6, 9, 12
-  // Create date using UTC - day 0 means last day of previous month
-  const quarterEndDate = new Date(Date.UTC(currentYear, quarterEndMonth, 0));
-  
-  return quarterEndDate;
-};
-
-// Helper to format quarter end date consistently in UTC
-const formatQuarterEnd = () => {
-  const quarterEnd = getQuarterEndDate();
-  const now = new Date();
-  return quarterEnd.toLocaleDateString('en-US', { 
-    timeZone: 'UTC',
-    month: 'short', 
-    day: 'numeric',
-    year: quarterEnd.getUTCFullYear() !== now.getUTCFullYear() ? 'numeric' : undefined 
-  });
-};
 
 // Extended unlock type with tier reward specific fields
 interface ClaimOption {
@@ -182,11 +160,18 @@ export default function UnlockRedemption({
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
+  const { sendUSDC, hash: usdcTxHash, isLoading: isUSDCLoading, isSuccess: isUSDCSuccess, error: usdcError } = useSendUSDC();
   const [unlocks, setUnlocks] = useState<Unlock[]>([]);
   const [redemptions, setRedemptions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUnlock, setSelectedUnlock] = useState<Unlock | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
+  const processedTxRef = useRef<string | null>(null);
+  const [pendingItemPurchase, setPendingItemPurchase] = useState<Unlock | null>(null);
+  
+  const { user } = useUnifiedAuth();
+  const metalHolder = useMetalHolder();
+  const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
 
   // Always declare all hooks first (React Rules of Hooks)
   useEffect(() => {
@@ -223,6 +208,183 @@ export default function UnlockRedemption({
     onCreditBalancesChange(creditBalances);
   }, [unlocks, onCreditBalancesChange]);
 
+  // Monitor Metal Presale purchase completion for wallet users
+  useEffect(() => {
+    if (!isUSDCSuccess || !usdcTxHash || !pendingItemPurchase || !user) return;
+    
+    // Prevent duplicate processing of same transaction
+    if (processedTxRef.current === usdcTxHash) {
+      return;
+    }
+    
+    // Mark as processed immediately to prevent duplicate calls
+    processedTxRef.current = usdcTxHash;
+    
+    const processMetalPurchase = async () => {
+      try {
+        // Validate campaign_id before processing
+        if (!pendingItemPurchase.campaign_id) {
+          throw new Error('Missing campaign ID for purchase');
+        }
+        
+        // Step 1: Buy presale with Metal
+        await buyPresaleAsync({
+          user,
+          campaignId: pendingItemPurchase.campaign_id,
+          amount: pendingItemPurchase.is_credit_campaign 
+            ? (pendingItemPurchase.credit_cost || 0)
+            : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
+        });
+
+        // Step 2: Record purchase in our database
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        // Different endpoints for credits vs items
+        const endpoint = pendingItemPurchase.is_credit_campaign
+          ? '/api/metal/record-purchase'
+          : '/api/metal/purchase-item';
+        
+        // Validate pricing ONLY for item purchases (not credit campaigns)
+        let amountPaidCents = 0;
+        let originalPriceCents = 0;
+        let discountCents = 0;
+        
+        if (!pendingItemPurchase.is_credit_campaign) {
+          // Assert required fields exist for item purchases
+          if (pendingItemPurchase.upgrade_price_cents === undefined || pendingItemPurchase.upgrade_price_cents === null) {
+            throw new Error('Missing upgrade_price_cents for item purchase');
+          }
+          if (pendingItemPurchase.user_final_price_cents === undefined || pendingItemPurchase.user_final_price_cents === null) {
+            throw new Error('Missing user_final_price_cents for item purchase');
+          }
+          
+          amountPaidCents = pendingItemPurchase.user_final_price_cents;
+          originalPriceCents = pendingItemPurchase.upgrade_price_cents;
+          discountCents = pendingItemPurchase.user_discount_amount_cents || 0;
+          
+          // Ensure valid integers
+          if (!Number.isInteger(amountPaidCents) || amountPaidCents < 0) {
+            throw new Error('Invalid amount_paid_cents');
+          }
+          if (!Number.isInteger(originalPriceCents) || originalPriceCents < 0) {
+            throw new Error('Invalid original_price_cents');
+          }
+          if (!Number.isInteger(discountCents) || discountCents < 0) {
+            throw new Error('Invalid discount_applied_cents');
+          }
+          // Ensure original >= paid (after discount)
+          if (originalPriceCents < amountPaidCents) {
+            throw new Error('Invalid pricing: original_price cannot be less than amount_paid');
+          }
+        }
+        
+        const requestBody = pendingItemPurchase.is_credit_campaign
+          ? {
+              club_id: clubId,
+              campaign_id: pendingItemPurchase.campaign_id,
+              credit_amount: pendingItemPurchase.credit_cost || 0,
+              tx_hash: usdcTxHash,
+              metal_holder_id: metalHolder.data?.id,
+              metal_holder_address: metalHolder.data?.address,
+            }
+          : {
+              tier_reward_id: pendingItemPurchase.id,
+              club_id: clubId,
+              campaign_id: pendingItemPurchase.campaign_id,
+              amount_paid_cents: amountPaidCents,
+              original_price_cents: originalPriceCents,
+              discount_applied_cents: discountCents,
+              tx_hash: usdcTxHash,
+              metal_holder_id: metalHolder.data?.id,
+              metal_holder_address: metalHolder.data?.address,
+              user_tier: userStatus
+            };
+
+        // Add timeout to prevent indefinite hangs
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 15_000);
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders
+          },
+          body: JSON.stringify(requestBody),
+          signal: ac.signal
+        }).finally(() => clearTimeout(t));
+
+        if (!response.ok) {
+          const errorData = await response.json() as any;
+          throw new Error(errorData.error || 'Failed to record purchase');
+        }
+
+        // Success!
+        const result = await response.json() as any;
+        toast({
+          title: "Purchase Successful! 🎉",
+          description: pendingItemPurchase.is_credit_campaign
+            ? `${pendingItemPurchase.credit_cost} credits added to your account`
+            : `${pendingItemPurchase.title} unlocked!`,
+        });
+        
+        // Close modal and reload data
+        setPendingItemPurchase(null);
+        setSelectedUnlock(null);
+        await loadData();
+        onRedemption?.();
+      } catch (error) {
+        // Reset transaction tracking to allow retry
+        processedTxRef.current = null;
+        
+        console.error('Metal purchase error:', error);
+        
+        // Persist failed transaction for recovery (with error handling)
+        try {
+          if (typeof window !== 'undefined' && usdcTxHash) {
+            const failedTx = {
+              txHash: usdcTxHash,
+              itemId: pendingItemPurchase?.id,
+              itemTitle: pendingItemPurchase?.title,
+              timestamp: Date.now(),
+              error: error instanceof Error ? error.message : 'Unknown error'
+            };
+            localStorage.setItem(`failed_metal_tx_${usdcTxHash}`, JSON.stringify(failedTx));
+          }
+        } catch (storageError) {
+          console.error('Failed to persist transaction to localStorage:', storageError);
+        }
+        
+        toast({
+          title: "Purchase Failed",
+          description: error instanceof Error 
+            ? error.message 
+            : `Failed to process purchase. Transaction hash: ${usdcTxHash}. Please contact support.`,
+          variant: "destructive",
+        });
+        setPendingItemPurchase(null);
+      } finally {
+        setIsRedeeming(false);
+      }
+    };
+    
+    processMetalPurchase();
+  }, [isUSDCSuccess, usdcTxHash, pendingItemPurchase, user, clubId, metalHolder.data, buyPresaleAsync, userStatus, onRedemption, toast]);
+
+  // Reset state on USDC errors (user rejection, RPC/contract errors)
+  useEffect(() => {
+    if (!usdcError) return;
+    toast({
+      title: 'USDC Transfer Failed',
+      description: usdcError instanceof Error ? usdcError.message : 'Transaction was not sent',
+      variant: 'destructive',
+    });
+    setSelectedUnlock(null);
+    setIsRedeeming(false);
+    processedTxRef.current = null;
+  }, [usdcError, toast]);
+
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
       if (!isMounted || isMounted()) setIsLoading(true);
@@ -234,6 +396,7 @@ export default function UnlockRedemption({
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
+      
       
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
         headers,
@@ -641,75 +804,144 @@ export default function UnlockRedemption({
     }
   };
 
+  const handleMetalPurchase = async (reward: Unlock) => {
+    try {
+      // Prevent double-click races
+      if (isRedeeming || isUSDCLoading) {
+        return;
+      }
+      
+      if (!metalHolder.data?.address) {
+        throw new Error('Metal holder not initialized');
+      }
+      
+      // Validate Metal holder address
+      if (!isAddress(metalHolder.data.address)) {
+        throw new Error('Invalid Metal holder address format');
+      }
+
+      // Determine the amount to pay (credit cost or regular price)
+      const amountUSDC = reward.is_credit_campaign 
+        ? (reward.credit_cost || 0)
+        : ((reward.user_final_price_cents || reward.upgrade_price_cents || 0) / 100);
+      
+      // Validate amount
+      if (!Number.isFinite(amountUSDC) || amountUSDC <= 0) {
+        throw new Error('Invalid purchase amount');
+      }
+      
+      // Store pending purchase for processing after USDC confirmation
+      setPendingItemPurchase(reward);
+      
+      // Lock UI after validation passes
+      setIsRedeeming(true);
+      
+      // Send USDC to Metal holder address
+      sendUSDC({
+        toAddress: metalHolder.data.address as `0x${string}`,
+        amountUSDC: amountUSDC
+      });
+      
+      // The transaction monitoring is handled by useEffect below
+    } catch (error) {
+      toast({
+        title: "Payment Failed",
+        description: error instanceof Error ? error.message : "Failed to initiate USDC payment",
+        variant: "destructive",
+      });
+      setIsRedeeming(false);
+      setPendingItemPurchase(null);
+    }
+  };
+
+  const handleStripeCheckout = async (url: string) => {
+    await navigateToCheckout(url, isInWalletApp, openUrl);
+  };
+
+  const handleNewPurchaseEndpoint = async (reward: Unlock, authHeaders: HeadersInit) => {
+    const response = await fetch(`/api/tier-rewards/${reward.id}/purchase`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      }
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      const url = (result as PurchaseResponse)?.stripe_session_url;
+      if (!url || typeof url !== 'string') {
+        throw new Error('Missing checkout URL');
+      }
+      
+      // Show discount confirmation if applicable
+      const purchaseResult = result as PurchaseResponse;
+      if ((purchaseResult?.discount_applied_cents ?? 0) > 0) {
+        toast({
+          title: "Discount Applied!",
+          description: `You're saving $${(purchaseResult.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
+        });
+      }
+      
+      await handleStripeCheckout(url);
+    } else {
+      const errorData = await response.json() as { error?: string };
+      throw new Error(errorData.error || 'Failed to start purchase');
+    }
+  };
+
+  const handleLegacyUpgrade = async (reward: Unlock, authHeaders: HeadersInit) => {
+    const purchaseType = getClaimOptionsPurchaseType(reward) || 'tier_boost';
+
+    const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        purchase_type: purchaseType,
+        success_url: `${window.location.origin}${window.location.pathname}?upgrade_success=true`,
+        cancel_url: `${window.location.origin}${window.location.pathname}?upgrade_cancelled=true`
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json() as { stripe_session_url?: string };
+      const url = result?.stripe_session_url;
+      if (!url || typeof url !== 'string') {
+        throw new Error('Missing checkout URL');
+      }
+      
+      await handleStripeCheckout(url);
+    } else {
+      const errorData = await response.json() as { error?: string };
+      throw new Error(errorData.error || 'Failed to start upgrade purchase');
+    }
+  };
+
   const handleUpgradePurchase = async (reward: Unlock) => {
     try {
+      // For wallet app users: use Metal Presale with USDC (for ALL purchases)
+      if (isInWalletApp && metalHolder.data?.address) {
+        handleMetalPurchase(reward);
+        return;
+      }
+      
+      // Set loading state for Stripe flows
+      setIsRedeeming(true);
+      
       // Get auth headers (supports both Privy and Farcaster)
       const { getAuthHeaders } = await import('@/app/api/sdk');
       const authHeaders = await getAuthHeaders();
 
-      // Use new campaign-aware purchase endpoint if available, fallback to existing
+      // Use new campaign-aware purchase endpoint if available, fallback to legacy
       const useNewPurchaseEndpoint = reward.user_discount_eligible !== undefined;
       
       if (useNewPurchaseEndpoint) {
-        // New campaign purchase endpoint with instant discounts
-        const response = await fetch(`/api/tier-rewards/${reward.id}/purchase`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders
-          }
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          const url = (result as PurchaseResponse)?.stripe_session_url;
-          if (!url || typeof url !== 'string') {
-            throw new Error('Missing checkout URL');
-          }
-          
-          // Show discount confirmation if applicable
-          const purchaseResult = result as PurchaseResponse;
-          if ((purchaseResult?.discount_applied_cents ?? 0) > 0) {
-            toast({
-              title: "Discount Applied!",
-              description: `You're saving $${(purchaseResult.discount_applied_cents/100).toFixed(0)} with your ${userStatus} status`,
-            });
-          }
-          
-          await navigateToCheckout(url, isInWalletApp, openUrl);
-        } else {
-          const errorData = await response.json() as { error?: string };
-          throw new Error(errorData.error || 'Failed to start purchase');
-        }
+        await handleNewPurchaseEndpoint(reward, authHeaders);
       } else {
-        // Existing upgrade endpoint for backward compatibility
-        const purchaseType = getClaimOptionsPurchaseType(reward) || 'tier_boost';
-
-        const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${reward.id}/upgrade`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeaders
-          },
-          body: JSON.stringify({
-            purchase_type: purchaseType,
-            success_url: `${window.location.origin}${window.location.pathname}?upgrade_success=true`,
-            cancel_url: `${window.location.origin}${window.location.pathname}?upgrade_cancelled=true`
-          })
-        });
-
-        if (response.ok) {
-          const result = await response.json() as { stripe_session_url?: string };
-          const url = result?.stripe_session_url;
-          if (!url || typeof url !== 'string') {
-            throw new Error('Missing checkout URL');
-          }
-          
-          await navigateToCheckout(url, isInWalletApp, openUrl);
-        } else {
-          const errorData = await response.json() as { error?: string };
-          throw new Error(errorData.error || 'Failed to start upgrade purchase');
-        }
+        await handleLegacyUpgrade(reward, authHeaders);
       }
     } catch (error) {
       toast({
@@ -717,6 +949,11 @@ export default function UnlockRedemption({
         description: error instanceof Error ? error.message : "Failed to start purchase",
         variant: "destructive",
       });
+    } finally {
+      // Always reset state unless we're waiting for Metal/USDC transaction
+      if (!isInWalletApp || !metalHolder.data?.address) {
+        setIsRedeeming(false);
+      }
     }
   };
 
@@ -863,8 +1100,14 @@ export default function UnlockRedemption({
                     )}
                   </div>
                   
-                  {/* Pricing display - Credit campaigns show credit count, not discount */}
-                  {!unlock.is_credit_campaign && unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
+              {/* Pricing display - Show credit count for campaigns, USD for tier rewards */}
+              {unlock.is_credit_campaign ? (
+                <div className="mb-2">
+                  <div className="text-green-400 font-bold text-lg">
+                    {unlock.credit_cost || 0} Credit{(unlock.credit_cost || 0) !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              ) : unlock.user_discount_eligible && unlock.user_discount_amount_cents && unlock.user_discount_amount_cents > 0 && (
                     <div className="mb-2 text-xs">
                       <div className="flex items-center justify-between text-white/60">
                         <span className="line-through">${((unlock.upgrade_price_cents || 0) / 100).toFixed(0)}</span>
@@ -1024,7 +1267,12 @@ export default function UnlockRedemption({
                 <span className="text-sm font-medium text-muted-foreground">Price</span>
                 <div className="text-right">
                   <div className="text-3xl font-bold text-foreground">
-                    {selectedUnlock.credit_cost || 0} Credits
+                    {selectedUnlock.is_credit_campaign
+                      ? `${selectedUnlock.credit_cost || 0} Credit${(selectedUnlock.credit_cost || 0) !== 1 ? 's' : ''}`
+                      : formatCurrency(
+                          (selectedUnlock.user_final_price_cents ??
+                           selectedUnlock.upgrade_price_cents ?? 0)
+                        )}
                   </div>
                 </div>
               </div>
@@ -1083,10 +1331,19 @@ export default function UnlockRedemption({
                     handleRedeem(selectedUnlock);
                   }
                 }}
-                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock)}
+                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock) || isUSDCLoading}
                 className="min-w-[140px] sm:w-auto w-full"
               >
-                {isRedeeming ? 'Processing...' : 'Proceed to Checkout'}
+                {isUSDCLoading 
+                  ? 'Confirming Transaction...'
+                  : isRedeeming 
+                    ? 'Processing...' 
+                    : (isInWalletApp && metalHolder.data?.address)
+                      ? selectedUnlock.is_credit_campaign 
+                        ? `Send ${selectedUnlock.credit_cost} USDC`
+                        : `Pay ${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} USDC`
+                      : 'Proceed to Checkout'
+                }
               </Button>
               <Button
                 variant="outline"

@@ -155,7 +155,8 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
   try {
     console.log(`[Tier Rewards Webhook] Processing campaign tier purchase: ${session.id}`);
     
-    const metadata = session.metadata!;
+    // Guard against missing metadata
+    const metadata = (session.metadata ?? {}) as Record<string, string>;
     const idempotencyKey = metadata.idempotency_key;
     
     // Check if already processed (idempotency protection)
@@ -294,7 +295,7 @@ async function processCampaignTierPurchase(session: Stripe.Checkout.Session): Pr
           .rpc('increment_campaigns_ticket_progress', {
             p_campaign_id: metadata.campaign_id,
             p_increment_current_funding_cents: campaignCreditCents,
-            p_increment_stripe_received_cents: finalPriceCents,
+            p_increment_received_cents: finalPriceCents, // Generic parameter for all payment methods
             p_increment_total_tickets_sold: unitsPurchased
           });
           

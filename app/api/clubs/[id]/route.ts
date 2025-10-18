@@ -1,60 +1,84 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/app/api/supabase';
+import { supabase } from '@/app/api/supabase';
+import { verifyUnifiedAuth } from '@/app/api/auth';
+
+// Type definitions for explicit response shapes
+type PublicClubData = {
+  id: string;
+  name: string;
+  description: string | null;
+  city: string | null;
+  image_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type AuthenticatedClubData = PublicClubData & {
+  usdc_wallet_address: string | null;
+};
 
 /**
  * GET /api/clubs/[id]
- * Get a single club by ID (public endpoint for QR tap-in flow)
+ * Get a specific club's details
+ * - Authenticated: Returns selected fields including sensitive data (usdc_wallet_address)
+ * - Unauthenticated: Returns only public fields for active clubs
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const { id: clubId } = params;
+  let isAuthenticated = false;
+  
   try {
-    const { id } = params;
-    const supabase = createServiceClient();
-    
-    const { data: club, error } = await supabase
+    // Check authentication status
+    const auth = await verifyUnifiedAuth(request);
+    isAuthenticated = !!auth;
+    // Note: verifyUnifiedAuth returns null for unauthenticated users (not an error)
+    // Any actual errors (token validation failures, etc.) will propagate
+
+    // Build select query - only include sensitive fields for authenticated users
+    const selectFields = isAuthenticated 
+      ? 'id, name, description, city, image_url, is_active, created_at, updated_at, usdc_wallet_address'
+      : 'id, name, description, city, image_url, is_active, created_at, updated_at';
+
+    // Select only needed fields to avoid exposing unnecessary data
+    // Note: Using 'as any' here because Supabase types don't include 'clubs' table
+    // The explicit type definitions above (PublicClubData/AuthenticatedClubData) provide compile-time safety
+    const { data: club, error } = await (supabase as any)
       .from('clubs')
-      .select(`
-        id,
-        name,
-        description,
-        city,
-        image_url,
-        is_active,
-        created_at
-      `)
-      .eq('id', id)
-      .eq('is_active', true)
+      .select(selectFields)
+      .eq('id', clubId)
       .single();
 
     if (error) {
-      console.error('Error fetching club:', error);
+      if (error.code === 'PGRST116') {
+        return NextResponse.json(
+          { error: 'Club not found' },
+          { status: 404 }
+        );
+      }
+      throw error;
+    }
+
+    // Narrow type for the selected shape (usdc_wallet_address present for authenticated)
+    const clubData: PublicClubData | AuthenticatedClubData = club;
+
+    // For unauthenticated users, only return active clubs
+    if (!isAuthenticated && !clubData.is_active) {
       return NextResponse.json(
         { error: 'Club not found' },
         { status: 404 }
       );
     }
 
-    // Calculate member count using efficient count query
-    const { count, error: countError } = await supabase
-      .from('club_memberships')
-      .select('id', { count: 'exact', head: true })
-      .eq('club_id', id)
-      .eq('status', 'active');
-
-    if (countError) {
-      console.error('Error counting members:', countError);
-      club.member_count = 0;
-    } else {
-      club.member_count = Number(count) || 0;
-    }
-
-    return NextResponse.json(club);
+    // Return the data as-is (already filtered by selectFields)
+    return NextResponse.json(clubData);
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error('[Club API] Error', { clubId, isAuthenticated }, error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to fetch club' },
       { status: 500 }
     );
   }

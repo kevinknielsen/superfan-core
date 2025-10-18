@@ -70,10 +70,10 @@ export async function GET(
 
     console.log(`[Club Media API] Fetching media for club: ${clubId}`);
 
-    // Get club media from database
+    // Get club media from database - select only needed fields
     const { data: media, error } = await supabaseTyped
       .from('club_media')
-      .select('*')
+      .select('id, club_id, media_type, file_name, file_path, file_size, mime_type, display_order, is_primary, alt_text, caption, duration_seconds, thumbnail_path, created_at, updated_at')
       .eq('club_id', clubId)
       .order('display_order', { ascending: true });
 
@@ -331,10 +331,10 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden: Not authorized for this club" }, { status: 403 });
     }
 
-    // Get media record first
+    // Get media record first - select only needed fields
     const { data: media, error: fetchError } = await supabaseTyped
       .from('club_media')
-      .select('*')
+      .select('id, club_id, file_path, thumbnail_path')
       .eq('id', mediaId)
       .eq('club_id', clubId)
       .single();
