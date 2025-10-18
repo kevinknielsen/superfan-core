@@ -105,6 +105,17 @@ interface UnlockRedemptionProps {
   onShowPerkDetails?: (unlock: Unlock, redemption: any, onPurchase?: () => void) => void;
   onCampaignDataChange?: (campaignData: any) => void;
   onCreditBalancesChange?: (creditBalances: Record<string, { campaign_title: string; balance: number }>) => void;
+  onAddToCart?: (item: {
+    id: string;
+    title: string;
+    isCreditCampaign?: boolean;
+    creditCost?: number;
+    campaignId?: string;
+    finalPriceCents?: number;
+    upgradePriceCents?: number;
+    discountCents?: number;
+  }) => void;
+  cart?: Array<{ id: string; quantity: number }>;
 }
 
 const UNLOCK_TYPE_ICONS: Record<string, any> = {
@@ -156,7 +167,9 @@ export default function UnlockRedemption({
   onShowRedemptionConfirmation,
   onShowPerkDetails,
   onCampaignDataChange,
-  onCreditBalancesChange
+  onCreditBalancesChange,
+  onAddToCart,
+  cart = []
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
@@ -921,14 +934,61 @@ export default function UnlockRedemption({
   };
 
   const handleUpgradePurchase = async (reward: Unlock) => {
+    // If cart mode is enabled, add to cart instead of immediate purchase
+    if (onAddToCart) {
+      onAddToCart({
+        id: reward.id,
+        title: reward.title,
+        isCreditCampaign: reward.is_credit_campaign,
+        creditCost: reward.credit_cost,
+        campaignId: reward.campaign_id,
+        finalPriceCents: reward.user_final_price_cents,
+        upgradePriceCents: reward.upgrade_price_cents,
+        discountCents: reward.user_discount_amount_cents
+      });
+      setSelectedUnlock(null); // Close the confirmation dialog
+      return;
+    }
+    
     try {
-      // For wallet app users: use Metal Presale with USDC (for ALL purchases)
-      if (isInWalletApp && metalHolder.data?.address) {
-        handleMetalPurchase(reward);
+      // Wallet app users: Metal Presale flow with USDC (matches campaign-progress-card.tsx)
+      if (isInWalletApp) {
+        if (!metalHolder.data?.address) {
+          throw new Error("Metal holder address not available");
+        }
+        
+        // Validate Metal holder address
+        if (!isAddress(metalHolder.data.address)) {
+          throw new Error("Invalid Metal holder address");
+        }
+
+        // Determine the amount to pay (credit cost or regular price)
+        const amountUSDC = reward.is_credit_campaign 
+          ? (reward.credit_cost || 0)
+          : ((reward.user_final_price_cents || reward.upgrade_price_cents || 0) / 100);
+        
+        // Validate amount
+        if (!Number.isFinite(amountUSDC) || amountUSDC <= 0) {
+          throw new Error("Invalid purchase amount");
+        }
+
+        // Store pending purchase for processing after confirmation
+        setPendingItemPurchase(reward);
+        
+        // Lock UI
+        setIsRedeeming(true);
+
+        // Send USDC to Metal holder address (triggers Metal presale)
+        sendUSDC({
+          toAddress: metalHolder.data.address as `0x${string}`,
+          amountUSDC: amountUSDC,
+        });
+
+        // Note: Processing continues in useEffect when isUSDCSuccess triggers
         return;
       }
       
-      // Set loading state for Stripe flows
+      // Web users: Stripe checkout flow
       setIsRedeeming(true);
       
       // Get auth headers (supports both Privy and Farcaster)
@@ -949,9 +1009,11 @@ export default function UnlockRedemption({
         description: error instanceof Error ? error.message : "Failed to start purchase",
         variant: "destructive",
       });
+      setIsRedeeming(false);
+      setPendingItemPurchase(null);
     } finally {
       // Always reset state unless we're waiting for Metal/USDC transaction
-      if (!isInWalletApp || !metalHolder.data?.address) {
+      if (!isInWalletApp) {
         setIsRedeeming(false);
       }
     }
@@ -1065,6 +1127,13 @@ export default function UnlockRedemption({
                         )
                       )}
                     </div>
+                    
+                    {/* Top right cart indicator */}
+                    {cart.find(item => item.id === `item-${unlock.id}`)?.quantity && (
+                      <div className="bg-primary text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shadow-lg">
+                        {cart.find(item => item.id === `item-${unlock.id}`)!.quantity}
+                      </div>
+                    )}
                   </div>
                   
                   {/* Progress bar for locked items - not shown for campaign items */}
@@ -1189,13 +1258,15 @@ export default function UnlockRedemption({
                               if (isCampaignFunded && userCredits >= creditCost) {
                                 return 'Redeem';
                               } else {
-                                // Show "Commit Credits" for buying/contributing to campaign
-                                return 'Commit Credits';
+                                // Show "Add to Cart" when cart mode enabled, else "Commit Credits"
+                                return onAddToCart ? 'Add to Cart' : 'Commit Credits';
                               }
                             }
                             
-                            // Regular tier reward pricing (unchanged)
-                            if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
+                            // Regular tier reward pricing
+                            if (onAddToCart) {
+                              return 'Add to Cart';
+                            } else if (unlock.user_discount_eligible && unlock.user_final_price_cents !== undefined) {
                               return `Commit ${formatCurrency(unlock.user_final_price_cents)}`;
                             } else {
                               // Fallback to upgrade pricing if no discount available
@@ -1331,18 +1402,22 @@ export default function UnlockRedemption({
                     handleRedeem(selectedUnlock);
                   }
                 }}
-                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock) || isUSDCLoading}
+                disabled={isRedeeming || !isUnlockAvailable(selectedUnlock) || isUSDCLoading || (isInWalletApp && metalHolder.isLoading)}
                 className="min-w-[140px] sm:w-auto w-full"
               >
-                {isUSDCLoading 
-                  ? 'Confirming Transaction...'
-                  : isRedeeming 
-                    ? 'Processing...' 
-                    : (isInWalletApp && metalHolder.data?.address)
-                      ? selectedUnlock.is_credit_campaign 
-                        ? `Send ${selectedUnlock.credit_cost} USDC`
-                        : `Pay ${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} USDC`
-                      : 'Proceed to Checkout'
+                {(isInWalletApp && metalHolder.isLoading)
+                  ? 'Initializing Wallet...'
+                  : isUSDCLoading 
+                    ? 'Confirming Transaction...'
+                    : isRedeeming 
+                      ? 'Processing...' 
+                      : (isInWalletApp && metalHolder.data?.address)
+                        ? selectedUnlock.is_credit_campaign 
+                          ? `Send ${selectedUnlock.credit_cost} USDC`
+                          : `Pay ${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} USDC`
+                        : onAddToCart
+                          ? 'Add to Cart'
+                          : 'Proceed to Checkout'
                 }
               </Button>
               <Button

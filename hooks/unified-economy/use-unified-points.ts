@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import { getAccessToken } from '@privy-io/react-auth';
 import { useErrorHandler, createMutationErrorHandler } from '@/lib/frontend-error-handling';
 import { useUnifiedAuth } from '@/lib/unified-auth-context';
+import { getAuthHeaders } from '@/app/api/sdk';
 
 export interface PointsBreakdown {
   wallet: {
@@ -72,10 +72,8 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
   } = useQuery({
     queryKey: ['points-breakdown', clubId, user?.id || 'anonymous'],
     queryFn: async (): Promise<PointsBreakdown> => {
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('Not authenticated');
-      }
+      // Use unified auth headers (works for both Privy and Farcaster)
+      const authHeaders = await getAuthHeaders();
       
       // Add timeout to prevent hanging
       const controller = new AbortController();
@@ -87,7 +85,7 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
+            ...authHeaders,
           },
           signal: controller.signal,
         });
@@ -120,15 +118,12 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
   // Spend points mutation
   const spendPointsMutation = useMutation({
     mutationFn: async (request: SpendPointsRequest) => {
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('Not authenticated');
-      }
+      const authHeaders = await getAuthHeaders();
       const response = await fetch('/api/points/spend', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
+          ...authHeaders,
         },
         body: JSON.stringify(request),
       });
@@ -165,15 +160,12 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
   // Transfer points mutation
   const transferPointsMutation = useMutation({
     mutationFn: async (request: TransferPointsRequest) => {
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('Not authenticated');
-      }
+      const authHeaders = await getAuthHeaders();
       const response = await fetch('/api/points/transfer', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
+          ...authHeaders,
         },
         body: JSON.stringify(request),
       });
@@ -214,16 +206,22 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
     return useQuery({
       queryKey: ['spending-history', clubId, limit],
       queryFn: async () => {
-        const accessToken = await getAccessToken();
-        const response = await fetch(`/api/points/spend?clubId=${clubId}&limit=${limit}`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
+        const authHeaders = await getAuthHeaders();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        
+        try {
+          const response = await fetch(`/api/points/spend?clubId=${clubId}&limit=${limit}`, {
+            headers: authHeaders,
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            throw new Error('Failed to fetch spending history');
           }
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch spending history');
+          return response.json();
+        } finally {
+          clearTimeout(timeout);
         }
-        return response.json();
       },
       enabled: options?.enabled !== false && !!clubId,
     });
@@ -234,16 +232,22 @@ export function useUnifiedPoints(clubId: string, options?: { enabled?: boolean }
     return useQuery({
       queryKey: ['transfer-history', clubId, limit],
       queryFn: async () => {
-        const accessToken = await getAccessToken();
-        const response = await fetch(`/api/points/transfer?clubId=${clubId}&limit=${limit}`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
+        const authHeaders = await getAuthHeaders();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        
+        try {
+          const response = await fetch(`/api/points/transfer?clubId=${clubId}&limit=${limit}`, {
+            headers: authHeaders,
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            throw new Error('Failed to fetch transfer history');
           }
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch transfer history');
+          return response.json();
+        } finally {
+          clearTimeout(timeout);
         }
-        return response.json();
       },
       enabled: options?.enabled !== false && !!clubId,
     });

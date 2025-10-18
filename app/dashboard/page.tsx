@@ -85,7 +85,6 @@ export default function Dashboard() {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [showPurchaseSuccess, setShowPurchaseSuccess] = useState(false);
   const [showPurchaseCanceled, setShowPurchaseCanceled] = useState(false);
-  const [autoOpenWallet, setAutoOpenWallet] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -226,7 +225,6 @@ export default function Dashboard() {
       const club = allClubs.find(c => c.id === clubParam);
       if (club) {
         setSelectedClubId(clubParam);
-        setAutoOpenWallet(true); // Auto-open wallet to show new credits
         
         // Trigger confetti
         setTimeout(() => {
@@ -473,12 +471,10 @@ export default function Dashboard() {
           club={allClubs.find(c => c.id === selectedClubId)!}
           membership={userMemberships.find(m => m.club_id === selectedClubId)}
           isOpen={!!selectedClubId}
-          autoOpenWallet={autoOpenWallet}
           onClose={() => {
             setSelectedClubId(null);
             setShowPurchaseSuccess(false);
             setShowPurchaseCanceled(false);
-            setAutoOpenWallet(false);
           }}
         />
       )}
