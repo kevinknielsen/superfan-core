@@ -4,6 +4,9 @@ import { supabase } from "../../supabase";
 import { stripe } from "@/lib/stripe";
 import { createHash } from "crypto";
 
+// Type assertion for enhanced schema features not in generated types
+const supabaseAny = supabase as any;
+
 // Resilient base URL resolution - returns null if not configured
 function resolveBaseUrl(): string | null {
   const explicit = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL;
@@ -78,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     // Get the user from database
     const userColumn = auth.type === 'farcaster' ? 'farcaster_id' : 'privy_id';
-    const { data: user, error: userError } = await supabase
+    const { data: user, error: userError } = await supabaseAny
       .from('users')
       .select('id')
       .eq(userColumn, auth.userId)
@@ -90,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify club exists
-    const { data: club, error: clubError } = await supabase
+    const { data: club, error: clubError } = await supabaseAny
       .from('clubs')
       .select('id, name')
       .eq('id', club_id)
@@ -118,24 +121,42 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Add each tier reward item
+    // Batch fetch all tier rewards for better performance
+    const rewardIds = items.map(item => item.tier_reward_id);
+    const { data: rewards, error: rewardsError } = await supabaseAny
+      .from('tier_rewards')
+      .select('id, title, description')
+      .in('id', rewardIds);
+
+    if (rewardsError) {
+      console.error('Error fetching tier rewards:', rewardsError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch cart items',
+        details: rewardsError.message 
+      }, { status: 500 });
+    }
+
+    const rewardMap = new Map(rewards?.map((r: any) => [r.id, r]) || []);
+
+    // Add each tier reward item with price validation
     for (const item of items) {
-      // Fetch item details
-      const { data: reward, error: rewardError } = await supabase
-        .from('tier_rewards')
-        .select('title, description')
-        .eq('id', item.tier_reward_id)
-        .single();
-      
-      // Fail fast if item not found or DB error
-      if (rewardError || !reward) {
-        console.error(`Tier reward not found: ${item.tier_reward_id}`, rewardError);
+      const reward = rewardMap.get(item.tier_reward_id) as any;
+      if (!reward) {
         return NextResponse.json({ 
-          error: `Cart item not found: tier_reward_id ${item.tier_reward_id}`,
-          details: rewardError?.message || 'Item does not exist'
+          error: `Cart item not found: tier_reward_id ${item.tier_reward_id}` 
         }, { status: 400 });
       }
-      
+
+      // Validate price - must have a valid positive integer price (no free items by accident)
+      const priceCents = item.final_price_cents ?? item.original_price_cents;
+      if (!priceCents || !Number.isInteger(priceCents) || priceCents <= 0) {
+        console.error(`Invalid price for tier_reward ${item.tier_reward_id}:`, { final_price_cents: item.final_price_cents, original_price_cents: item.original_price_cents });
+        return NextResponse.json({ 
+          error: `Invalid or missing price for cart item: tier_reward_id ${item.tier_reward_id}`,
+          details: 'Price must be a positive integer in cents'
+        }, { status: 400 });
+      }
+
       lineItems.push({
         price_data: {
           currency: 'usd',
@@ -143,23 +164,34 @@ export async function POST(request: NextRequest) {
             name: reward.title,
             description: reward.description || `Item from ${club.name}`
           },
-          unit_amount: item.final_price_cents || item.original_price_cents || 0
+          unit_amount: priceCents
         },
         quantity: item.quantity
       });
     }
 
     // Generate deterministic idempotency key from stable request data
-    // Sort items by tier_reward_id to ensure canonical ordering
-    const sortedItems = [...items].sort((a, b) => a.tier_reward_id.localeCompare(b.tier_reward_id));
+    // Sort items by tier_reward_id (with secondary sort by campaign_id) to ensure canonical ordering
+    const sortedItems = [...items].sort((a, b) => {
+      const primaryCompare = a.tier_reward_id.localeCompare(b.tier_reward_id, 'en-US', { numeric: true });
+      if (primaryCompare !== 0) return primaryCompare;
+      // Tie-breaker: campaign_id
+      const aCampaign = a.campaign_id || '';
+      const bCampaign = b.campaign_id || '';
+      return aCampaign.localeCompare(bCampaign, 'en-US', { numeric: true });
+    });
+    
     const canonicalData = JSON.stringify({
       user_id: user.id,
       club_id: club_id,
       total_credits: total_credits,
+      success_url: success_url,
+      cancel_url: cancel_url,
       items: sortedItems.map(i => ({
         tier_reward_id: i.tier_reward_id,
         quantity: i.quantity,
         final_price_cents: i.final_price_cents,
+        original_price_cents: i.original_price_cents,
         campaign_id: i.campaign_id
       }))
     });

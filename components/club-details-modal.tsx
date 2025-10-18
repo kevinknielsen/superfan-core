@@ -163,9 +163,37 @@ export default function ClubDetailsModal({
       if (params.get('purchase_success') === 'true' && params.get('club_id') === club.id) {
         // Clear cart on confirmed successful payment
         clearCart();
+        
+        // Clean up URL parameters to prevent repeated clears on refresh/back
+        const newParams = new URLSearchParams(window.location.search);
+        newParams.delete('purchase_success');
+        newParams.delete('club_id');
+        newParams.delete('session_id');
+        
+        const newSearch = newParams.toString();
+        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, '', newUrl);
       }
     }
   }, [club.id]);
+  
+  // Stale cart cleanup - clear cart after 24 hours of inactivity
+  useEffect(() => {
+    const CART_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+    
+    if (cart.length > 0) {
+      const timer = setTimeout(() => {
+        console.log('[ClubDetailsModal] Clearing stale cart after 24h');
+        clearCart();
+        toast({
+          title: "Cart Cleared",
+          description: "Your cart was cleared due to inactivity",
+        });
+      }, CART_EXPIRY_MS);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [cart, toast]);
   
   // Monitor USDC transaction success and process all cart items
   const processedCartTxRef = useRef<string | null>(null);
@@ -849,8 +877,6 @@ export default function ClubDetailsModal({
                 <UnifiedPointsWallet 
                   clubId={club.id}
                   clubName={club.name}
-                  showPurchaseOptions={true}
-                  showTransferOptions={false}
                   isAuthenticated={isAuthenticated}
                   creditBalances={creditBalances}
                   onCloseWallet={() => {
