@@ -9,13 +9,15 @@ export function getPrivyClient(): PrivyClient {
   if (privyClient) return privyClient;
   
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-  const appSecret = process.env.PRIVY_APP_SECRET;
+  const verificationKey = process.env.PRIVY_VERIFICATION_KEY;
   
-  if (!appId || !appSecret) {
-    throw new Error('Missing required Privy environment variables: NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_APP_SECRET must be configured');
+  if (!appId || !verificationKey) {
+    throw new Error('Missing required Privy environment variables: NEXT_PUBLIC_PRIVY_APP_ID and PRIVY_VERIFICATION_KEY must be configured');
   }
   
-  privyClient = new PrivyClient(appId, appSecret);
+  // PrivyClient accepts (appId, appSecret) positional args
+  // verificationKey is used as the second parameter
+  privyClient = new PrivyClient(appId, verificationKey);
   return privyClient;
 }
 
@@ -29,7 +31,7 @@ export async function verifyPrivyToken(req: NextRequest) {
 
   console.log('[Auth] Attempting to verify Privy token:', {
     tokenLength: token?.length,
-    hasSecret: !!process.env.PRIVY_APP_SECRET
+    hasVerificationKey: !!process.env.PRIVY_VERIFICATION_KEY
   });
 
   try {
@@ -39,7 +41,7 @@ export async function verifyPrivyToken(req: NextRequest) {
     return claims;
   } catch (error) {
     // Rethrow configuration errors (missing env vars) - these should fail fast
-    if (error instanceof Error && error.message.includes('Missing required Privy environment variables')) {
+    if (error instanceof Error && error.message.includes('Missing required Privy')) {
       console.error('[Auth] CRITICAL: Privy configuration error - missing environment variables');
       throw error; // Fail fast on misconfiguration
     }

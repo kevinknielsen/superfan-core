@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isAddress } from 'viem';
 import { 
   Wallet, 
   TrendingUp, 
@@ -15,8 +14,7 @@ import {
   ArrowRight,
   Sparkles,
   Zap,
-  CreditCard,
-  Gift
+  CreditCard
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,7 +22,6 @@ import { Button } from '@/components/ui/button';
 import { useUnifiedPoints, useStatusInfo, type PointsBreakdown } from '@/hooks/unified-economy/use-unified-points';
 import { formatPoints, STATUS_THRESHOLDS } from '@/lib/points';
 import { useFarcaster } from '@/lib/farcaster-context';
-import { navigateToCheckout } from '@/lib/navigation-utils';
 import { useToast } from '@/hooks/use-toast';
 import { getStatusTextColor, getStatusBgColor, getStatusGradientClass } from '@/lib/status-colors';
 import { useMetalHolder, useBuyTokens } from '@/hooks/use-metal-holder';
@@ -35,8 +32,6 @@ interface UnifiedPointsWalletProps {
   clubId: string;
   clubName: string;
   clubTokenAddress?: string; // Metal token address for the club (required for direct token purchases)
-  showPurchaseOptions?: boolean;
-  showTransferOptions?: boolean;
   className?: string;
   creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
   onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
@@ -263,21 +258,18 @@ export default function UnifiedPointsWallet({
   clubId, 
   clubName,
   clubTokenAddress, // Token address for direct token purchases
-  showPurchaseOptions = false,
-  showTransferOptions = false,
   className = "",
   creditBalances = {},
   onCloseWallet
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const { isInWalletApp, openUrl } = useFarcaster();
-  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isPurchasing, setIsPurchasing] = useState(false); // For Metal purchase processing state
   const { toast } = useToast();
   
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
-  const { mutateAsync: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess, error: buyTokensError } = useBuyTokens();
+  const { mutateAsync: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess } = useBuyTokens();
 
   // Use the hook instead of manual fetch
   const { 
@@ -323,8 +315,12 @@ export default function UnifiedPointsWallet({
         const { getAuthHeaders } = await import('@/app/api/sdk');
         const authHeaders = await getAuthHeaders();
 
-        // Preserve two-decimal precision
-        const creditAmount = Number((tokenData.sellAmount || 0).toFixed(2));
+        // Validate and extract USDC amount from Metal response
+        const raw = Number(tokenData?.sellAmount ?? tokenData?.usdcAmount ?? 0);
+        if (!Number.isFinite(raw) || raw <= 0) {
+          throw new Error('Invalid purchase amount from Metal response');
+        }
+        const creditAmount = Math.round(raw * 100) / 100; // 2-decimal precision
 
         // Add timeout to prevent hanging UI
         const controller = new AbortController();
@@ -387,89 +383,6 @@ export default function UnifiedPointsWallet({
 
     recordPurchase();
   }, [isBuyTokensSuccess, buyTokensData, user, clubId, metalHolder.data, toast, refetch]);
-
-  // Handle credit purchase flow
-  const handleCreditPurchase = async (creditAmount: number) => {
-    try {
-      if (isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)) return;
-      setIsPurchasing(true);
-      
-      // Wallet app users: Metal token buying flow
-      if (isInWalletApp) {
-        if (!metalHolder.data?.id) {
-          throw new Error('Metal holder not available');
-        }
-        
-        // Validate token address is provided
-        if (!clubTokenAddress) {
-          throw new Error('Club token address not configured. Please contact support.');
-        }
-        
-        // Validate token address format
-        if (!isAddress(clubTokenAddress)) {
-          throw new Error('Invalid club token address');
-        }
-        
-        // Validate amount
-        if (!Number.isFinite(creditAmount) || creditAmount <= 0) {
-          throw new Error('Invalid credit amount');
-        }
-        
-        // Buy tokens directly from Metal
-        await buyTokens({
-          tokenAddress: clubTokenAddress,
-          usdcAmount: creditAmount,
-          swapFeeBps: 100, // 1% fee (optional, adjust as needed)
-        });
-        
-        // Note: Processing continues in useEffect when isBuyTokensSuccess triggers
-        return;
-      }
-      
-      // Web users: Stripe checkout flow
-      const { getAuthHeaders } = await import('@/app/api/sdk');
-      const authHeaders = await getAuthHeaders();
-      
-      // Create direct credit purchase via a dedicated endpoint
-      const purchaseResponse = await fetch(`/api/campaigns/credit-purchase`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeaders
-        },
-        body: JSON.stringify({
-          club_id: clubId,
-          credit_amount: creditAmount, // Number of credits to purchase
-          success_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&purchase_success=true&session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${window.location.origin}${window.location.pathname}?club_id=${clubId}&credit_purchase_cancelled=true`
-        })
-      });
-
-      if (purchaseResponse.ok) {
-        const result = await purchaseResponse.json() as any;
-        const url = result?.stripe_session_url;
-        if (!url || typeof url !== 'string') {
-          throw new Error('Missing checkout URL');
-        }
-        
-        // Reset state before redirect to avoid stuck state if navigation is aborted
-        setIsPurchasing(false);
-        await navigateToCheckout(url, isInWalletApp, openUrl);
-      } else {
-        const errorData = await purchaseResponse.json() as any;
-        throw new Error(errorData.error || 'Failed to start credit purchase');
-      }
-    } catch (error) {
-      console.error('Credit purchase error:', error);
-      toast({ title: 'Purchase Failed', description: error instanceof Error ? error.message : 'Failed to start credit purchase', variant: 'destructive' });
-      setIsPurchasing(false);
-    } finally {
-      // Reset state for web users; Metal users reset in useEffect after transaction
-      if (!isInWalletApp) {
-        setIsPurchasing(false);
-      }
-    }
-  };
 
   if (isLoading) {
     return (
@@ -574,74 +487,6 @@ export default function UnifiedPointsWallet({
               </div>
             </div>
 
-            {/* Credit Purchase Buttons */}
-            <div className="space-y-3">
-              <div className="text-sm text-slate-300 text-center mb-3">Purchase Credits</div>
-              <div className="grid grid-cols-3 gap-2">
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  onClick={() => handleCreditPurchase(25)}
-                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
-                    ? 'Preparing...'
-                    : '25'}
-                </Button>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  onClick={() => handleCreditPurchase(100)}
-                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
-                    ? 'Preparing...'
-                    : '100'}
-                </Button>
-                </motion.div>
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button 
-                  onClick={() => handleCreditPurchase(250)}
-                  disabled={isPurchasing || isBuyingTokens || (isInWalletApp && metalHolder.isLoading)}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 backdrop-blur-sm text-sm py-3"
-                >
-                  <CreditCard className="w-3 h-3 mr-1" />
-                  {isBuyingTokens || (isInWalletApp && metalHolder.isLoading)
-                    ? 'Preparing...'
-                    : '250'}
-                </Button>
-                </motion.div>
-              </div>
-              
-              {/* Credit Information */}
-              <div className="text-xs text-slate-400 text-center px-2 py-2 bg-white/5 rounded-lg">
-                ✨ Credits never expire and can be used to claim future drops and items
-              </div>
-              
-              {totalCampaignCredits > 0 && (
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="mt-3">
-                  <Button 
-                    variant="outline" 
-                    className="w-full border-white/20 text-white hover:bg-white/10 bg-transparent"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Close wallet and scroll to campaign items to redeem
-                      onCloseWallet?.();
-                      toast({
-                        title: "View Items",
-                        description: "You can claim items when the campaign reaches its goal",
-                      });
-                    }}
-                  >
-                    <Gift className="w-4 h-4 mr-2" />
-                    Redeem Items
-                  </Button>
-                </motion.div>
-              )}
-            </div>
           </div>
         </Card>
       </motion.div>

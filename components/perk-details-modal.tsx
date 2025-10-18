@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Calendar, MapPin, Users, ExternalLink, Mail, MessageSquare, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -77,6 +77,20 @@ export default function PerkDetailsModal({
 }: PerkDetailsModalProps) {
   const { toast } = useToast();
   const [isResending, setIsResending] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const isMountedRef = useRef(true);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen || !perk) return null;
 
@@ -411,19 +425,40 @@ export default function PerkDetailsModal({
             {isPreviewMode || !isActuallyRedeemed ? (
               // Preview mode - trigger purchase for credit campaigns
               <Button
-                onClick={() => {
+                onClick={async () => {
+                  if (isAdding) return; // Prevent double clicks
+                  setIsAdding(true);
+                  
+                  onClose(); // Close modal first
                   if (isCreditCampaignMetadata(perk.metadata) && onPurchase) {
-                    onClose();
-                    onPurchase(); // Trigger purchase flow
-                  } else {
-                    onClose();
+                    try {
+                      await Promise.resolve(onPurchase());
+                    } catch (e) {
+                      console.error('Add to cart error:', e);
+                      toast({
+                        title: 'Failed to add',
+                        description: e instanceof Error ? e.message : 'Please try again.',
+                        variant: 'destructive',
+                      });
+                    }
                   }
+                  
+                  // Reset after brief delay to allow re-adding (with unmount protection)
+                  timeoutRef.current = setTimeout(() => {
+                    if (isMountedRef.current) {
+                      setIsAdding(false);
+                    }
+                  }, 500);
                 }}
+                disabled={isAdding}
+                aria-busy={isAdding}
                 size="lg"
-                className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl"
+                className="w-full bg-primary hover:bg-primary/90 text-white font-semibold py-4 rounded-xl disabled:opacity-50"
               >
-                {isCreditCampaignMetadata(perk.metadata) ? (
-                  'Commit Credits'
+                {isAdding ? (
+                  'Adding...'
+                ) : isCreditCampaignMetadata(perk.metadata) ? (
+                  'Add to Cart'
                 ) : (
                   'Close Preview'
                 )}
