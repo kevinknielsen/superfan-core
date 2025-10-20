@@ -79,20 +79,21 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Get raw body for signature verification
+    // Get raw body
     const rawBody = await request.text();
     
-    // Verify HMAC signature (skip in development if no secret is set)
-    const isValidSignature = await verifySignature(request, rawBody);
-    const isDevelopment = process.env.NODE_ENV === 'development';
+    // Optional: Verify HMAC signature only if secret is configured
+    // The docs don't require this, but we'll support it if you add a secret later
     const hasSecret = !!process.env.FARCASTER_WEBHOOK_SECRET;
-    
-    if (!isValidSignature && (!isDevelopment || hasSecret)) {
-      console.error('Invalid webhook signature');
-      return NextResponse.json(
-        { error: 'Unauthorized' }, 
-        { status: 401 }
-      );
+    if (hasSecret) {
+      const isValidSignature = await verifySignature(request, rawBody);
+      if (!isValidSignature) {
+        console.error('Invalid webhook signature');
+        return NextResponse.json(
+          { error: 'Unauthorized' }, 
+          { status: 401 }
+        );
+      }
     }
     
     // Parse and validate JSON payload
