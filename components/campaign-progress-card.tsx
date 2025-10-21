@@ -98,6 +98,15 @@ export function CampaignProgressCard({
         // Step 1: Buy presale with Metal
         // Use metal_presale_id (the actual Metal presale), not campaign_id
         const presaleId = campaignData.metal_presale_id || campaignData.campaign_id;
+        
+        console.log('[Campaign Card] About to call buyPresale:', {
+          presaleId,
+          metal_presale_id: campaignData.metal_presale_id,
+          campaign_id: campaignData.campaign_id,
+          usingCorrectId: !!campaignData.metal_presale_id,
+          fullCampaignData: campaignData
+        });
+        
         const metalResult = await buyPresaleAsync({
           user,
           campaignId: presaleId,

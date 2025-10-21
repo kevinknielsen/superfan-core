@@ -243,6 +243,15 @@ export default function UnlockRedemption({
         // Step 1: Buy presale with Metal
         // Use metal_presale_id (the actual Metal presale), not campaign_id
         const presaleId = pendingItemPurchase.metal_presale_id || pendingItemPurchase.campaign_id;
+        
+        console.log('[Unlock] Calling buyPresale with:', {
+          presaleId,
+          metal_presale_id: pendingItemPurchase.metal_presale_id,
+          campaign_id: pendingItemPurchase.campaign_id,
+          usingCorrectId: !!pendingItemPurchase.metal_presale_id,
+          fullItem: pendingItemPurchase
+        });
+        
         await buyPresaleAsync({
           user,
           campaignId: presaleId,
@@ -506,14 +515,23 @@ export default function UnlockRedemption({
             // Check if still mounted before updating state
             // Allow callback when isMounted guard not provided (initial load, manual reloads)
             if (!isMounted || isMounted()) {
-              onCampaignDataChange({
+              const campaignData = {
                 campaign_id: campaignTier.campaign_id,
                 campaign_title: campaignTier.campaign_title,
                 campaign_description: campaignTier.campaign_description,
                 campaign_status: campaignTier.campaign_status,
                 metal_presale_id: campaignTier.metal_presale_id, // CRITICAL: Include Metal presale ID
                 campaign_progress: campaignTier.campaign_progress
+              };
+              
+              console.log('[UnlockRedemption] Setting campaign data:', {
+                campaign_id: campaignData.campaign_id,
+                metal_presale_id: campaignData.metal_presale_id,
+                hasMetalPresaleId: !!campaignData.metal_presale_id,
+                rawTier: { metal_presale_id: campaignTier.metal_presale_id }
               });
+              
+              onCampaignDataChange(campaignData);
             }
           });
         }

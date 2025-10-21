@@ -292,6 +292,14 @@ export default function ClubDetailsModal({
               const totalCredits = cartItem.amount * cartItem.quantity;
               // Use metal_presale_id if available, fallback to campaignId
               const presaleId = campaignData?.metal_presale_id || cartItem.campaignId;
+              
+              console.log('[Cart] Calling buyPresale with:', {
+                presaleId,
+                metalPresaleId: campaignData?.metal_presale_id,
+                campaignId: cartItem.campaignId,
+                usingCorrectId: !!campaignData?.metal_presale_id
+              });
+              
               if (presaleId) {
                 await buyPresaleAsync({
                   user,
@@ -338,6 +346,14 @@ export default function ClubDetailsModal({
             } else if (cartItem.itemId) {
               // Buy presale for item
               const presaleId = campaignData?.metal_presale_id || cartItem.campaignId;
+              
+              console.log('[Cart Item] Calling buyPresale with:', {
+                presaleId,
+                metalPresaleId: campaignData?.metal_presale_id,
+                campaignId: cartItem.campaignId,
+                usingCorrectId: !!campaignData?.metal_presale_id
+              });
+              
               if (presaleId) {
                 const amountUSDC = (cartItem.amount * cartItem.quantity) / 100;
                 await buyPresaleAsync({
