@@ -510,6 +510,76 @@ export function CampaignProgressCard({
             <div className="text-sm text-gray-300 text-center">
               Purchase Credits
             </div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {/* Small amounts: 1, 5, 10 */}
+              {(() => {
+                const qty1 = Number(cart.find(item => item.id === 'credits-1')?.quantity ?? 0);
+                const qty5 = Number(cart.find(item => item.id === 'credits-5')?.quantity ?? 0);
+                const qty10 = Number(cart.find(item => item.id === 'credits-10')?.quantity ?? 0);
+                
+                return (
+                  <>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={() => handleCreditPurchase(1)}
+                        disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                        className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-2 relative"
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" />
+                        {isUSDCLoading && pendingCreditAmount === 1
+                          ? "..."
+                          : isBuyingPresale && pendingCreditAmount === 1
+                          ? "..."
+                          : "1"}
+                        {qty1 > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                            {qty1}
+                          </span>
+                        )}
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={() => handleCreditPurchase(5)}
+                        disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                        className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-2 relative"
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" />
+                        {isUSDCLoading && pendingCreditAmount === 5
+                          ? "..."
+                          : isBuyingPresale && pendingCreditAmount === 5
+                          ? "..."
+                          : "5"}
+                        {qty5 > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                            {qty5}
+                          </span>
+                        )}
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <Button
+                        onClick={() => handleCreditPurchase(10)}
+                        disabled={isPurchasing || isUSDCLoading || isBuyingPresale}
+                        className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 backdrop-blur-sm text-sm py-2 relative"
+                      >
+                        <CreditCard className="w-3 h-3 mr-1" />
+                        {isUSDCLoading && pendingCreditAmount === 10
+                          ? "..."
+                          : isBuyingPresale && pendingCreditAmount === 10
+                          ? "..."
+                          : "10"}
+                        {qty10 > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                            {qty10}
+                          </span>
+                        )}
+                      </Button>
+                    </motion.div>
+                  </>
+                );
+              })()}
+            </div>
             <div className="grid grid-cols-3 gap-3">
               {(() => {
                 // Cache cart quantities to avoid repeated lookups (coerce to number for safety)

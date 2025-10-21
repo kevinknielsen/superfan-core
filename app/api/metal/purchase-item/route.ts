@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
       club_id: club_id,
       reward_id: tier_reward_id,
       campaign_id: campaign_id || tierReward.campaign_id || null,
-      claim_method: 'metal_presale',
+      claim_method: 'tier_qualified', // Use tier_qualified for Metal purchases (constraint allows NULL upgrade fields)
       user_tier_at_claim: user_tier || 'cadet',
       user_points_at_claim: 0,
       original_price_cents: original_price_cents || amount_paid_cents,
