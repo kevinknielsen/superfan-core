@@ -49,6 +49,7 @@ export function CampaignProgressCard({
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
   const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
+  const [isCreatingHolder, setIsCreatingHolder] = useState(false);
 
   // Process Metal Presale purchase when USDC transaction succeeds
   useEffect(() => {
@@ -204,8 +205,11 @@ export function CampaignProgressCard({
     }
 
     try {
-      if (isPurchasing) return;
+      if (isPurchasing || isCreatingHolder) return;
       setIsPurchasing(true);
+
+      // Declare at function level to access in finally block
+      let holderAddress: string | undefined;
 
       // Wallet app users: Metal Presale flow with USDC
       if (isInWalletApp) {
@@ -215,9 +219,10 @@ export function CampaignProgressCard({
         }
 
         // Create Metal holder on-demand if it doesn't exist yet
-        let holderAddress = metalHolder.data?.address;
+        holderAddress = metalHolder.data?.address;
         
-        if (!holderAddress) {
+        if (!holderAddress && !isCreatingHolder) {
+          setIsCreatingHolder(true); // Prevent concurrent creation
           console.log('[Campaign Purchase] Metal holder not ready, creating now...');
           toast({
             title: "Setting up wallet...",
@@ -247,6 +252,8 @@ export function CampaignProgressCard({
           } catch (error) {
             console.error('[Campaign Purchase] Error creating Metal holder:', error);
             throw new Error(`Failed to set up wallet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          } finally {
+            setIsCreatingHolder(false); // Always reset creation flag
           }
         }
         
@@ -317,7 +324,7 @@ export function CampaignProgressCard({
       });
     } finally {
       // Always reset state unless we're waiting for Metal/USDC transaction
-      if (!isInWalletApp || !metalHolder.data?.address) {
+      if (!isInWalletApp || !holderAddress) {
         setIsPurchasing(false);
       }
     }
