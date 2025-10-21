@@ -14,6 +14,7 @@ interface CampaignRecord {
 
 interface ClubRecord {
   name: string;
+  treasury_wallet_address?: string;
 }
 
 interface CreditPurchaseRecord {
@@ -71,6 +72,23 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Validate metal_holder_address if provided
+    if (metal_holder_address !== undefined && metal_holder_address !== null) {
+      if (typeof metal_holder_address !== 'string' || metal_holder_address.trim() === '') {
+        return NextResponse.json({ 
+          error: 'metal_holder_address must be a non-empty string when provided' 
+        }, { status: 400 });
+      }
+      
+      // Validate Ethereum address format (0x + 40 hex chars)
+      const addressRegex = /^0x[a-fA-F0-9]{40}$/i;
+      if (!addressRegex.test(metal_holder_address)) {
+        return NextResponse.json({ 
+          error: 'metal_holder_address must be a valid Ethereum address (0x followed by 40 hex characters)' 
+        }, { status: 400 });
+      }
+    }
+
     // Validate tx_hash format: must be 32-byte hex string (64 hex chars with or without 0x prefix)
     const txHashRegex = /^(0x)?[a-fA-F0-9]{64}$/;
     if (!txHashRegex.test(tx_hash)) {
@@ -117,7 +135,7 @@ export async function POST(request: NextRequest) {
     // Get club info for metadata
     const { data: club } = await supabaseAny
       .from('clubs')
-      .select('name')
+      .select('name, treasury_wallet_address')
       .eq('id', club_id)
       .single() as { data: ClubRecord | null; error: any };
 
@@ -202,9 +220,23 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Recorded Metal purchase: ${credit_amount} credits for user ${actualUserId}`);
 
-    // Update campaign progress (only if campaign_id provided)
+    // Check if this is a treasury purchase (should NOT count toward campaign progress)
+    // Use club data already fetched above
+    let isTreasuryPurchase = false;
+    if (campaign_id && campaign && club?.treasury_wallet_address && metal_holder_address) {
+      isTreasuryPurchase = metal_holder_address.toLowerCase() === club.treasury_wallet_address.toLowerCase();
+      
+      if (isTreasuryPurchase) {
+        console.log('ℹ️ Treasury purchase detected - skipping campaign progress update (already counted elsewhere)', {
+          treasuryWallet: club.treasury_wallet_address,
+          purchaseWallet: metal_holder_address
+        });
+      }
+    }
+
+    // Update campaign progress (only if campaign_id provided AND not treasury purchase)
     let campaignUpdateErrorMessage: string | null = null;
-    if (campaign_id && campaign) {
+    if (campaign_id && campaign && !isTreasuryPurchase) {
       const { error: campaignUpdateError } = await supabaseAny
         .rpc('increment_campaigns_ticket_progress', {
           p_campaign_id: campaign_id,
@@ -238,9 +270,10 @@ export async function POST(request: NextRequest) {
             .neq('status', 'funded');
         }
       }
-    } else {
+    } else if (!campaign_id) {
       console.log(`✅ Direct credit purchase (no campaign) - ${credit_amount} credits for user ${actualUserId}`);
     }
+    // Treasury purchases are recorded but don't update campaign (already counted)
 
     return NextResponse.json({
       success: true,

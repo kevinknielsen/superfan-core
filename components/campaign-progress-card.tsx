@@ -49,6 +49,7 @@ export function CampaignProgressCard({
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
   const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
+  const [isCreatingHolder, setIsCreatingHolder] = useState(false);
 
   // Process Metal Presale purchase when USDC transaction succeeds
   useEffect(() => {
@@ -204,18 +205,61 @@ export function CampaignProgressCard({
     }
 
     try {
-      if (isPurchasing) return;
+      if (isPurchasing || isCreatingHolder) return;
       setIsPurchasing(true);
+
+      // Declare at function level to access in finally block
+      let holderAddress: string | undefined;
 
       // Wallet app users: Metal Presale flow with USDC
       if (isInWalletApp) {
-        if (!metalHolder.data?.address) {
-          throw new Error("Metal holder address not available");
+        // Ensure user is authenticated
+        if (!user?.id) {
+          throw new Error("Please log in to continue");
+        }
+
+        // Create Metal holder on-demand if it doesn't exist yet
+        holderAddress = metalHolder.data?.address;
+        
+        if (!holderAddress && !isCreatingHolder) {
+          setIsCreatingHolder(true); // Prevent concurrent creation
+          console.log('[Campaign Purchase] Metal holder not ready, creating now...');
+          toast({
+            title: "Setting up wallet...",
+            description: "Creating your Metal holder, one moment",
+          });
+          
+          // Dynamically import to create holder
+          const { metal } = await import('@/lib/metal/client');
+          
+          try {
+            // Try to get holder first
+            let holder = await metal.getHolder(user.id);
+            
+            // If doesn't exist, create it
+            if (!holder) {
+              console.log('[Campaign Purchase] Creating Metal holder for:', user.id);
+              holder = await metal.createUser(user.id);
+            }
+            
+            if (!holder?.address) {
+              throw new Error("Failed to initialize Metal holder");
+            }
+            
+            holderAddress = holder.address;
+            console.log('[Campaign Purchase] Metal holder ready:', holder.address);
+            
+          } catch (error) {
+            console.error('[Campaign Purchase] Error creating Metal holder:', error);
+            throw new Error(`Failed to set up wallet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          } finally {
+            setIsCreatingHolder(false); // Always reset creation flag
+          }
         }
         
-        // Validate Metal holder address
+        // Validate holder address
         const { isAddress } = await import("viem");
-        if (!isAddress(metalHolder.data.address)) {
+        if (!isAddress(holderAddress)) {
           throw new Error("Invalid Metal holder address");
         }
 
@@ -229,7 +273,7 @@ export function CampaignProgressCard({
 
         // Send USDC to Metal holder address (triggers Metal presale)
         sendUSDC({
-          toAddress: metalHolder.data.address as `0x${string}`,
+          toAddress: holderAddress as `0x${string}`,
           amountUSDC: creditAmount,
         });
 
@@ -280,7 +324,7 @@ export function CampaignProgressCard({
       });
     } finally {
       // Always reset state unless we're waiting for Metal/USDC transaction
-      if (!isInWalletApp || !metalHolder.data?.address) {
+      if (!isInWalletApp || !holderAddress) {
         setIsPurchasing(false);
       }
     }
