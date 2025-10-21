@@ -499,13 +499,50 @@ export default function ClubDetailsModal({
   
   // Wallet checkout: One USDC transaction for total cart amount
   const handleWalletCheckout = async () => {
-    if (!metalHolder.data?.address) {
-      throw new Error("Metal holder not initialized");
+    // Ensure user is authenticated
+    if (!user?.id) {
+      throw new Error("Please log in to continue");
+    }
+
+    // Create Metal holder on-demand if it doesn't exist yet
+    let holderAddress = metalHolder.data?.address;
+    
+    if (!holderAddress) {
+      console.log('[Wallet Checkout] Metal holder not ready, creating now...');
+      toast({
+        title: "Setting up wallet...",
+        description: "Creating your Metal holder, one moment",
+      });
+      
+      // Dynamically import to create holder
+      const { metal } = await import('@/lib/metal/client');
+      
+      try {
+        // Try to get holder first
+        let holder = await metal.getHolder(user.id);
+        
+        // If doesn't exist, create it
+        if (!holder) {
+          console.log('[Wallet Checkout] Creating Metal holder for:', user.id);
+          holder = await metal.createUser(user.id);
+        }
+        
+        if (!holder?.address) {
+          throw new Error("Failed to initialize Metal holder");
+        }
+        
+        holderAddress = holder.address;
+        console.log('[Wallet Checkout] Metal holder ready:', holder.address);
+        
+      } catch (error) {
+        console.error('[Wallet Checkout] Error creating Metal holder:', error);
+        throw new Error(`Failed to set up wallet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     }
     
     // Validate Metal holder address
     const { isAddress, parseUnits } = await import('viem');
-    if (!isAddress(metalHolder.data.address)) {
+    if (!isAddress(holderAddress)) {
       throw new Error("Invalid Metal holder address");
     }
     
@@ -537,7 +574,7 @@ export default function ClubDetailsModal({
     
     // Send ONE USDC transaction for the entire cart
     sendUSDC({
-      toAddress: metalHolder.data.address as `0x${string}`,
+      toAddress: holderAddress as `0x${string}`,
       amountUSDC: totalUSDC,
     });
     
