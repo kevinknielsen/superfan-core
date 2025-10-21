@@ -361,8 +361,17 @@ export default function ClubDetailsModal({
               // Buy presale for item  
               const presaleId = cartItem.metalPresaleId || cartItem.campaignId;
               
+              // For credit campaign items: use creditCost (e.g., 9 credits = 9 USDC)
+              // For regular items: use price in cents converted to USDC
+              const amountUSDC = cartItem.isCreditCampaign 
+                ? (cartItem.creditCost || 0) * cartItem.quantity  // Credits: 1 credit = 1 USDC
+                : (cartItem.amount * cartItem.quantity) / 100;    // Regular items: cents to USDC
+              
               console.log('[Cart Item] Calling buyPresale with:', {
                 presaleId,
+                amount: amountUSDC,
+                isCreditCampaign: cartItem.isCreditCampaign,
+                creditCost: cartItem.creditCost,
                 cartItemMetalPresaleId: cartItem.metalPresaleId,
                 campaignDataMetalPresaleId: campaignData?.metal_presale_id,
                 campaignId: cartItem.campaignId,
@@ -370,7 +379,6 @@ export default function ClubDetailsModal({
               });
               
               if (presaleId) {
-                const amountUSDC = (cartItem.amount * cartItem.quantity) / 100;
                 await buyPresaleAsync({
                   user,
                   campaignId: presaleId, // This is actually presale ID for Metal

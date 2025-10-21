@@ -112,11 +112,21 @@ export async function POST(request: NextRequest) {
       .single() as { data: UserRecord | null; error: any };
 
     if (userError || !user) {
-      console.error('User not found:', userError);
+      console.error('[Metal Credit Purchase] User not found:', {
+        error: userError,
+        authUserId: auth.userId,
+        authType: auth.type,
+        userColumn
+      });
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const actualUserId = user.id;
+    console.log('[Metal Credit Purchase] Found user:', {
+      actualUserId,
+      authUserId: auth.userId,
+      authType: auth.type
+    });
 
     // Get campaign info for metadata (only if campaign_id provided)
     let campaign: CampaignRecord | null = null;
