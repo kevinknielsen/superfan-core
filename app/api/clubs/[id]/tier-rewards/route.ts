@@ -156,7 +156,7 @@ export async function GET(
     if (campaignIds.length > 0) {
       const { data: campaignsData } = await supabaseAny
         .from('campaigns')
-        .select('id, current_funding_cents, funding_goal_cents, deadline')
+        .select('id, current_funding_cents, funding_goal_cents, deadline, metal_presale_id')
         .in('id', campaignIds);
       
       campaignsData?.forEach((campaign: any) => {

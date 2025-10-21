@@ -241,9 +241,11 @@ export default function UnlockRedemption({
         }
         
         // Step 1: Buy presale with Metal
+        // Use metal_presale_id if available (TODO: add to tier rewards API response)
+        const presaleId = pendingItemPurchase.campaign_id; // Will be metal_presale_id once API updated
         await buyPresaleAsync({
           user,
-          campaignId: pendingItemPurchase.campaign_id,
+          campaignId: presaleId,
           amount: pendingItemPurchase.is_credit_campaign 
             ? (pendingItemPurchase.credit_cost || 0)
             : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
@@ -509,6 +511,7 @@ export default function UnlockRedemption({
                 campaign_title: campaignTier.campaign_title,
                 campaign_description: campaignTier.campaign_description,
                 campaign_status: campaignTier.campaign_status,
+                metal_presale_id: campaignTier.metal_presale_id, // CRITICAL: Include Metal presale ID
                 campaign_progress: campaignTier.campaign_progress
               });
             }

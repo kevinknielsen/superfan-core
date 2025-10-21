@@ -3,6 +3,7 @@ export interface CampaignData {
   campaign_title: string;
   campaign_description?: string;
   campaign_status: string;
+  metal_presale_id?: string; // Metal presale ID for crypto purchases
   campaign_progress: {
     funding_percentage: number;
     current_funding_cents: number;

@@ -28,6 +28,7 @@ next-env.d.ts
 
 # Internal cleanup docs (not for version control)
 docs/TICKET_TO_CREDIT_CLEANUP.md
+PREFLIGHT_VERIFICATION.md
 .env*.local
 .DS_Store
 docs/CAMPAIGNS_MVP_IMPLEMENTATION.md
