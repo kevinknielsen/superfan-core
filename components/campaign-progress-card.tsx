@@ -209,8 +209,19 @@ export function CampaignProgressCard({
 
       // Wallet app users: Metal Presale flow with USDC
       if (isInWalletApp) {
+        // Check if Metal holder is still loading
+        if (metalHolder.isLoading) {
+          throw new Error("Setting up your wallet, please wait a moment...");
+        }
+        
+        // Check if Metal holder failed to load
+        if (metalHolder.error) {
+          console.error("Metal holder error:", metalHolder.error);
+          throw new Error(`Wallet setup failed: ${metalHolder.error instanceof Error ? metalHolder.error.message : 'Please refresh and try again'}`);
+        }
+        
         if (!metalHolder.data?.address) {
-          throw new Error("Metal holder address not available");
+          throw new Error("Metal holder not initialized. Please refresh the page and try again.");
         }
         
         // Validate Metal holder address
