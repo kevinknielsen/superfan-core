@@ -51,6 +51,25 @@ export function CampaignProgressCard({
   const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
   const [isCreatingHolder, setIsCreatingHolder] = useState(false);
 
+  // Pre-create Metal holder for wallet users on mount
+  useEffect(() => {
+    if (!isInWalletApp || !user?.id || metalHolder.data || metalHolder.isLoading) return;
+    
+    const createHolder = async () => {
+      try {
+        const { metal } = await import('@/lib/metal/client');
+        let holder = await metal.getHolder(user.id).catch(() => null);
+        if (!holder) {
+          console.log('[Campaign] Pre-creating Metal holder...');
+          holder = await metal.createUser(user.id);
+        }
+      } catch (e) {
+        console.error('[Campaign] Failed to pre-create holder:', e);
+      }
+    };
+    createHolder();
+  }, [isInWalletApp, user?.id, metalHolder.data, metalHolder.isLoading]);
+
   // Process Metal Presale purchase when USDC transaction succeeds
   useEffect(() => {
     if (!isUSDCSuccess || !usdcTxHash || !pendingCreditAmount || !user || !clubId) return;
