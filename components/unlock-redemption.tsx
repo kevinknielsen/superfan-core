@@ -1439,12 +1439,12 @@ export default function UnlockRedemption({
                     ? 'Confirming Transaction...'
                     : isRedeeming 
                       ? 'Processing...' 
-                      : (isInWalletApp && metalHolder.data?.address)
-                        ? selectedUnlock.is_credit_campaign 
-                          ? `Send ${selectedUnlock.credit_cost} USDC`
-                          : `Pay ${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} USDC`
-                        : onAddToCart
-                          ? 'Add to Cart'
+                      : onAddToCart
+                        ? 'Add to Cart'
+                        : (isInWalletApp && metalHolder.data?.address)
+                          ? selectedUnlock.is_credit_campaign 
+                            ? `Send ${selectedUnlock.credit_cost} USDC`
+                            : `Pay ${((selectedUnlock.user_final_price_cents || selectedUnlock.upgrade_price_cents || 0) / 100).toFixed(0)} USDC`
                           : 'Proceed to Checkout'
                 }
               </Button>
