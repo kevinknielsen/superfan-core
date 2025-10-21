@@ -209,24 +209,50 @@ export function CampaignProgressCard({
 
       // Wallet app users: Metal Presale flow with USDC
       if (isInWalletApp) {
-        // Check if Metal holder is still loading
-        if (metalHolder.isLoading) {
-          throw new Error("Setting up your wallet, please wait a moment...");
+        // Ensure user is authenticated
+        if (!user?.id) {
+          throw new Error("Please log in to continue");
+        }
+
+        // Create Metal holder on-demand if it doesn't exist yet
+        let holderAddress = metalHolder.data?.address;
+        
+        if (!holderAddress) {
+          console.log('[Campaign Purchase] Metal holder not ready, creating now...');
+          toast({
+            title: "Setting up wallet...",
+            description: "Creating your Metal holder, one moment",
+          });
+          
+          // Dynamically import to create holder
+          const { metal } = await import('@/lib/metal/client');
+          
+          try {
+            // Try to get holder first
+            let holder = await metal.getHolder(user.id);
+            
+            // If doesn't exist, create it
+            if (!holder) {
+              console.log('[Campaign Purchase] Creating Metal holder for:', user.id);
+              holder = await metal.createUser(user.id);
+            }
+            
+            if (!holder?.address) {
+              throw new Error("Failed to initialize Metal holder");
+            }
+            
+            holderAddress = holder.address;
+            console.log('[Campaign Purchase] Metal holder ready:', holder.address);
+            
+          } catch (error) {
+            console.error('[Campaign Purchase] Error creating Metal holder:', error);
+            throw new Error(`Failed to set up wallet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
         }
         
-        // Check if Metal holder failed to load
-        if (metalHolder.error) {
-          console.error("Metal holder error:", metalHolder.error);
-          throw new Error(`Wallet setup failed: ${metalHolder.error instanceof Error ? metalHolder.error.message : 'Please refresh and try again'}`);
-        }
-        
-        if (!metalHolder.data?.address) {
-          throw new Error("Metal holder not initialized. Please refresh the page and try again.");
-        }
-        
-        // Validate Metal holder address
+        // Validate holder address
         const { isAddress } = await import("viem");
-        if (!isAddress(metalHolder.data.address)) {
+        if (!isAddress(holderAddress)) {
           throw new Error("Invalid Metal holder address");
         }
 
@@ -240,7 +266,7 @@ export function CampaignProgressCard({
 
         // Send USDC to Metal holder address (triggers Metal presale)
         sendUSDC({
-          toAddress: metalHolder.data.address as `0x${string}`,
+          toAddress: holderAddress as `0x${string}`,
           amountUSDC: creditAmount,
         });
 
