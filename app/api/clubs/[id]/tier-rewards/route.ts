@@ -154,12 +154,24 @@ export async function GET(
     const campaignsMap = new Map<string, any>();
     
     if (campaignIds.length > 0) {
-      const { data: campaignsData } = await supabaseAny
+      const { data: campaignsData, error: campaignsError } = await supabaseAny
         .from('campaigns')
         .select('id, current_funding_cents, funding_goal_cents, deadline, metal_presale_id')
         .in('id', campaignIds);
       
+      console.log('[API] Fetched campaigns from DB:', {
+        campaignIds,
+        campaignsCount: campaignsData?.length,
+        error: campaignsError,
+        campaigns: campaignsData
+      });
+      
       campaignsData?.forEach((campaign: any) => {
+        console.log('[API] Adding to map:', {
+          id: campaign.id,
+          metal_presale_id: campaign.metal_presale_id,
+          hasPresaleId: !!campaign.metal_presale_id
+        });
         campaignsMap.set(campaign.id, campaign);
       });
     }
@@ -395,7 +407,19 @@ export async function GET(
         campaign_status: reward.campaign_status,
         is_campaign_tier: reward.is_campaign_tier,
         campaign_progress: campaignProgress,
-        metal_presale_id: reward.campaign_id ? campaignsMap.get(reward.campaign_id)?.metal_presale_id : undefined, // CRITICAL: Include Metal presale ID
+        metal_presale_id: (() => {
+          const presaleId = reward.campaign_id ? campaignsMap.get(reward.campaign_id)?.metal_presale_id : undefined;
+          console.log('[API] Setting metal_presale_id for reward:', {
+            rewardId: reward.id,
+            rewardTitle: reward.title,
+            campaignId: reward.campaign_id,
+            presaleIdFromMap: presaleId,
+            campaignsMapSize: campaignsMap.size,
+            campaignInMap: reward.campaign_id ? campaignsMap.has(reward.campaign_id) : false,
+            fullCampaign: reward.campaign_id ? campaignsMap.get(reward.campaign_id) : null
+          });
+          return presaleId;
+        })(), // CRITICAL: Include Metal presale ID
         
         // Credit campaign fields (1 credit = $1)
         credit_cost: reward.ticket_cost, // Map DB field to credit_cost for frontend

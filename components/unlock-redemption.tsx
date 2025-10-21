@@ -87,6 +87,7 @@ interface TierRewardFields {
   // Credit campaign fields (1 credit = $1)
   credit_cost?: number;
   is_credit_campaign?: boolean;
+  metal_presale_id?: string; // Metal presale ID for crypto purchases
   cogs_cents?: number;
   user_credit_balance?: number;
 }
@@ -111,6 +112,7 @@ interface UnlockRedemptionProps {
     isCreditCampaign?: boolean;
     creditCost?: number;
     campaignId?: string;
+    metalPresaleId?: string; // CRITICAL: Metal presale ID for crypto purchases
     finalPriceCents?: number;
     upgradePriceCents?: number;
     discountCents?: number;
@@ -453,6 +455,7 @@ export default function UnlockRedemption({
           campaign_title: reward.campaign_title,
           campaign_description: reward.campaign_description,
           campaign_status: reward.campaign_status,
+          metal_presale_id: reward.metal_presale_id, // CRITICAL: Metal presale ID
           is_campaign_tier: reward.is_campaign_tier,
           campaign_progress: reward.campaign_progress,
           user_discount_eligible: reward.user_discount_eligible,
@@ -479,8 +482,11 @@ export default function UnlockRedemption({
           // Credit campaign fields
           credit_cost: reward.credit_cost,
           is_credit_campaign: reward.is_credit_campaign,
-          user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0
+          user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0,
           // Note: cogs_cents excluded - sensitive commercial data
+          
+          // Preserve metal_presale_id for cart usage
+          metal_presale_id: reward.metal_presale_id
         }) as any);
         
         // Convert claimed rewards to redemption format
