@@ -222,18 +222,14 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Recorded Metal purchase: ${credit_amount} credits for user ${actualUserId}`);
 
-    // Check if this is a treasury purchase (should NOT count toward campaign progress)
-    // Use club data already fetched above
-    let isTreasuryPurchase = false;
-    if (campaign_id && campaign && club?.treasury_wallet_address && metal_holder_address) {
-      isTreasuryPurchase = metal_holder_address.toLowerCase() === club.treasury_wallet_address.toLowerCase();
-      
-      if (isTreasuryPurchase) {
-        console.log('ℹ️ Treasury purchase detected - skipping campaign progress update (already counted elsewhere)', {
-          treasuryWallet: club.treasury_wallet_address,
-          purchaseWallet: metal_holder_address
-        });
-      }
+    // TREASURY EXCLUSION: Purchases from treasury wallet don't count toward campaign progress
+    // They represent existing Stripe purchases, so counting them would be double-counting
+    const isTreasuryPurchase = !!(club?.treasury_wallet_address && 
+                                   metal_holder_address &&
+                                   metal_holder_address.toLowerCase() === club.treasury_wallet_address.toLowerCase());
+
+    if (isTreasuryPurchase) {
+      console.log('ℹ️ Treasury purchase - not counting toward campaign (already counted via Stripe)');
     }
 
     // Update campaign progress (only if campaign_id provided AND not treasury purchase)

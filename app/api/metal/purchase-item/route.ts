@@ -133,6 +133,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // Get club info for treasury check
+    const { data: club } = await supabaseAny
+      .from('clubs')
+      .select('treasury_wallet_address')
+      .eq('id', club_id)
+      .single() as { data: { treasury_wallet_address?: string } | null; error: any };
+
     // NO verification needed for presale purchases
     // buyPresale() only succeeds if Metal verified and processed the purchase
     // Metal is the source of truth for presale transactions
