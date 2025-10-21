@@ -202,9 +202,18 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Recorded Metal purchase: ${credit_amount} credits for user ${actualUserId}`);
 
-    // Update campaign progress (only if campaign_id provided)
+    // Check if this is a treasury purchase (should NOT count toward campaign progress)
+    // Treasury wallet: 0xe979e2a0C2a8BE4E9580dFcB14486C953cC9810C
+    const TREASURY_WALLET = '0xe979e2a0C2a8BE4E9580dFcB14486C953cC9810C'.toLowerCase();
+    const isTreasuryPurchase = metal_holder_address?.toLowerCase() === TREASURY_WALLET;
+
+    if (isTreasuryPurchase) {
+      console.log('ℹ️ Treasury purchase detected - skipping campaign progress update (already counted via Stripe)');
+    }
+
+    // Update campaign progress (only if campaign_id provided AND not treasury purchase)
     let campaignUpdateErrorMessage: string | null = null;
-    if (campaign_id && campaign) {
+    if (campaign_id && campaign && !isTreasuryPurchase) {
       const { error: campaignUpdateError } = await supabaseAny
         .rpc('increment_campaigns_ticket_progress', {
           p_campaign_id: campaign_id,
@@ -238,9 +247,10 @@ export async function POST(request: NextRequest) {
             .neq('status', 'funded');
         }
       }
-    } else {
+    } else if (!campaign_id) {
       console.log(`✅ Direct credit purchase (no campaign) - ${credit_amount} credits for user ${actualUserId}`);
     }
+    // Treasury purchases are recorded but don't update campaign (already counted)
 
     return NextResponse.json({
       success: true,
