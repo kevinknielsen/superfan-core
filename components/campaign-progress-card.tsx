@@ -527,9 +527,9 @@ export function CampaignProgressCard({
                       >
                         <CreditCard className="w-3 h-3 mr-1" />
                         {isUSDCLoading && pendingCreditAmount === 1
-                          ? "..."
+                          ? "Sending..."
                           : isBuyingPresale && pendingCreditAmount === 1
-                          ? "..."
+                          ? "Processing..."
                           : "1"}
                         {qty1 > 0 && (
                           <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
@@ -546,9 +546,9 @@ export function CampaignProgressCard({
                       >
                         <CreditCard className="w-3 h-3 mr-1" />
                         {isUSDCLoading && pendingCreditAmount === 5
-                          ? "..."
+                          ? "Sending..."
                           : isBuyingPresale && pendingCreditAmount === 5
-                          ? "..."
+                          ? "Processing..."
                           : "5"}
                         {qty5 > 0 && (
                           <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
@@ -565,9 +565,9 @@ export function CampaignProgressCard({
                       >
                         <CreditCard className="w-3 h-3 mr-1" />
                         {isUSDCLoading && pendingCreditAmount === 10
-                          ? "..."
+                          ? "Sending..."
                           : isBuyingPresale && pendingCreditAmount === 10
-                          ? "..."
+                          ? "Processing..."
                           : "10"}
                         {qty10 > 0 && (
                           <span className="absolute -top-2 -right-2 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
