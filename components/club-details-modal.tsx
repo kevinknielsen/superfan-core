@@ -145,6 +145,25 @@ export default function ClubDetailsModal({
   const enabled = Boolean(club.id && membership && isAuthenticated);
   const { breakdown, refetch } = useUnifiedPoints(club.id, { enabled });
 
+  // Pre-create Metal holder for wallet users on mount
+  useEffect(() => {
+    if (!isInWalletApp || !user?.id || metalHolder.data || metalHolder.isLoading) return;
+    
+    const createHolder = async () => {
+      try {
+        const { metal } = await import('@/lib/metal/client');
+        let holder = await metal.getHolder(user.id).catch(() => null);
+        if (!holder) {
+          console.log('[Club Modal] Pre-creating Metal holder...');
+          holder = await metal.createUser(user.id);
+        }
+      } catch (e) {
+        console.error('[Club Modal] Failed to pre-create holder:', e);
+      }
+    };
+    createHolder();
+  }, [isInWalletApp, user?.id, metalHolder.data, metalHolder.isLoading]);
+
   // Status calculations - must be before useEffect that uses currentStatus
   const currentStatus = (breakdown?.status.current || membership?.current_status || 'cadet') as ClubStatus;
   const currentPoints = breakdown?.wallet.status_points || membership?.points || 0;
