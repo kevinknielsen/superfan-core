@@ -203,12 +203,25 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Recorded Metal purchase: ${credit_amount} credits for user ${actualUserId}`);
 
     // Check if this is a treasury purchase (should NOT count toward campaign progress)
-    // Treasury wallet: 0xe979e2a0C2a8BE4E9580dFcB14486C953cC9810C
-    const TREASURY_WALLET = '0xe979e2a0C2a8BE4E9580dFcB14486C953cC9810C'.toLowerCase();
-    const isTreasuryPurchase = metal_holder_address?.toLowerCase() === TREASURY_WALLET;
-
-    if (isTreasuryPurchase) {
-      console.log('ℹ️ Treasury purchase detected - skipping campaign progress update (already counted via Stripe)');
+    // Get club's treasury wallet address
+    let isTreasuryPurchase = false;
+    if (campaign_id && campaign) {
+      const { data: clubData } = await supabaseAny
+        .from('clubs')
+        .select('treasury_wallet_address')
+        .eq('id', club_id)
+        .single();
+      
+      if (clubData?.treasury_wallet_address && metal_holder_address) {
+        isTreasuryPurchase = metal_holder_address.toLowerCase() === clubData.treasury_wallet_address.toLowerCase();
+        
+        if (isTreasuryPurchase) {
+          console.log('ℹ️ Treasury purchase detected - skipping campaign progress update (already counted via Stripe)', {
+            treasuryWallet: clubData.treasury_wallet_address,
+            purchaseWallet: metal_holder_address
+          });
+        }
+      }
     }
 
     // Update campaign progress (only if campaign_id provided AND not treasury purchase)
