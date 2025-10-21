@@ -55,20 +55,31 @@ export function CampaignProgressCard({
   useEffect(() => {
     if (!isInWalletApp || !user?.id || metalHolder.data || metalHolder.isLoading) return;
     
+    let aborted = false;
     const createHolder = async () => {
+      if (aborted) return;
+      setIsCreatingHolder(true);
       try {
         const { metal } = await import('@/lib/metal/client');
         let holder = await metal.getHolder(user.id).catch(() => null);
-        if (!holder) {
+        if (!holder && !aborted) {
           console.log('[Campaign] Pre-creating Metal holder...');
           holder = await metal.createUser(user.id);
+          if (!aborted) {
+            // Trigger refetch so purchase flow can see the new holder
+            metalHolder.refetch?.();
+          }
         }
       } catch (e) {
         console.error('[Campaign] Failed to pre-create holder:', e);
+      } finally {
+        if (!aborted) setIsCreatingHolder(false);
       }
     };
     createHolder();
-  }, [isInWalletApp, user?.id, metalHolder.data, metalHolder.isLoading]);
+    
+    return () => { aborted = true; };
+  }, [isInWalletApp, user?.id, metalHolder.data, metalHolder.isLoading, metalHolder.refetch]);
 
   // Process Metal Presale purchase when USDC transaction succeeds
   useEffect(() => {
