@@ -1,5 +1,4 @@
 import "server-only";
-import { metal } from "@/lib/metal/server";
 
 // Type for Metal API transaction objects
 export interface MetalTransaction {
@@ -53,8 +52,34 @@ export async function verifyMetalTransaction(
       expectedAmount: expected_amount_usdc
     });
 
-    // Fetch holder's transactions from Metal
-    const holderTransactions = await metal.getTransactions(metal_holder_id) as MetalTransaction[];
+    // Get secret key for API call
+    const secretKey = process.env.METAL_SECRET_KEY;
+    if (!secretKey) {
+      return {
+        success: false,
+        error: 'METAL_SECRET_KEY not configured',
+        status: 500
+      };
+    }
+
+    // Fetch holder's transactions from Metal REST API directly
+    const response = await fetch(`https://api.metal.build/holder/${metal_holder_id}/transactions`, {
+      method: 'GET',
+      headers: {
+        'x-api-key': secretKey,
+      }
+    });
+
+    if (!response.ok) {
+      console.error('[Metal Verification] Failed to fetch transactions:', response.status);
+      return {
+        success: false,
+        error: 'Unable to fetch holder transactions from Metal',
+        status: 500
+      };
+    }
+
+    const holderTransactions = await response.json() as MetalTransaction[];
     
     if (!holderTransactions || !Array.isArray(holderTransactions)) {
       console.error('[Metal Verification] Failed to fetch holder transactions');

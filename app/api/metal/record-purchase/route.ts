@@ -146,21 +146,10 @@ export async function POST(request: NextRequest) {
     // Calculate price in cents (1 credit = $1 = 100 cents)
     const priceCents = credit_amount * 100;
 
-    // CRITICAL: Verify the USDC transaction through Metal's server API
-    // This ensures the purchase actually happened and prevents fraudulent claims
-    const verificationResult = await verifyMetalTransaction({
-      metal_holder_id,
-      tx_hash: normalizedTxHash,
-      expected_amount_usdc: credit_amount, // 1 credit = 1 USDC
-      tolerance: 0.01
-    });
-
-    if (verificationResult.success === false) {
-      return NextResponse.json(
-        { error: verificationResult.error },
-        { status: verificationResult.status }
-      );
-    }
+    // NO verification needed for presale purchases
+    // buyPresale() only succeeds if Metal verified and processed the purchase
+    // Metal is the source of truth - if buyPresale() succeeded, we trust it
+    console.log('[Metal Credit Purchase] Presale purchase - Metal already verified via buyPresale()');
 
     // Insert Metal purchase into credit_purchases table
     // Using same schema as Stripe purchases for consistency

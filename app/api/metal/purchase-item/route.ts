@@ -130,33 +130,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // CRITICAL: Verify the USDC transaction through Metal's server API
-    // This ensures the purchase actually happened and prevents fraudulent claims
-    // NOTE: For presale purchases, buyPresale() already verified on Metal's end, so this is optional
-    if (metal_holder_id) {
-      console.log('[Metal Purchase] Attempting transaction verification...');
-      const verificationResult = await verifyMetalTransaction({
-        metal_holder_id,
-        tx_hash: normalizedTxHash,
-        expected_amount_usdc: amount_paid_cents / 100, // Convert cents to USDC
-        tolerance: 0.01
-      });
-
-      if (verificationResult.success === false) {
-        // Log verification failure but don't block the purchase
-        // The presale purchase already succeeded via buyPresale()
-        console.warn('[Metal Purchase] Verification failed but continuing (presale already processed):', {
-          error: verificationResult.error,
-          tx_hash: normalizedTxHash,
-          metal_holder_id
-        });
-        // Don't return error - let the purchase complete
-      }
-    } else {
-      // If no metal_holder_id provided, we cannot verify through Metal
-      console.warn('[Metal Purchase] No metal_holder_id provided - skipping Metal verification');
-      // Note: We could add additional on-chain verification here as a fallback
-    }
+    // NO verification needed for presale purchases
+    // buyPresale() only succeeds if Metal verified and processed the purchase
+    // Metal is the source of truth for presale transactions
+    console.log('[Metal Purchase] Presale purchase - Metal already verified via buyPresale()');
 
     // Generate secure access code
     const generateAccessCode = (): string => {

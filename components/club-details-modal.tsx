@@ -303,11 +303,23 @@ export default function ClubDetailsModal({
               });
               
               if (presaleId) {
-                await buyPresaleAsync({
-                  user,
-                  campaignId: presaleId, // This is actually presale ID for Metal
-                  amount: totalCredits
-                });
+                try {
+                  const result = await buyPresaleAsync({
+                    user,
+                    campaignId: presaleId, // This is actually presale ID for Metal
+                    amount: totalCredits
+                  });
+                  console.log('[Cart] buyPresale succeeded:', result);
+                } catch (presaleError) {
+                  console.error('[Cart] buyPresale failed:', {
+                    error: presaleError,
+                    message: presaleError instanceof Error ? presaleError.message : String(presaleError),
+                    presaleId,
+                    amount: totalCredits,
+                    userId: user.id
+                  });
+                  throw presaleError; // Re-throw to trigger outer catch
+                }
               }
               
               // Record credit purchase with timeout protection
