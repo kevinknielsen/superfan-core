@@ -395,6 +395,7 @@ export async function GET(
         campaign_status: reward.campaign_status,
         is_campaign_tier: reward.is_campaign_tier,
         campaign_progress: campaignProgress,
+        metal_presale_id: reward.campaign_id ? campaignsMap.get(reward.campaign_id)?.metal_presale_id : undefined, // CRITICAL: Include Metal presale ID
         
         // Credit campaign fields (1 credit = $1)
         credit_cost: reward.ticket_cost, // Map DB field to credit_cost for frontend

@@ -24,6 +24,7 @@ export interface TierReward {
   campaign_title?: string;
   campaign_description?: string;
   campaign_status?: string;
+  metal_presale_id?: string; // Metal presale ID for crypto purchases
   is_campaign_tier?: boolean;
   campaign_progress?: {
     funding_percentage: number;

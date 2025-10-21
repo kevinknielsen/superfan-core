@@ -241,8 +241,8 @@ export default function UnlockRedemption({
         }
         
         // Step 1: Buy presale with Metal
-        // Use metal_presale_id if available (TODO: add to tier rewards API response)
-        const presaleId = pendingItemPurchase.campaign_id; // Will be metal_presale_id once API updated
+        // Use metal_presale_id (the actual Metal presale), not campaign_id
+        const presaleId = pendingItemPurchase.metal_presale_id || pendingItemPurchase.campaign_id;
         await buyPresaleAsync({
           user,
           campaignId: presaleId,
