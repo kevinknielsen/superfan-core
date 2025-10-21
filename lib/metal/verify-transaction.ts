@@ -143,10 +143,16 @@ export async function verifyMetalTransaction(
     return { success: true };
 
   } catch (error) {
-    console.error('[Metal Verification] Error verifying transaction:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('[Metal Verification] Error verifying transaction:', {
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      metal_holder_id,
+      tx_hash
+    });
     return {
       success: false,
-      error: 'Failed to verify transaction with Metal API. Please try again.',
+      error: `Verification error: ${errorMessage}`,
       status: 500
     };
   }
