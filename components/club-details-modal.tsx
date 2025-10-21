@@ -53,6 +53,7 @@ interface CartItem {
   isCreditCampaign?: boolean;
   creditCost?: number;
   campaignId?: string;
+  metalPresaleId?: string; // Metal presale ID for crypto purchases
   finalPriceCents?: number;
   originalPriceCents?: number;
   discountCents?: number;
@@ -290,14 +291,15 @@ export default function ClubDetailsModal({
             if (cartItem.type === 'credits') {
               // Buy presale for credits
               const totalCredits = cartItem.amount * cartItem.quantity;
-              // Use metal_presale_id if available, fallback to campaignId
-              const presaleId = campaignData?.metal_presale_id || cartItem.campaignId;
+              // Use metal_presale_id from cart item (stored when added to cart)
+              const presaleId = cartItem.metalPresaleId || cartItem.campaignId;
               
               console.log('[Cart] Calling buyPresale with:', {
                 presaleId,
-                metalPresaleId: campaignData?.metal_presale_id,
+                cartItemMetalPresaleId: cartItem.metalPresaleId,
+                campaignDataMetalPresaleId: campaignData?.metal_presale_id,
                 campaignId: cartItem.campaignId,
-                usingCorrectId: !!campaignData?.metal_presale_id
+                usingCorrectId: !!cartItem.metalPresaleId
               });
               
               if (presaleId) {
@@ -344,14 +346,15 @@ export default function ClubDetailsModal({
                 clearTimeout(timeout1);
               }
             } else if (cartItem.itemId) {
-              // Buy presale for item
-              const presaleId = campaignData?.metal_presale_id || cartItem.campaignId;
+              // Buy presale for item  
+              const presaleId = cartItem.metalPresaleId || cartItem.campaignId;
               
               console.log('[Cart Item] Calling buyPresale with:', {
                 presaleId,
-                metalPresaleId: campaignData?.metal_presale_id,
+                cartItemMetalPresaleId: cartItem.metalPresaleId,
+                campaignDataMetalPresaleId: campaignData?.metal_presale_id,
                 campaignId: cartItem.campaignId,
-                usingCorrectId: !!campaignData?.metal_presale_id
+                usingCorrectId: !!cartItem.metalPresaleId
               });
               
               if (presaleId) {
@@ -1014,6 +1017,7 @@ export default function ClubDetailsModal({
                       isCreditCampaign: item.isCreditCampaign,
                       creditCost: item.creditCost ?? 0,
                       campaignId: item.campaignId,
+                      metalPresaleId: item.metal_presale_id || campaignData?.metal_presale_id, // CRITICAL: Include Metal presale ID
                       finalPriceCents: priceCents, // Store the calculated price for Stripe
                       originalPriceCents: item.upgradePriceCents ?? (item.creditCost ?? 0) * 100,
                       discountCents: item.discountCents ?? 0
@@ -1049,7 +1053,8 @@ export default function ClubDetailsModal({
                         type: 'credits',
                         amount: creditAmount,
                         title: `${creditAmount} Credits`,
-                        campaignId: campaignData.campaign_id // Include for buyPresaleAsync
+                        campaignId: campaignData.campaign_id,
+                        metalPresaleId: campaignData.metal_presale_id // CRITICAL: Include Metal presale ID
                       });
                       toast({
                         title: "Added to Cart",
