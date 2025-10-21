@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
-import { supabase } from "../../supabase";
+import { createServiceClient } from "../../supabase";
 import crypto from "node:crypto";
+
+// Use service client to bypass RLS for Metal purchases
+const supabase = createServiceClient();
 import { verifyMetalTransaction } from "@/lib/metal/verify-transaction";
 
 // Proper types for response validation
@@ -141,7 +144,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Detect if this is a credit/ticket campaign item
-    const isCreditCampaign = tierReward.is_ticket_campaign && tierReward.campaign_id;
+    const isCreditCampaign = !!(tierReward.is_ticket_campaign && tierReward.campaign_id);
     // For ticket campaigns: record ticket_cost as tickets purchased
     // For item purchases: record 1 item purchased (not inflated by ticket_cost)
     const ticketsPurchased = isCreditCampaign ? (tierReward.ticket_cost || 0) : 1;

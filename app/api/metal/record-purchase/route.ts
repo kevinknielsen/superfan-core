@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
-import { supabase } from "../../supabase";
+import { createServiceClient } from "../../supabase";
+
+// Use service client to bypass RLS for Metal purchases
+const supabase = createServiceClient();
 import { verifyMetalTransaction } from "@/lib/metal/verify-transaction";
 
 // Proper types for response validation

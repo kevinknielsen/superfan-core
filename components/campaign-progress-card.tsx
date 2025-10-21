@@ -117,6 +117,9 @@ export function CampaignProgressCard({
         const { getAuthHeaders } = await import("@/app/api/sdk");
         const authHeaders = await getAuthHeaders();
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+
         const response = await fetch("/api/metal/record-purchase", {
           method: "POST",
           headers: {
@@ -132,7 +135,8 @@ export function CampaignProgressCard({
             metal_holder_id: metalHolder.data?.id,
             metal_holder_address: metalHolder.data?.address,
           }),
-        });
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
 
         if (!response.ok) {
           const errorData = (await response.json()) as any;
