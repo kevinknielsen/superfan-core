@@ -68,7 +68,18 @@ export function useBuyPresale() {
       if (!(Number.isFinite(data.amount) && data.amount > 0)) {
         throw new Error("amount must be > 0");
       }
-      return metal.buyPresale(data.user.id, data.campaignId, data.amount);
+      
+      try {
+        return await metal.buyPresale(data.user.id, data.campaignId, data.amount);
+      } catch (error: any) {
+        // Metal returns 202 Accepted for async processing - treat as success
+        if (error?.statusCode === 202 || error?.code === 202) {
+          console.log('[Metal] 202 Accepted - async processing, treating as success');
+          // Return the error details as response (contains transaction info)
+          return error.details || error;
+        }
+        throw error;
+      }
     },
   });
 }
