@@ -266,12 +266,21 @@ export default function ClubDetailsModal({
   // Monitor USDC transaction success and process all cart items
   const processedCartTxRef = useRef<string | null>(null);
   const processedCartItemsRef = useRef<Set<string>>(new Set());
+  const currentCartHashRef = useRef<string | null>(null);
   
   useEffect(() => {
     if (!isUSDCSuccess || !usdcTxHash || cart.length === 0 || !user) return;
     
     // Prevent duplicate processing of same transaction
     if (processedCartTxRef.current === usdcTxHash) {
+      console.log('[Cart] Transaction already processed, skipping:', usdcTxHash);
+      return;
+    }
+    
+    // Prevent processing old successful transactions from previous carts
+    const cartHash = cart.map(i => `${i.id}:${i.quantity}`).sort().join('|');
+    if (currentCartHashRef.current !== cartHash) {
+      console.log('[Cart] Cart contents changed since checkout started, ignoring stale transaction');
       return;
     }
     
@@ -503,6 +512,10 @@ export default function ClubDetailsModal({
   const clearCart = () => {
     setCart([]);
     setCartCreatedAt(null);
+    // Clear processed transaction tracking when cart is cleared
+    processedCartTxRef.current = null;
+    processedCartItemsRef.current.clear();
+    currentCartHashRef.current = null;
   };
 
 
@@ -547,6 +560,14 @@ export default function ClubDetailsModal({
   // Handle checkout - process all cart items
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    
+    // Clear any previous transaction tracking to allow new purchase
+    processedCartTxRef.current = null;
+    processedCartItemsRef.current.clear();
+    
+    // Snapshot current cart for validation
+    const cartHash = cart.map(i => `${i.id}:${i.quantity}`).sort().join('|');
+    currentCartHashRef.current = cartHash;
     
     setIsCheckingOut(true);
     

@@ -72,11 +72,22 @@ export function useBuyPresale() {
       try {
         return await metal.buyPresale(data.user.id, data.campaignId, data.amount);
       } catch (error: any) {
+        // Log error structure to debug
+        console.log('[Metal] buyPresale error structure:', {
+          statusCode: error?.statusCode,
+          code: error?.code,
+          status: error?.status,
+          message: error?.message,
+          hasDetails: !!error?.details,
+          hasData: !!error?.data
+        });
+        
         // Metal returns 202 Accepted for async processing - treat as success
-        if (error?.statusCode === 202 || error?.code === 202) {
-          console.log('[Metal] 202 Accepted - async processing, treating as success');
+        if (error?.statusCode === 202 || error?.code === 202 || error?.status === 202) {
+          console.log('[Metal] 202 Accepted - async processing, treating as success', error.details);
           // Return the error details as response (contains transaction info)
-          return error.details || error;
+          // The details object should have transactionHash, sellAmount, etc.
+          return error.details || error.data || error;
         }
         throw error;
       }
