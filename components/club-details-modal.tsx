@@ -216,8 +216,9 @@ export default function ClubDetailsModal({
               if (result.validated) {
                 // Payment confirmed by server - safe to clear cart
                 clearCart();
-                // Refresh items to show ownership
+                // Refresh items and points to show ownership
                 await refetchItemsRef.current?.();
+                await refetch();
               }
             }
             

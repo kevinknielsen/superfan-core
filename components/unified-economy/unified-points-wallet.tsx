@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
@@ -286,7 +286,7 @@ export default function UnifiedPointsWallet({
   const { getStatusInfo } = useStatusInfo();
   
   // Shared function to fetch credit balances
-  const fetchCreditBalances = async (signal?: AbortSignal) => {
+  const fetchCreditBalances = useCallback(async (signal?: AbortSignal) => {
     if (!isAuthenticated || !user) {
       setDirectCreditBalances({});
       return;
@@ -313,14 +313,14 @@ export default function UnifiedPointsWallet({
       console.error('Error fetching credit balances:', error);
       setDirectCreditBalances({});
     }
-  };
+  }, [clubId, user, isAuthenticated]);
   
   // Fetch credit balances directly (independent of rewards)
   useEffect(() => {
     const controller = new AbortController();
     fetchCreditBalances(controller.signal);
     return () => controller.abort();
-  }, [clubId, user, isAuthenticated]);
+  }, [fetchCreditBalances]);
   
   // Calculate total campaign credits (memoized for performance) - MUST be before early returns
   const totalCampaignCredits = useMemo(

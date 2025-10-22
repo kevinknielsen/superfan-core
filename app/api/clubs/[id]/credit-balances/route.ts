@@ -53,10 +53,8 @@ export async function GET(
       return NextResponse.json({ balances: {} });
     }
 
-    // Get credit balance for each campaign
-    const balances: Record<string, { campaign_title: string; balance: number }> = {};
-
-    for (const campaign of campaigns) {
+    // Get credit balance for each campaign (parallel for performance)
+    const balancePromises = campaigns.map(async (campaign: { id: string; title: string }) => {
       const { data: balance, error: balanceError } = await supabaseAny
         .rpc('get_user_campaign_credits', {
           p_user_id: actualUserId,
@@ -65,14 +63,24 @@ export async function GET(
 
       if (balanceError) {
         console.error(`[Credit Balances API] Error getting balance for campaign ${campaign.id}:`, balanceError);
-        continue; // Skip this campaign, continue with others
+        return null;
       }
 
       // Only include campaigns where user has credits
       if (balance && balance > 0) {
-        balances[campaign.id] = {
-          campaign_title: campaign.title,
-          balance: balance
+        return { id: campaign.id, title: campaign.title, balance };
+      }
+      return null;
+    });
+
+    const results = await Promise.all(balancePromises);
+    
+    const balances: Record<string, { campaign_title: string; balance: number }> = {};
+    for (const result of results) {
+      if (result) {
+        balances[result.id] = {
+          campaign_title: result.title,
+          balance: result.balance
         };
       }
     }

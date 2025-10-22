@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { createServiceClient } from "../../supabase";
+import { TREASURY_USER_ID } from "@/lib/constants";
 import crypto from "node:crypto";
 
 // Use service client to bypass RLS for Metal purchases
@@ -222,7 +223,6 @@ export async function POST(request: NextRequest) {
 
     // TREASURY EXCLUSION: Purchases from treasury user don't count toward campaign progress
     // They represent existing Stripe purchases being recycled through crypto, counting them would be double-counting
-    const TREASURY_USER_ID = '7c4c839b-53e3-4b9e-9129-be99d4814012';
     const isTreasuryPurchase = actualUserId === TREASURY_USER_ID;
 
     if (isTreasuryPurchase) {

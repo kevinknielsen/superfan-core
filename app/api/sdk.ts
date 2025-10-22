@@ -62,12 +62,17 @@ function getFarcasterUser(): string | null {
 export async function getAuthHeaders(): Promise<{ Authorization: string }> {
   const inWalletApp = isInWalletApp();
 
-  console.log("[SDK] Auth context:", { inWalletApp });
+  if (process.env.NODE_ENV !== 'production') {
+    console.log("[SDK] Auth context:", { inWalletApp });
+  }
 
   if (inWalletApp) {
     // Wallet app: use Farcaster authentication
     const farcasterUserId = getFarcasterUser();
-    console.log("[SDK] Farcaster user ID:", farcasterUserId);
+    
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("[SDK] Farcaster user ID:", farcasterUserId);
+    }
 
     if (!farcasterUserId) {
       throw new Error("Farcaster user not found in wallet app");
@@ -79,7 +84,10 @@ export async function getAuthHeaders(): Promise<{ Authorization: string }> {
   } else {
     // Web app: use Privy authentication
     const accessToken = await getAccessToken();
-    console.log("[SDK] Privy token exists:", !!accessToken);
+    
+    if (process.env.NODE_ENV !== 'production') {
+      console.log("[SDK] Privy token exists:", !!accessToken);
+    }
 
     if (!accessToken) {
       throw new Error("User not logged in");

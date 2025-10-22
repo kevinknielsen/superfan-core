@@ -17,8 +17,7 @@ import {
   ShoppingBag,
   Award,
   Globe,
-  ExternalLink,
-  Zap
+  ExternalLink
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,7 +30,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/points";
-import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
@@ -69,6 +67,7 @@ interface TierRewardFields {
   // Enhanced with campaign and discount fields
   campaign_id?: string;
   campaign_title?: string;
+  campaign_description?: string;
   campaign_status?: string;
   is_campaign_tier?: boolean;
   campaign_progress?: {
@@ -188,23 +187,6 @@ export default function UnlockRedemption({
   const { user } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
   const { mutateAsync: buyPresaleAsync, isPending: isBuyingPresale } = useBuyPresale();
-
-  // Always declare all hooks first (React Rules of Hooks)
-  useEffect(() => {
-    const ac = new AbortController();
-    let mounted = true;
-    
-    loadData(ac.signal, () => mounted).catch((error: unknown) => {
-      if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('Error loading data:', error);
-      }
-    });
-    
-    return () => { 
-      mounted = false; 
-      ac.abort(); 
-    };
-  }, [clubId]);
 
   // Credit balances effect - always declare, but conditionally execute
   useEffect(() => {
@@ -438,7 +420,7 @@ export default function UnlockRedemption({
         const tierRewardsData = await response.json() as TierRewardsResponse;
         
         // Convert tier rewards to unlock format for existing UI + campaign fields
-        const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: TierReward) => ({
+        const convertedUnlocks: Unlock[] = (tierRewardsData.available_rewards || []).map((reward: TierReward) => ({
           id: reward.id,
           club_id: clubId,
           title: reward.title,
@@ -489,7 +471,7 @@ export default function UnlockRedemption({
           is_credit_campaign: reward.is_credit_campaign,
           user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0
           // Note: cogs_cents excluded - sensitive commercial data
-        }) as any);
+        }) as any as Unlock);
         
         // Convert claimed rewards to redemption format
         const convertedRedemptions = (tierRewardsData.claimed_rewards || []).map((claim: ClaimedReward) => ({
@@ -554,14 +536,28 @@ export default function UnlockRedemption({
     }
   }, [clubId, isAuthenticated, onCampaignDataChange]);
 
-  // Expose refetch function to parent
+  // Load data on mount
   useEffect(() => {
-    if (onRefetchReady) {
-      onRefetchReady(async () => {
-        await loadData();
-      });
-    }
-  }, [onRefetchReady, loadData]);
+    const ac = new AbortController();
+    let mounted = true;
+    
+    loadData(ac.signal, () => mounted).catch((error: unknown) => {
+      if (error instanceof Error && error.name !== 'AbortError') {
+        console.error('Error loading data:', error);
+      }
+    });
+    
+    return () => { 
+      mounted = false; 
+      ac.abort(); 
+    };
+  }, [clubId, loadData]);
+
+  // Expose stable refetch function to parent
+  const refetch = useCallback(() => loadData(), [loadData]);
+  useEffect(() => {
+    onRefetchReady?.(refetch);
+  }, [onRefetchReady, refetch]);
 
   const isUnlockAvailable = (unlock: Unlock) => {
     // Campaign items are ALWAYS available (never locked)
@@ -842,56 +838,6 @@ export default function UnlockRedemption({
       });
     } finally {
       setIsRedeeming(false);
-    }
-  };
-
-  const handleMetalPurchase = async (reward: Unlock) => {
-    try {
-      // Prevent double-click races
-      if (isRedeeming || isUSDCLoading) {
-        return;
-      }
-      
-      if (!metalHolder.data?.address) {
-        throw new Error('Metal holder not initialized');
-      }
-      
-      // Validate Metal holder address
-      if (!isAddress(metalHolder.data.address)) {
-        throw new Error('Invalid Metal holder address format');
-      }
-
-      // Determine the amount to pay (credit cost or regular price)
-      const amountUSDC = reward.is_credit_campaign 
-        ? (reward.credit_cost || 0)
-        : ((reward.user_final_price_cents || reward.upgrade_price_cents || 0) / 100);
-      
-      // Validate amount
-      if (!Number.isFinite(amountUSDC) || amountUSDC <= 0) {
-        throw new Error('Invalid purchase amount');
-      }
-      
-      // Store pending purchase for processing after USDC confirmation
-      setPendingItemPurchase(reward);
-      
-      // Lock UI after validation passes
-      setIsRedeeming(true);
-      
-      // Send USDC to Metal holder address
-      sendUSDC({
-        toAddress: metalHolder.data.address as `0x${string}`,
-        amountUSDC: amountUSDC
-      });
-      
-      // The transaction monitoring is handled by useEffect below
-    } catch (error) {
-      toast({
-        title: "Payment Failed",
-        description: error instanceof Error ? error.message : "Failed to initiate USDC payment",
-        variant: "destructive",
-      });
-      setIsRedeeming(false);
-      setPendingItemPurchase(null);
     }
   };
 
