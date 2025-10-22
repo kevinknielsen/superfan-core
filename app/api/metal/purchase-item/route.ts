@@ -133,12 +133,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get club info for treasury check
-    const { data: club } = await supabaseAny
-      .from('clubs')
-      .select('treasury_wallet_address')
-      .eq('id', club_id)
-      .single() as { data: { treasury_wallet_address?: string } | null; error: any };
+    // No longer need club info for treasury check (using user ID instead)
 
     // NO verification needed for presale purchases
     // buyPresale() only succeeds if Metal verified and processed the purchase
@@ -225,13 +220,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Recorded Metal item purchase: ${tierReward.title} for user ${actualUserId}`);
 
-    // TREASURY EXCLUSION: Purchases from treasury wallet don't count toward campaign progress
-    const isTreasuryPurchase = !!(club?.treasury_wallet_address && 
-                                   metal_holder_address &&
-                                   metal_holder_address.toLowerCase() === club.treasury_wallet_address.toLowerCase());
+    // TREASURY EXCLUSION: Purchases from treasury user don't count toward campaign progress
+    // They represent existing Stripe purchases being recycled through crypto, counting them would be double-counting
+    const TREASURY_USER_ID = '7c4c839b-53e3-4b9e-9129-be99d4814012';
+    const isTreasuryPurchase = actualUserId === TREASURY_USER_ID;
 
     if (isTreasuryPurchase) {
-      console.log('ℹ️ Treasury purchase - not counting toward campaign (already counted via Stripe)');
+      console.log('ℹ️ Treasury user purchase - not counting toward campaign (already counted via Stripe)');
     }
 
     // Update campaign progress (only if campaign_id provided AND not treasury purchase)
