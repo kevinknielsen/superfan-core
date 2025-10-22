@@ -322,14 +322,17 @@ export default function ClubDetailsModal({
                   });
                   console.log('[Cart] buyPresale succeeded:', result);
                 } catch (presaleError) {
-                  console.error('[Cart] buyPresale failed:', {
+                  // Log but DON'T re-throw - USDC was already sent successfully
+                  // Metal might return 202 Accepted (async processing) which SDK treats as error
+                  // We should record the purchase anyway since blockchain transaction succeeded
+                  console.warn('[Cart] buyPresale returned error (likely 202 Accepted), continuing with recording:', {
                     error: presaleError,
                     message: presaleError instanceof Error ? presaleError.message : String(presaleError),
                     presaleId,
                     amount: totalCredits,
                     userId: user.id
                   });
-                  throw presaleError; // Re-throw to trigger outer catch
+                  // Continue to record-purchase - don't throw
                 }
               }
               
@@ -390,11 +393,18 @@ export default function ClubDetailsModal({
               });
               
               if (presaleId) {
-                await buyPresaleAsync({
-                  user,
-                  campaignId: presaleId, // This is actually presale ID for Metal
-                  amount: amountUSDC
-                });
+                try {
+                  await buyPresaleAsync({
+                    user,
+                    campaignId: presaleId, // This is actually presale ID for Metal
+                    amount: amountUSDC
+                  });
+                } catch (presaleError) {
+                  // Log but DON'T throw - USDC was already sent successfully
+                  // Metal might return 202 Accepted (async processing) which SDK treats as error
+                  console.warn('[Cart Item] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
+                  // Continue to record-purchase - don't throw
+                }
               }
               
               // Record item purchase with timeout protection

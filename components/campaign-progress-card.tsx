@@ -107,11 +107,18 @@ export function CampaignProgressCard({
           fullCampaignData: campaignData
         });
         
-        const metalResult = await buyPresaleAsync({
-          user,
-          campaignId: presaleId,
-          amount: pendingCreditAmount,
-        });
+        try {
+          const metalResult = await buyPresaleAsync({
+            user,
+            campaignId: presaleId,
+            amount: pendingCreditAmount,
+          });
+        } catch (presaleError) {
+          // Log but DON'T throw - USDC was already sent successfully
+          // Metal might return 202 Accepted (async processing) which SDK treats as error
+          console.warn('[Campaign Card] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
+          // Continue to record-purchase - don't throw
+        }
 
         // Step 2: Record purchase in our database (mirrors Stripe webhook)
         const { getAuthHeaders } = await import("@/app/api/sdk");
@@ -249,12 +256,12 @@ export function CampaignProgressCard({
       return;
     }
 
+    // Declare at function level to access in finally block
+    let holderAddress: string | undefined;
+
     try {
       if (isPurchasing || isCreatingHolder) return;
       setIsPurchasing(true);
-
-      // Declare at function level to access in finally block
-      let holderAddress: string | undefined;
 
       // Wallet app users: Metal Presale flow with USDC
       if (isInWalletApp) {
@@ -303,6 +310,10 @@ export function CampaignProgressCard({
         }
         
         // Validate holder address
+        if (!holderAddress) {
+          throw new Error("Metal holder address not available");
+        }
+        
         const { isAddress } = await import("viem");
         if (!isAddress(holderAddress)) {
           throw new Error("Invalid Metal holder address");

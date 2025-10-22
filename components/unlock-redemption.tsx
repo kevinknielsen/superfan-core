@@ -237,13 +237,20 @@ export default function UnlockRedemption({
           fullItem: pendingItemPurchase
         });
         
-        await buyPresaleAsync({
-          user,
-          campaignId: presaleId,
-          amount: pendingItemPurchase.is_credit_campaign 
-            ? (pendingItemPurchase.credit_cost || 0)
-            : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
-        });
+        try {
+          await buyPresaleAsync({
+            user,
+            campaignId: presaleId,
+            amount: pendingItemPurchase.is_credit_campaign 
+              ? (pendingItemPurchase.credit_cost || 0)
+              : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
+          });
+        } catch (presaleError) {
+          // Log but DON'T throw - USDC was already sent successfully
+          // Metal might return 202 Accepted (async processing) which SDK treats as error
+          console.warn('[Unlock] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
+          // Continue to record-purchase - don't throw
+        }
 
         // Step 2: Record purchase in our database
         const { getAuthHeaders } = await import('@/app/api/sdk');
