@@ -264,7 +264,6 @@ export default function UnifiedPointsWallet({
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false); // For Metal purchase processing state
   const [directCreditBalances, setDirectCreditBalances] = useState<Record<string, { campaign_title: string; balance: number }>>({});
-  const [isLoadingCredits, setIsLoadingCredits] = useState(true);
   const { toast } = useToast();
   
   const { user, isAuthenticated } = useUnifiedAuth();
@@ -286,40 +285,41 @@ export default function UnifiedPointsWallet({
 
   const { getStatusInfo } = useStatusInfo();
   
-  // Fetch credit balances directly (independent of rewards)
-  useEffect(() => {
+  // Shared function to fetch credit balances
+  const fetchCreditBalances = async (signal?: AbortSignal) => {
     if (!isAuthenticated || !user) {
       setDirectCreditBalances({});
-      setIsLoadingCredits(false);
       return;
     }
-
-    const fetchCreditBalances = async () => {
-      try {
-        setIsLoadingCredits(true);
-        const { getAuthHeaders } = await import('@/app/api/sdk');
-        const authHeaders = await getAuthHeaders();
-        
-        const response = await fetch(`/api/clubs/${clubId}/credit-balances`, {
-          headers: authHeaders
-        });
-        
-        if (response.ok) {
-          const data = await response.json() as { balances: Record<string, { campaign_title: string; balance: number }> };
-          setDirectCreditBalances(data.balances || {});
-        } else {
-          console.error('Failed to fetch credit balances:', response.status);
-          setDirectCreditBalances({});
-        }
-      } catch (error) {
-        console.error('Error fetching credit balances:', error);
+    
+    try {
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
+      
+      const response = await fetch(`/api/clubs/${clubId}/credit-balances`, {
+        headers: authHeaders,
+        signal
+      });
+      
+      if (response.ok) {
+        const data = await response.json() as { balances: Record<string, { campaign_title: string; balance: number }> };
+        setDirectCreditBalances(data.balances || {});
+      } else {
+        console.error('Failed to fetch credit balances:', response.status);
         setDirectCreditBalances({});
-      } finally {
-        setIsLoadingCredits(false);
       }
-    };
-
-    fetchCreditBalances();
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return; // Ignore abort errors
+      console.error('Error fetching credit balances:', error);
+      setDirectCreditBalances({});
+    }
+  };
+  
+  // Fetch credit balances directly (independent of rewards)
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchCreditBalances(controller.signal);
+    return () => controller.abort();
   }, [clubId, user, isAuthenticated]);
   
   // Calculate total campaign credits (memoized for performance) - MUST be before early returns
@@ -403,24 +403,7 @@ export default function UnifiedPointsWallet({
         });
         setIsPurchasing(false);
         refetch(); // Reload wallet data
-        
-        // Refetch credit balances directly
-        const fetchBalances = async () => {
-          try {
-            const { getAuthHeaders } = await import('@/app/api/sdk');
-            const authHeaders = await getAuthHeaders();
-            const response = await fetch(`/api/clubs/${clubId}/credit-balances`, {
-              headers: authHeaders
-            });
-            if (response.ok) {
-              const data = await response.json() as { balances: Record<string, { campaign_title: string; balance: number }> };
-              setDirectCreditBalances(data.balances || {});
-            }
-          } catch (e) {
-            console.error('Error refetching credit balances:', e);
-          }
-        };
-        fetchBalances();
+        fetchCreditBalances(); // Refetch credit balances directly
       } catch (error) {
         // Remove from processed set to allow retry
         processedTxRef.current.delete(txHash);
@@ -580,7 +563,7 @@ export default function UnifiedPointsWallet({
       )}
 
       {/* Campaign Credits Breakdown - Hidden for now */}
-      {false && Object.keys(creditBalances).length > 0 && (
+      {false && Object.keys(directCreditBalances).length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -592,7 +575,7 @@ export default function UnifiedPointsWallet({
                 <h3 className="font-semibold text-foreground">Campaign Credits</h3>
               </div>
               <div className="space-y-3">
-                {Object.entries(creditBalances).map(([campaignId, data]) => (
+                {Object.entries(directCreditBalances).map(([campaignId, data]) => (
                   <motion.div
                     key={campaignId}
                     whileHover={{ scale: 1.02 }}

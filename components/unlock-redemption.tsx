@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { isAddress } from "viem";
 import { 
@@ -412,7 +412,7 @@ export default function UnlockRedemption({
     processedTxRef.current = null;
   }, [usdcError, toast]);
 
-  const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
+  const loadData = useCallback(async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
       if (!isMounted || isMounted()) setIsLoading(true);
       
@@ -434,11 +434,8 @@ export default function UnlockRedemption({
         signal
       });
 
-      console.log('[UnlockRedemption] API response status:', response.status, 'Auth:', !!headers.Authorization);
-
       if (response.ok) {
         const tierRewardsData = await response.json() as TierRewardsResponse;
-        console.log('[UnlockRedemption] Claimed rewards from API:', tierRewardsData.claimed_rewards?.length || 0);
         
         // Convert tier rewards to unlock format for existing UI + campaign fields
         const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: TierReward) => ({
@@ -490,11 +487,8 @@ export default function UnlockRedemption({
           // Credit campaign fields
           credit_cost: reward.credit_cost,
           is_credit_campaign: reward.is_credit_campaign,
-          user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0,
+          user_credit_balance: reward.campaign_id ? (tierRewardsData.user_credit_balances?.[reward.campaign_id] || 0) : 0
           // Note: cogs_cents excluded - sensitive commercial data
-          
-          // Preserve metal_presale_id for cart usage
-          metal_presale_id: reward.metal_presale_id
         }) as any);
         
         // Convert claimed rewards to redemption format
@@ -516,10 +510,7 @@ export default function UnlockRedemption({
         const sortedUnlocks = sortUnlocksByPrice(convertedUnlocks);
 
         if (!isMounted || isMounted()) setUnlocks(sortedUnlocks);
-        if (!isMounted || isMounted()) {
-          console.log('[UnlockRedemption] Setting redemptions:', convertedRedemptions);
-          setRedemptions(convertedRedemptions);
-        }
+        if (!isMounted || isMounted()) setRedemptions(convertedRedemptions);
         
         // Extract campaign data for parent component (support both tier campaigns and credit campaigns)
         const campaignTier = convertedUnlocks.find((unlock: any) => 
@@ -541,13 +532,6 @@ export default function UnlockRedemption({
                 campaign_progress: campaignTier.campaign_progress
               };
               
-              console.log('[UnlockRedemption] Setting campaign data:', {
-                campaign_id: campaignData.campaign_id,
-                metal_presale_id: campaignData.metal_presale_id,
-                hasMetalPresaleId: !!campaignData.metal_presale_id,
-                rawTier: { metal_presale_id: campaignTier.metal_presale_id }
-              });
-              
               onCampaignDataChange(campaignData);
             }
           });
@@ -568,7 +552,7 @@ export default function UnlockRedemption({
     } finally {
       if (!isMounted || isMounted()) setIsLoading(false);
     }
-  };
+  }, [clubId, isAuthenticated, onCampaignDataChange]);
 
   // Expose refetch function to parent
   useEffect(() => {
@@ -577,7 +561,7 @@ export default function UnlockRedemption({
         await loadData();
       });
     }
-  }, [onRefetchReady]);
+  }, [onRefetchReady, loadData]);
 
   const isUnlockAvailable = (unlock: Unlock) => {
     // Campaign items are ALWAYS available (never locked)

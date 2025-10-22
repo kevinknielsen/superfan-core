@@ -40,7 +40,7 @@ export async function GET(
     // Get all campaigns for this club
     const { data: campaigns, error: campaignsError } = await supabaseAny
       .from('campaigns')
-      .select('id, title, description')
+      .select('id, title')
       .eq('club_id', clubId);
 
     if (campaignsError) {
