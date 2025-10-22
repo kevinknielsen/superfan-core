@@ -245,11 +245,26 @@ export default function UnlockRedemption({
               ? (pendingItemPurchase.credit_cost || 0)
               : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
           });
-        } catch (presaleError) {
-          // Log but DON'T throw - USDC was already sent successfully
-          // Metal might return 202 Accepted (async processing) which SDK treats as error
-          console.warn('[Unlock] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
-          // Continue to record-purchase - don't throw
+        } catch (presaleError: any) {
+          // Only swallow 202 Accepted (async processing) errors
+          // For all other errors (auth, network, invalid data), abort
+          const is202 = presaleError?.statusCode === 202 || 
+                        presaleError?.code === 202 || 
+                        presaleError?.status === 202 ||
+                        presaleError?.response?.status === 202;
+          
+          if (is202) {
+            console.warn('[Unlock] Metal returned 202 Accepted (async processing), continuing with recording');
+          } else {
+            // Real error - don't record the purchase
+            console.error('[Unlock] buyPresale failed with non-202 error, aborting:', {
+              error: presaleError,
+              message: presaleError instanceof Error ? presaleError.message : String(presaleError),
+              presaleId,
+              userId: user.id
+            });
+            throw presaleError;
+          }
         }
 
         // Step 2: Record purchase in our database

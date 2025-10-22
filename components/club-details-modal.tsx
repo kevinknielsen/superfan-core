@@ -321,18 +321,27 @@ export default function ClubDetailsModal({
                     amount: totalCredits
                   });
                   console.log('[Cart] buyPresale succeeded:', result);
-                } catch (presaleError) {
-                  // Log but DON'T re-throw - USDC was already sent successfully
-                  // Metal might return 202 Accepted (async processing) which SDK treats as error
-                  // We should record the purchase anyway since blockchain transaction succeeded
-                  console.warn('[Cart] buyPresale returned error (likely 202 Accepted), continuing with recording:', {
-                    error: presaleError,
-                    message: presaleError instanceof Error ? presaleError.message : String(presaleError),
-                    presaleId,
-                    amount: totalCredits,
-                    userId: user.id
-                  });
-                  // Continue to record-purchase - don't throw
+                } catch (presaleError: any) {
+                  // Only swallow 202 Accepted (async processing) errors
+                  // For all other errors (auth, network, invalid data), abort
+                  const is202 = presaleError?.statusCode === 202 || 
+                                presaleError?.code === 202 || 
+                                presaleError?.status === 202 ||
+                                presaleError?.response?.status === 202;
+                  
+                  if (is202) {
+                    console.warn('[Cart] Metal returned 202 Accepted (async processing), continuing with recording');
+                  } else {
+                    // Real error - don't record the purchase
+                    console.error('[Cart] buyPresale failed with non-202 error:', {
+                      error: presaleError,
+                      message: presaleError instanceof Error ? presaleError.message : String(presaleError),
+                      presaleId,
+                      amount: totalCredits,
+                      userId: user.id
+                    });
+                    throw presaleError;
+                  }
                 }
               }
               
@@ -399,11 +408,21 @@ export default function ClubDetailsModal({
                     campaignId: presaleId, // This is actually presale ID for Metal
                     amount: amountUSDC
                   });
-                } catch (presaleError) {
-                  // Log but DON'T throw - USDC was already sent successfully
-                  // Metal might return 202 Accepted (async processing) which SDK treats as error
-                  console.warn('[Cart Item] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
-                  // Continue to record-purchase - don't throw
+                } catch (presaleError: any) {
+                  // Only swallow 202 Accepted (async processing) errors
+                  // For all other errors (auth, network, invalid data), abort
+                  const is202 = presaleError?.statusCode === 202 || 
+                                presaleError?.code === 202 || 
+                                presaleError?.status === 202 ||
+                                presaleError?.response?.status === 202;
+                  
+                  if (is202) {
+                    console.warn('[Cart Item] Metal returned 202 Accepted (async processing), continuing with recording');
+                  } else {
+                    // Real error - don't record the purchase
+                    console.error('[Cart Item] buyPresale failed with non-202 error, aborting:', presaleError);
+                    throw presaleError;
+                  }
                 }
               }
               
