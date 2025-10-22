@@ -32,7 +32,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/points";
 import { STATUS_COLORS, STATUS_ICONS } from "@/types/club.types";
-import { getAccessToken } from "@privy-io/react-auth";
 import { getStatusTextColor, getStatusBgColor, getStatusBorderColor } from "@/lib/status-colors";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
@@ -118,6 +117,7 @@ interface UnlockRedemptionProps {
     discountCents?: number;
   }) => void;
   cart?: Array<{ id: string; quantity: number }>;
+  onRefetchReady?: (refetch: () => Promise<void>) => void; // Expose refetch to parent
 }
 
 const UNLOCK_TYPE_ICONS: Record<string, any> = {
@@ -171,7 +171,8 @@ export default function UnlockRedemption({
   onCampaignDataChange,
   onCreditBalancesChange,
   onAddToCart,
-  cart = []
+  cart = [],
+  onRefetchReady
 }: UnlockRedemptionProps) {
   const { toast } = useToast();
   const { isInWalletApp, openUrl } = useFarcaster();
@@ -414,23 +415,30 @@ export default function UnlockRedemption({
   const loadData = async (signal?: AbortSignal, isMounted?: () => boolean) => {
     try {
       if (!isMounted || isMounted()) setIsLoading(true);
-      // Get auth token (optional for public preview)
-      const accessToken = await getAccessToken();
       
-      // Load tier rewards data using new API (works with or without auth)
-      const headers: HeadersInit = {};
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
+      // Get unified auth headers (supports both Privy and Farcaster)
+      let headers: HeadersInit = {};
+      
+      if (isAuthenticated) {
+        try {
+          const { getAuthHeaders } = await import('@/app/api/sdk');
+          const authHeaders = await getAuthHeaders();
+          headers = authHeaders;
+        } catch (error) {
+          console.warn('[UnlockRedemption] Auth failed, loading in public mode:', error);
+        }
       }
-      
       
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards`, {
         headers,
         signal
       });
 
+      console.log('[UnlockRedemption] API response status:', response.status, 'Auth:', !!headers.Authorization);
+
       if (response.ok) {
         const tierRewardsData = await response.json() as TierRewardsResponse;
+        console.log('[UnlockRedemption] Claimed rewards from API:', tierRewardsData.claimed_rewards?.length || 0);
         
         // Convert tier rewards to unlock format for existing UI + campaign fields
         const convertedUnlocks = (tierRewardsData.available_rewards || []).map((reward: TierReward) => ({
@@ -508,7 +516,10 @@ export default function UnlockRedemption({
         const sortedUnlocks = sortUnlocksByPrice(convertedUnlocks);
 
         if (!isMounted || isMounted()) setUnlocks(sortedUnlocks);
-        if (!isMounted || isMounted()) setRedemptions(convertedRedemptions);
+        if (!isMounted || isMounted()) {
+          console.log('[UnlockRedemption] Setting redemptions:', convertedRedemptions);
+          setRedemptions(convertedRedemptions);
+        }
         
         // Extract campaign data for parent component (support both tier campaigns and credit campaigns)
         const campaignTier = convertedUnlocks.find((unlock: any) => 
@@ -558,6 +569,15 @@ export default function UnlockRedemption({
       if (!isMounted || isMounted()) setIsLoading(false);
     }
   };
+
+  // Expose refetch function to parent
+  useEffect(() => {
+    if (onRefetchReady) {
+      onRefetchReady(async () => {
+        await loadData();
+      });
+    }
+  }, [onRefetchReady]);
 
   const isUnlockAvailable = (unlock: Unlock) => {
     // Campaign items are ALWAYS available (never locked)
@@ -670,17 +690,15 @@ export default function UnlockRedemption({
     setIsRedeeming(true);
 
     try {
-      // Get auth token
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('User not authenticated');
-      }
+      // Get unified auth headers
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
 
       const response = await fetch(`/api/clubs/${clubId}/tier-rewards/${unlock.id}/claim`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
+          ...authHeaders
         },
         body: JSON.stringify({})
       });
@@ -788,17 +806,16 @@ export default function UnlockRedemption({
         throw new Error('Invalid credit cost: must be a positive integer');
       }
 
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error('User not authenticated');
-      }
+      // Get unified auth headers
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
 
       // Redeem credits for the item using validated integer value
       const response = await fetch(`/api/campaigns/${unlock.campaign_id}/items/${unlock.id}/redeem`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+          ...authHeaders
         },
         body: JSON.stringify({
           credits_to_spend: creditCost
