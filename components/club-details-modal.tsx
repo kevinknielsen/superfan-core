@@ -1094,7 +1094,6 @@ export default function ClubDetailsModal({
                   clubId={club.id}
                   clubName={club.name}
                   isAuthenticated={isAuthenticated}
-                  creditBalances={creditBalances}
                   onCloseWallet={() => {
                     // Scroll to campaign items
                     setTimeout(() => {

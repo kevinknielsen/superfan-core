@@ -33,7 +33,6 @@ interface UnifiedPointsWalletProps {
   clubName: string;
   clubTokenAddress?: string; // Metal token address for the club (required for direct token purchases)
   className?: string;
-  creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
   onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
   isAuthenticated?: boolean; // Whether the user is authenticated
 }
@@ -259,15 +258,16 @@ export default function UnifiedPointsWallet({
   clubName,
   clubTokenAddress, // Token address for direct token purchases
   className = "",
-  creditBalances = {},
   onCloseWallet
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false); // For Metal purchase processing state
+  const [directCreditBalances, setDirectCreditBalances] = useState<Record<string, { campaign_title: string; balance: number }>>({});
+  const [isLoadingCredits, setIsLoadingCredits] = useState(true);
   const { toast } = useToast();
   
-  const { user } = useUnifiedAuth();
+  const { user, isAuthenticated } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
   const { mutateAsync: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess } = useBuyTokens();
 
@@ -286,10 +286,46 @@ export default function UnifiedPointsWallet({
 
   const { getStatusInfo } = useStatusInfo();
   
+  // Fetch credit balances directly (independent of rewards)
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setDirectCreditBalances({});
+      setIsLoadingCredits(false);
+      return;
+    }
+
+    const fetchCreditBalances = async () => {
+      try {
+        setIsLoadingCredits(true);
+        const { getAuthHeaders } = await import('@/app/api/sdk');
+        const authHeaders = await getAuthHeaders();
+        
+        const response = await fetch(`/api/clubs/${clubId}/credit-balances`, {
+          headers: authHeaders
+        });
+        
+        if (response.ok) {
+          const data = await response.json() as { balances: Record<string, { campaign_title: string; balance: number }> };
+          setDirectCreditBalances(data.balances || {});
+        } else {
+          console.error('Failed to fetch credit balances:', response.status);
+          setDirectCreditBalances({});
+        }
+      } catch (error) {
+        console.error('Error fetching credit balances:', error);
+        setDirectCreditBalances({});
+      } finally {
+        setIsLoadingCredits(false);
+      }
+    };
+
+    fetchCreditBalances();
+  }, [clubId, user, isAuthenticated]);
+  
   // Calculate total campaign credits (memoized for performance) - MUST be before early returns
   const totalCampaignCredits = useMemo(
-    () => Object.values(creditBalances).reduce((sum, d) => sum + d.balance, 0),
-    [creditBalances]
+    () => Object.values(directCreditBalances).reduce((sum, d) => sum + d.balance, 0),
+    [directCreditBalances]
   );
 
   // Process Metal token purchase success
@@ -367,6 +403,24 @@ export default function UnifiedPointsWallet({
         });
         setIsPurchasing(false);
         refetch(); // Reload wallet data
+        
+        // Refetch credit balances directly
+        const fetchBalances = async () => {
+          try {
+            const { getAuthHeaders } = await import('@/app/api/sdk');
+            const authHeaders = await getAuthHeaders();
+            const response = await fetch(`/api/clubs/${clubId}/credit-balances`, {
+              headers: authHeaders
+            });
+            if (response.ok) {
+              const data = await response.json() as { balances: Record<string, { campaign_title: string; balance: number }> };
+              setDirectCreditBalances(data.balances || {});
+            }
+          } catch (e) {
+            console.error('Error refetching credit balances:', e);
+          }
+        };
+        fetchBalances();
       } catch (error) {
         // Remove from processed set to allow retry
         processedTxRef.current.delete(txHash);

@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       credits_purchased: credit_amount,
       price_paid_cents: priceCents,
       // Metal-specific fields
-      usdc_tx_hash: normalizedTxHash,
+      usdc_tx_hash: normalizedTxHash, // Correct: production DB uses usdc_tx_hash column
       payment_method: 'metal_presale',
       status: 'completed',
       purchased_at: new Date().toISOString(),
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
         const { data: existingPurchase } = await supabaseAny
           .from('credit_purchases')
           .select('id')
-          .eq('usdc_tx_hash', normalizedTxHash)
+          .eq('usdc_tx_hash', normalizedTxHash) // Correct: production DB uses usdc_tx_hash column
           .single() as { data: CreditPurchaseRecord | null; error: any };
         
         if (existingPurchase) {
@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
             purchase_id: existingPurchase.id,
             credits_purchased: credit_amount,
             campaign_updated: false
-          });
+          }, { status: 409 }); // Return 409 Conflict for already recorded purchases
         }
       }
       

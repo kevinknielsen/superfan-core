@@ -250,6 +250,38 @@ export async function GET(
       return 0;
     };
 
+    // Calculate credit balances by campaign for this club (skip if public mode)
+    // IMPORTANT: Must be calculated BEFORE processing rewards so balance can be attached to each reward
+    const creditBalancesByCampaign = new Map();
+    
+    if (actualUserId) {
+      // Get unique campaign IDs from rewards
+      const uniqueCampaignIds = [...new Set(
+        (availableRewards || [])
+          .filter((r: any) => r.campaign_id)
+          .map((r: any) => r.campaign_id)
+      )];
+      
+      // Get credit balance for each campaign using the new function
+      for (const campaignId of uniqueCampaignIds) {
+        const { data: balanceData, error: balanceError } = await supabaseAny
+          .rpc('get_user_campaign_credits', {
+            p_user_id: actualUserId,
+            p_campaign_id: campaignId
+          });
+        
+        if (balanceError) {
+          console.error(`[Club Tier Rewards API] Error fetching credit balance for campaign ${campaignId}:`, balanceError);
+          // Continue processing other campaigns
+          continue;
+        }
+        
+        if (balanceData !== null && balanceData !== undefined) {
+          creditBalancesByCampaign.set(campaignId, balanceData);
+        }
+      }
+    }
+
     // Helper function to get campaign progress from campaigns table
     const getCampaignProgress = (reward: any) => {
       if (!reward.campaign_id) return null;
@@ -424,6 +456,7 @@ export async function GET(
         // Credit campaign fields (1 credit = $1)
         credit_cost: reward.ticket_cost, // Map DB field to credit_cost for frontend
         is_credit_campaign: reward.is_ticket_campaign, // Map DB field
+        user_credit_balance: reward.campaign_id ? (creditBalancesByCampaign.get(reward.campaign_id) || 0) : 0, // User's available credits for this campaign
         // Note: cogs_cents excluded - sensitive commercial data
         
         // Club information (for modals)
@@ -454,37 +487,6 @@ export async function GET(
       tickets_redeemed: claim.tickets_redeemed,
       is_ticket_claim: claim.is_ticket_claim
     }));
-
-    // Calculate credit balances by campaign for this club (skip if public mode)
-    const creditBalancesByCampaign = new Map();
-    
-    if (actualUserId) {
-      // Get unique campaign IDs from rewards
-      const uniqueCampaignIds = [...new Set(
-        (availableRewards || [])
-          .filter((r: any) => r.campaign_id)
-          .map((r: any) => r.campaign_id)
-      )];
-      
-      // Get credit balance for each campaign using the new function
-      for (const campaignId of uniqueCampaignIds) {
-        const { data: balanceData, error: balanceError } = await supabaseAny
-          .rpc('get_user_campaign_credits', {
-            p_user_id: actualUserId,
-            p_campaign_id: campaignId
-          });
-        
-        if (balanceError) {
-          console.error(`[Club Tier Rewards API] Error fetching credit balance for campaign ${campaignId}:`, balanceError);
-          // Continue processing other campaigns
-          continue;
-        }
-        
-        if (balanceData !== null && balanceData !== undefined) {
-          creditBalancesByCampaign.set(campaignId, balanceData);
-        }
-      }
-    }
 
     // Compile response (enhanced with credit information)
     const response = {
