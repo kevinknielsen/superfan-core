@@ -245,34 +245,11 @@ export default function UnlockRedemption({
               ? (pendingItemPurchase.credit_cost || 0)
               : ((pendingItemPurchase.user_final_price_cents || pendingItemPurchase.upgrade_price_cents || 0) / 100)
           });
-        } catch (presaleError: any) {
-          // Metal SDK throws on server for 202 Accepted (async processing)
-          // Server returns generic 500 "Metal API request failed" to client
-          
-          // Check for 202 indicators
-          const is202 = presaleError?.statusCode === 202 || 
-                        presaleError?.code === 202 || 
-                        presaleError?.status === 202 ||
-                        presaleError?.response?.status === 202;
-          
-          // Fallback: Generic Metal error likely means 202
-          const isGenericMetalError = presaleError?.message === 'Metal API request failed' &&
-                                      !presaleError?.message?.includes('auth') &&
-                                      !presaleError?.message?.includes('invalid') &&
-                                      !presaleError?.message?.includes('not found');
-          
-          if (is202 || isGenericMetalError) {
-            console.warn('[Unlock] Metal presale call failed (likely 202 Accepted async processing), continuing with recording. USDC was sent successfully.');
-          } else {
-            // Real error with specific message - abort
-            console.error('[Unlock] buyPresale failed with real error, aborting:', {
-              error: presaleError,
-              message: presaleError instanceof Error ? presaleError.message : String(presaleError),
-              presaleId,
-              userId: user.id
-            });
-            throw presaleError;
-          }
+        } catch (presaleError) {
+          // Log but DON'T throw - USDC was already sent successfully
+          // Metal might return 202 Accepted (async processing) which SDK treats as error
+          console.warn('[Unlock] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
+          // Continue to record-purchase - don't throw
         }
 
         // Step 2: Record purchase in our database

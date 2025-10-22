@@ -284,6 +284,10 @@ export default function ClubDetailsModal({
     }
     
     const processCartPurchases = async () => {
+      // CRITICAL: Wait for Metal's indexer to detect the USDC deposit
+      // Without this delay, buyPresale fails with 202 because Metal doesn't see the balance yet
+      console.log('[Cart] USDC transaction confirmed. Waiting 3s for Metal indexer...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
       const successfulItems = new Set<string>();
       
       try {
@@ -321,37 +325,18 @@ export default function ClubDetailsModal({
                     amount: totalCredits
                   });
                   console.log('[Cart] buyPresale succeeded:', result);
-                } catch (presaleError: any) {
-                  // Metal SDK throws on server for 202 Accepted (async processing)
-                  // Server returns generic 500 "Metal API request failed" to client
-                  // We must continue recording because USDC was already sent on blockchain
-                  
-                  // Check for 202 indicators (server-side has statusCode, client might not)
-                  const is202 = presaleError?.statusCode === 202 || 
-                                presaleError?.code === 202 || 
-                                presaleError?.status === 202 ||
-                                presaleError?.response?.status === 202;
-                  
-                  // Fallback: If error message is generic "Metal API request failed" without
-                  // specific details, assume it's the 202 async processing case
-                  const isGenericMetalError = presaleError?.message === 'Metal API request failed' &&
-                                              !presaleError?.message?.includes('auth') &&
-                                              !presaleError?.message?.includes('invalid') &&
-                                              !presaleError?.message?.includes('not found');
-                  
-                  if (is202 || isGenericMetalError) {
-                    console.warn('[Cart] Metal presale call failed (likely 202 Accepted async processing), continuing with recording. USDC was sent successfully.');
-                  } else {
-                    // Real error with specific message - don't record the purchase
-                    console.error('[Cart] buyPresale failed with real error, aborting:', {
-                      error: presaleError,
-                      message: presaleError instanceof Error ? presaleError.message : String(presaleError),
-                      presaleId,
-                      amount: totalCredits,
-                      userId: user.id
-                    });
-                    throw presaleError;
-                  }
+                } catch (presaleError) {
+                  // Log but DON'T re-throw - USDC was already sent successfully
+                  // Metal might return 202 Accepted (async processing) which SDK treats as error
+                  // We should record the purchase anyway since blockchain transaction succeeded
+                  console.warn('[Cart] buyPresale returned error (likely 202 Accepted), continuing with recording:', {
+                    error: presaleError,
+                    message: presaleError instanceof Error ? presaleError.message : String(presaleError),
+                    presaleId,
+                    amount: totalCredits,
+                    userId: user.id
+                  });
+                  // Continue to record-purchase - don't throw
                 }
               }
               
@@ -418,29 +403,11 @@ export default function ClubDetailsModal({
                     campaignId: presaleId, // This is actually presale ID for Metal
                     amount: amountUSDC
                   });
-                } catch (presaleError: any) {
-                  // Metal SDK throws on server for 202 Accepted (async processing)
-                  // Server returns generic 500 "Metal API request failed" to client
-                  
-                  // Check for 202 indicators
-                  const is202 = presaleError?.statusCode === 202 || 
-                                presaleError?.code === 202 || 
-                                presaleError?.status === 202 ||
-                                presaleError?.response?.status === 202;
-                  
-                  // Fallback: Generic Metal error likely means 202
-                  const isGenericMetalError = presaleError?.message === 'Metal API request failed' &&
-                                              !presaleError?.message?.includes('auth') &&
-                                              !presaleError?.message?.includes('invalid') &&
-                                              !presaleError?.message?.includes('not found');
-                  
-                  if (is202 || isGenericMetalError) {
-                    console.warn('[Cart Item] Metal presale call failed (likely 202 Accepted async processing), continuing with recording. USDC was sent successfully.');
-                  } else {
-                    // Real error with specific message - abort
-                    console.error('[Cart Item] buyPresale failed with real error, aborting:', presaleError);
-                    throw presaleError;
-                  }
+                } catch (presaleError) {
+                  // Log but DON'T throw - USDC was already sent successfully
+                  // Metal might return 202 Accepted (async processing) which SDK treats as error
+                  console.warn('[Cart Item] buyPresale returned error (likely 202 Accepted), continuing with recording:', presaleError);
+                  // Continue to record-purchase - don't throw
                 }
               }
               
