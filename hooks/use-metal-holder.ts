@@ -86,8 +86,14 @@ export function useBuyPresale() {
         if (error?.statusCode === 202 || error?.code === 202 || error?.status === 202) {
           console.log('[Metal] 202 Accepted - async processing, treating as success', error.details);
           // Return the error details as response (contains transaction info)
-          // The details object should have transactionHash, sellAmount, etc.
-          return error.details || error.data || error;
+          const response = error.details || error.data || error;
+          
+          // Validate expected structure
+          if (!response || typeof response !== 'object') {
+            throw new Error('Invalid 202 response structure from Metal API');
+          }
+          
+          return response;
         }
         throw error;
       }
@@ -155,8 +161,8 @@ export function useBuyTokens() {
       ).finally(() => clearTimeout(timeout));
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Failed to buy tokens' }));
-        throw new Error(error.message || 'Failed to buy tokens');
+        const errorData = await response.json().catch(() => ({ message: 'Failed to buy tokens' })) as { message?: string };
+        throw new Error(errorData.message || 'Failed to buy tokens');
       }
 
       const result = await response.json();

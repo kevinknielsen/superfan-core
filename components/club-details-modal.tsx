@@ -216,8 +216,7 @@ export default function ClubDetailsModal({
               if (result.validated) {
                 // Payment confirmed by server - safe to clear cart
                 clearCart();
-                // Refresh items and points to show ownership
-                await refetchItemsRef.current?.();
+                // Refresh points to show updated balance
                 await refetch();
               }
             }
@@ -273,12 +272,12 @@ export default function ClubDetailsModal({
     
     // Prevent duplicate processing of same transaction
     if (processedCartTxRef.current === usdcTxHash) {
-      console.log('[Cart] Transaction already processed, skipping:', usdcTxHash);
+      console.log('[Cart] Transaction already processed, skipping. TX:', usdcTxHash);
       return;
     }
     
     // Prevent processing old successful transactions from previous carts
-    const cartHash = cart.map(i => `${i.id}:${i.quantity}`).sort().join('|');
+    const cartHash = computeCartHash(cart);
     if (currentCartHashRef.current !== cartHash) {
       console.log('[Cart] Cart contents changed since checkout started, ignoring stale transaction');
       return;
@@ -497,6 +496,11 @@ export default function ClubDetailsModal({
     });
   };
   
+  // Helper to compute cart hash for validation
+  const computeCartHash = (cartItems: CartItem[]) => {
+    return cartItems.map(i => `${i.id}:${i.quantity}`).sort().join('|');
+  };
+
   const getTotalItems = () => cart.reduce((sum, item) => sum + item.quantity, 0);
   
   const getTotalAmount = () => {
@@ -559,17 +563,24 @@ export default function ClubDetailsModal({
 
   // Handle checkout - process all cart items
   const handleCheckout = async () => {
+    // Prevent concurrent checkouts
+    if (isCheckingOut) {
+      console.log('[Checkout] Already processing, ignoring duplicate call');
+      return;
+    }
+    
     if (cart.length === 0) return;
+    
+    // Acquire checkout lock
+    setIsCheckingOut(true);
     
     // Clear any previous transaction tracking to allow new purchase
     processedCartTxRef.current = null;
     processedCartItemsRef.current.clear();
     
     // Snapshot current cart for validation
-    const cartHash = cart.map(i => `${i.id}:${i.quantity}`).sort().join('|');
+    const cartHash = computeCartHash(cart);
     currentCartHashRef.current = cartHash;
-    
-    setIsCheckingOut(true);
     
     try {
       if (isInWalletApp) {
@@ -1061,7 +1072,7 @@ export default function ClubDetailsModal({
                       isCreditCampaign: item.isCreditCampaign,
                       creditCost: item.creditCost ?? 0,
                       campaignId: item.campaignId,
-                      metalPresaleId: item.metal_presale_id || campaignData?.metal_presale_id, // CRITICAL: Include Metal presale ID
+                      metalPresaleId: (item as any).metal_presale_id || campaignData?.metal_presale_id, // CRITICAL: Include Metal presale ID
                       finalPriceCents: priceCents, // Store the calculated price for Stripe
                       originalPriceCents: item.upgradePriceCents ?? (item.creditCost ?? 0) * 100,
                       discountCents: item.discountCents ?? 0
