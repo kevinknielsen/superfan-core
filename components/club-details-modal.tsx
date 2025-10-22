@@ -216,6 +216,9 @@ export default function ClubDetailsModal({
               if (result.validated) {
                 // Payment confirmed by server - safe to clear cart
                 clearCart();
+                // Refresh items and points to show ownership
+                await refetchItemsRef.current?.();
+                await refetch();
               }
             }
             
@@ -1094,7 +1097,6 @@ export default function ClubDetailsModal({
                   clubId={club.id}
                   clubName={club.name}
                   isAuthenticated={isAuthenticated}
-                  creditBalances={creditBalances}
                   onCloseWallet={() => {
                     // Scroll to campaign items
                     setTimeout(() => {

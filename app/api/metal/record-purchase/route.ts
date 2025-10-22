@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyUnifiedAuth } from "../../auth";
 import { createServiceClient } from "../../supabase";
+import { TREASURY_USER_ID } from "@/lib/constants";
 
 // Use service client to bypass RLS for Metal purchases
 const supabase = createServiceClient();
@@ -17,7 +18,6 @@ interface CampaignRecord {
 
 interface ClubRecord {
   name: string;
-  treasury_wallet_address?: string;
 }
 
 interface CreditPurchaseRecord {
@@ -148,9 +148,9 @@ export async function POST(request: NextRequest) {
     // Get club info for metadata
     const { data: club } = await supabaseAny
       .from('clubs')
-      .select('name, treasury_wallet_address')
+      .select('name')
       .eq('id', club_id)
-      .single() as { data: ClubRecord | null; error: any };
+      .single() as { data: { name: string } | null; error: any };
 
     if (!club) {
       return NextResponse.json({ error: 'Club not found' }, { status: 404 });
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       credits_purchased: credit_amount,
       price_paid_cents: priceCents,
       // Metal-specific fields
-      usdc_tx_hash: normalizedTxHash,
+      usdc_tx_hash: normalizedTxHash, // Correct: production DB uses usdc_tx_hash column
       payment_method: 'metal_presale',
       status: 'completed',
       purchased_at: new Date().toISOString(),
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
         const { data: existingPurchase } = await supabaseAny
           .from('credit_purchases')
           .select('id')
-          .eq('usdc_tx_hash', normalizedTxHash)
+          .eq('usdc_tx_hash', normalizedTxHash) // Correct: production DB uses usdc_tx_hash column
           .single() as { data: CreditPurchaseRecord | null; error: any };
         
         if (existingPurchase) {
@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
             purchase_id: existingPurchase.id,
             credits_purchased: credit_amount,
             campaign_updated: false
-          });
+          }, { status: 409 }); // Return 409 Conflict for already recorded purchases
         }
       }
       
@@ -222,14 +222,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Recorded Metal purchase: ${credit_amount} credits for user ${actualUserId}`);
 
-    // TREASURY EXCLUSION: Purchases from treasury wallet don't count toward campaign progress
-    // They represent existing Stripe purchases, so counting them would be double-counting
-    const isTreasuryPurchase = !!(club?.treasury_wallet_address && 
-                                   metal_holder_address &&
-                                   metal_holder_address.toLowerCase() === club.treasury_wallet_address.toLowerCase());
+    // TREASURY EXCLUSION: Purchases from treasury user don't count toward campaign progress
+    // They represent existing Stripe purchases being recycled through crypto, counting them would be double-counting
+    const isTreasuryPurchase = actualUserId === TREASURY_USER_ID;
 
     if (isTreasuryPurchase) {
-      console.log('ℹ️ Treasury purchase - not counting toward campaign (already counted via Stripe)');
+      console.log('ℹ️ Treasury user purchase - not counting toward campaign (already counted via Stripe)');
     }
 
     // Update campaign progress (only if campaign_id provided AND not treasury purchase)

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Wallet, 
@@ -33,7 +33,6 @@ interface UnifiedPointsWalletProps {
   clubName: string;
   clubTokenAddress?: string; // Metal token address for the club (required for direct token purchases)
   className?: string;
-  creditBalances?: Record<string, { campaign_title: string; balance: number }>; // Campaign credits
   onCloseWallet?: () => void; // Callback to close wallet and navigate to redemption
   isAuthenticated?: boolean; // Whether the user is authenticated
 }
@@ -259,15 +258,15 @@ export default function UnifiedPointsWallet({
   clubName,
   clubTokenAddress, // Token address for direct token purchases
   className = "",
-  creditBalances = {},
   onCloseWallet
 }: UnifiedPointsWalletProps) {
   const [showSpendModal, setShowSpendModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false); // For Metal purchase processing state
+  const [directCreditBalances, setDirectCreditBalances] = useState<Record<string, { campaign_title: string; balance: number }>>({});
   const { toast } = useToast();
   
-  const { user } = useUnifiedAuth();
+  const { user, isAuthenticated } = useUnifiedAuth();
   const metalHolder = useMetalHolder();
   const { mutateAsync: buyTokens, isPending: isBuyingTokens, data: buyTokensData, isSuccess: isBuyTokensSuccess } = useBuyTokens();
 
@@ -286,10 +285,47 @@ export default function UnifiedPointsWallet({
 
   const { getStatusInfo } = useStatusInfo();
   
+  // Shared function to fetch credit balances
+  const fetchCreditBalances = useCallback(async (signal?: AbortSignal) => {
+    if (!isAuthenticated || !user) {
+      setDirectCreditBalances({});
+      return;
+    }
+    
+    try {
+      const { getAuthHeaders } = await import('@/app/api/sdk');
+      const authHeaders = await getAuthHeaders();
+      
+      const response = await fetch(`/api/clubs/${clubId}/credit-balances`, {
+        headers: authHeaders,
+        signal
+      });
+      
+      if (response.ok) {
+        const data = await response.json() as { balances: Record<string, { campaign_title: string; balance: number }> };
+        setDirectCreditBalances(data.balances || {});
+      } else {
+        console.error('Failed to fetch credit balances:', response.status);
+        setDirectCreditBalances({});
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return; // Ignore abort errors
+      console.error('Error fetching credit balances:', error);
+      setDirectCreditBalances({});
+    }
+  }, [clubId, user, isAuthenticated]);
+  
+  // Fetch credit balances directly (independent of rewards)
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchCreditBalances(controller.signal);
+    return () => controller.abort();
+  }, [fetchCreditBalances]);
+  
   // Calculate total campaign credits (memoized for performance) - MUST be before early returns
   const totalCampaignCredits = useMemo(
-    () => Object.values(creditBalances).reduce((sum, d) => sum + d.balance, 0),
-    [creditBalances]
+    () => Object.values(directCreditBalances).reduce((sum, d) => sum + d.balance, 0),
+    [directCreditBalances]
   );
 
   // Process Metal token purchase success
@@ -367,6 +403,7 @@ export default function UnifiedPointsWallet({
         });
         setIsPurchasing(false);
         refetch(); // Reload wallet data
+        fetchCreditBalances(); // Refetch credit balances directly
       } catch (error) {
         // Remove from processed set to allow retry
         processedTxRef.current.delete(txHash);
@@ -526,7 +563,7 @@ export default function UnifiedPointsWallet({
       )}
 
       {/* Campaign Credits Breakdown - Hidden for now */}
-      {false && Object.keys(creditBalances).length > 0 && (
+      {false && Object.keys(directCreditBalances).length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -538,7 +575,7 @@ export default function UnifiedPointsWallet({
                 <h3 className="font-semibold text-foreground">Campaign Credits</h3>
               </div>
               <div className="space-y-3">
-                {Object.entries(creditBalances).map(([campaignId, data]) => (
+                {Object.entries(directCreditBalances).map(([campaignId, data]) => (
                   <motion.div
                     key={campaignId}
                     whileHover={{ scale: 1.02 }}
