@@ -108,6 +108,11 @@ export function CampaignProgressCard({
         });
         
         try {
+          // CRITICAL: Wait for Metal's indexer to detect the USDC deposit
+          // Without this delay, buyPresale fails with 202 because Metal doesn't see the balance yet
+          console.log('[Campaign Card] USDC transaction confirmed. Waiting 3s for Metal indexer...');
+          await new Promise((r) => setTimeout(r, 3000));
+          
           const metalResult = await buyPresaleAsync({
             user,
             campaignId: presaleId,

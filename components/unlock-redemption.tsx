@@ -238,6 +238,11 @@ export default function UnlockRedemption({
         });
         
         try {
+          // CRITICAL: Wait for Metal's indexer to detect the USDC deposit
+          // Without this delay, buyPresale fails with 202 because Metal doesn't see the balance yet
+          console.log('[Unlock] USDC transaction confirmed. Waiting 3s for Metal indexer...');
+          await new Promise((r) => setTimeout(r, 3000));
+          
           await buyPresaleAsync({
             user,
             campaignId: presaleId,
