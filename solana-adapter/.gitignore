@@ -1,0 +1,21 @@
+# Anchor
+.anchor
+target/
+test-ledger/
+
+# IDL
+*.so
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Solana
+.DS_Store
+deploy/
+
+# Environment
+.env
+.env.local
+
