@@ -13,6 +13,7 @@ import confetti from "canvas-confetti";
 
 import { useClubs, useUserClubMemberships } from "@/hooks/use-clubs";
 import type { Club, ClubMembership } from "@/types/club.types";
+import PresaleBanner from "@/components/presale-banner";
 
 function getSortDate(club: Club): string {
   return club.created_at || "";
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const { user, isAuthenticated, isLoading: authLoading } = useUnifiedAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  const [scrollToRewards, setScrollToRewards] = useState(false);
   const [showPurchaseSuccess, setShowPurchaseSuccess] = useState(false);
   const [showPurchaseCanceled, setShowPurchaseCanceled] = useState(false);
   const searchParams = useSearchParams();
@@ -347,6 +349,17 @@ export default function Dashboard() {
             </h2>
           </motion.div>
 
+          {/* Presale Banner */}
+          {!isLoading && allClubs.length > 0 && (
+            <PresaleBanner
+              clubs={allClubs}
+              memberships={userMemberships}
+              onOpenClubDetails={(clubId) => {
+                setScrollToRewards(true);
+                setSelectedClubId(clubId);
+              }}
+            />
+          )}
 
           {/* Your Clubs Section */}
           <section className="mb-12">
@@ -471,8 +484,10 @@ export default function Dashboard() {
           club={allClubs.find(c => c.id === selectedClubId)!}
           membership={userMemberships.find(m => m.club_id === selectedClubId)}
           isOpen={!!selectedClubId}
+          scrollToRewards={scrollToRewards}
           onClose={() => {
             setSelectedClubId(null);
+            setScrollToRewards(false);
             setShowPurchaseSuccess(false);
             setShowPurchaseCanceled(false);
           }}
