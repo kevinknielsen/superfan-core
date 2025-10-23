@@ -1,0 +1,29 @@
+{
+  "name": "superfan-solana-adapter",
+  "version": "0.1.0",
+  "description": "Solana adapter for Superfan's tokenized presale system",
+  "scripts": {
+    "build": "anchor build",
+    "test": "anchor test",
+    "deploy:devnet": "anchor deploy --provider.cluster devnet",
+    "deploy:localnet": "anchor deploy --provider.cluster localnet",
+    "client:build": "tsc",
+    "client:example": "ts-node client/example.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@privy-io/server-auth": "^1.11.0",
+    "@solana/web3.js": "^1.95.3",
+    "@solana/spl-token": "^0.4.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "chai": "^4.3.7",
+    "@types/chai": "^4.3.5",
+    "mocha": "^10.2.0",
+    "@types/mocha": "^10.0.1"
+  }
+}
+
