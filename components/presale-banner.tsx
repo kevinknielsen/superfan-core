@@ -8,6 +8,7 @@ import { useUnifiedAuth } from "@/lib/unified-auth-context";
 import { useJoinClub } from "@/hooks/use-clubs";
 import { usePrivy } from "@privy-io/react-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface PresaleBannerProps {
   clubs: Club[];
@@ -23,13 +24,19 @@ export default function PresaleBanner({
   const { isAuthenticated } = useUnifiedAuth();
   const { login } = usePrivy();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const joinClubMutation = useJoinClub();
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Find Phat Trax club
-  const phatTraxClub = clubs.find(
-    (club) => club.name.toLowerCase().includes("phat trax") || club.name.toLowerCase().includes("phattrax")
-  );
+  // Find Phat Trax club with precise matching to avoid false positives
+  const phatTraxClub = clubs.find((club) => {
+    const normalized = club.name.trim().toLowerCase();
+    // Use word boundary matching to avoid matching "My Phat Trax Cover Band"
+    return normalized === "phat trax" || 
+           normalized === "phattrax" ||
+           /\bphat trax\b/.test(normalized) ||
+           /\bphattrax\b/.test(normalized);
+  });
 
   // Check if user is already a member
   const hasMembership = phatTraxClub
@@ -56,22 +63,28 @@ export default function PresaleBanner({
       if (!hasMembership) {
         await joinClubMutation.mutateAsync({ clubId: phatTraxClub.id });
         
+        // Wait for membership queries to refetch and settle
+        await queryClient.refetchQueries({ 
+          queryKey: ['user-club-memberships'],
+          type: 'active'
+        });
+        
         toast({
           title: "Welcome to Phat Trax! 🎉",
           description: "Opening presale details...",
         });
-
-        // Small delay to let the membership propagate
-        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       // Open the club details modal with scroll to rewards
       onOpenClubDetails(phatTraxClub.id);
     } catch (error) {
+      // Log full error for debugging/monitoring
       console.error("Error joining club:", error);
+      
+      // Show generic user-facing error message (don't expose raw error.message)
       toast({
         title: "Failed to join club",
-        description: error instanceof Error ? error.message : "Please try again",
+        description: "Please try again later",
         variant: "destructive",
       });
     } finally {
