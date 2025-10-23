@@ -145,27 +145,92 @@ pnpm add @solana/web3.js @coral-xyz/anchor @solana/spl-token
 
 File: `app/api/presale/buy/route.ts`
 ```typescript
-import { SuperfanPresaleClient } from "@/solana-presale/client";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { NextRequest, NextResponse } from "next/server";
+import { PrivySuperfanPresaleClient } from "@/solana-adapter/client/privy-integration";
+import { verifyAuthToken } from "@privy-io/server-auth";
 
-export async function POST(request: Request) {
-  const { campaignId, usdcAmount } = await request.json();
-  
-  const connection = new Connection(process.env.SOLANA_RPC_URL!);
-  const programId = new PublicKey(process.env.PRESALE_PROGRAM_ID!);
-  
-  const client = new SuperfanPresaleClient(
-    connection,
-    wallet, // Use Privy wallet here
-    programId
-  );
-  
-  const result = await client.buyPresale({
-    campaignId,
-    usdcAmount,
-  });
-  
-  return Response.json(result);
+export async function POST(request: NextRequest) {
+  try {
+    // 1. Verify authentication
+    const authToken = request.headers.get("authorization")?.replace("Bearer ", "");
+    if (!authToken) {
+      return NextResponse.json(
+        { error: "Unauthorized: Missing authorization header" },
+        { status: 401 }
+      );
+    }
+
+    let verifiedUser;
+    try {
+      verifiedUser = await verifyAuthToken(
+        authToken,
+        process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+        process.env.PRIVY_APP_SECRET!
+      );
+    } catch (error) {
+      return NextResponse.json(
+        { error: "Unauthorized: Invalid token" },
+        { status: 401 }
+      );
+    }
+
+    // 2. Parse and validate request body
+    const body = await request.json();
+    const { campaignId, usdcAmount } = body;
+
+    if (!campaignId || typeof campaignId !== "string" || campaignId.trim() === "") {
+      return NextResponse.json(
+        { error: "Invalid campaignId: must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof usdcAmount !== "number" || usdcAmount <= 0 || !isFinite(usdcAmount)) {
+      return NextResponse.json(
+        { error: "Invalid usdcAmount: must be a positive number" },
+        { status: 400 }
+      );
+    }
+
+    // 3. Ensure environment variables are present
+    if (!process.env.NEXT_PUBLIC_SOLANA_RPC_URL || !process.env.NEXT_PUBLIC_PRESALE_PROGRAM_ID) {
+      console.error("Missing required environment variables");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    // 4. Initialize Privy presale client
+    const client = new PrivySuperfanPresaleClient({
+      privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+      privyAppSecret: process.env.PRIVY_APP_SECRET!,
+      solanaRpcUrl: process.env.NEXT_PUBLIC_SOLANA_RPC_URL,
+      programId: process.env.NEXT_PUBLIC_PRESALE_PROGRAM_ID,
+    });
+
+    // 5. Execute presale purchase with error handling
+    const result = await client.buyPresaleForUser(
+      verifiedUser.userId,
+      campaignId,
+      usdcAmount
+    );
+
+    return NextResponse.json({
+      success: true,
+      signature: result.signature,
+      tokensMinted: result.campaignTokensMinted,
+    });
+
+  } catch (error) {
+    console.error("Presale purchase failed:", error);
+    
+    const errorMessage = error instanceof Error ? error.message : "Failed to purchase presale tokens";
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
 }
 ```
 

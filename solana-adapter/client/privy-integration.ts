@@ -1,6 +1,7 @@
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { PrivyClient } from "@privy-io/server-auth";
-import { SuperfanPresaleClient } from "./client";
+import { getAccount, getMint, getAssociatedTokenAddress } from "@solana/spl-token";
+import { SuperfanPresaleClient, WalletAdapter } from "./client";
 
 /**
  * Privy + Solana Integration Example
@@ -104,12 +105,33 @@ export class PrivySuperfanPresaleClient {
     // Get user's Solana wallet from Privy
     const userWallet = await this.getUserWallet(privyUserId);
 
-    // Create presale client with user's wallet
-    // Note: In production, use Privy's transaction signing API
-    // This is a simplified example
+    // Create wallet adapter with signing methods
+    // NOTE: This is a non-functional skeleton for demonstration purposes.
+    // In production, implement Privy's transaction signing API:
+    // - Use Privy's /rpc endpoint or SDK method to sign transactions
+    // - Forward signed transactions back in the expected format
+    // - Handle signing errors and propagate them appropriately
+    const walletAdapter: WalletAdapter = {
+      publicKey: userWallet,
+      signTransaction: async <T extends Transaction>(transaction: T): Promise<T> => {
+        throw new Error(
+          "Transaction signing not implemented. " +
+          "Integrate Privy's transaction signing API to enable this functionality. " +
+          "See: https://docs.privy.io/guide/guides/solana"
+        );
+      },
+      signAllTransactions: async <T extends Transaction>(transactions: T[]): Promise<T[]> => {
+        throw new Error(
+          "Transaction signing not implemented. " +
+          "Integrate Privy's transaction signing API to enable this functionality."
+        );
+      },
+    };
+
+    // Create presale client with wallet adapter
     const presaleClient = new SuperfanPresaleClient(
       this.connection,
-      { publicKey: userWallet }, // Wallet adapter interface
+      walletAdapter,
       this.programId
     );
 
@@ -129,18 +151,19 @@ export class PrivySuperfanPresaleClient {
   ): Promise<number> {
     const userWallet = await this.getUserWallet(privyUserId);
     
+    const walletAdapter: WalletAdapter = {
+      publicKey: userWallet,
+    };
+    
     const presaleClient = new SuperfanPresaleClient(
       this.connection,
-      { publicKey: userWallet },
+      walletAdapter,
       this.programId
     );
 
     const campaign = await presaleClient.getCampaign(campaignId);
     
     // Get user's token account balance
-    const { getAccount } = await import("@solana/spl-token");
-    const { getAssociatedTokenAddress } = await import("@solana/spl-token");
-    
     const userTokenAccount = await getAssociatedTokenAddress(
       campaign.tokenMint,
       userWallet
@@ -151,7 +174,16 @@ export class PrivySuperfanPresaleClient {
         this.connection,
         userTokenAccount
       );
-      return Number(tokenAccount.amount) / 1_000_000; // Convert from lamports
+      
+      // Fetch mint info to get decimals dynamically
+      const mintInfo = await getMint(
+        this.connection,
+        campaign.tokenMint
+      );
+      
+      // Convert using actual mint decimals
+      const balance = Number(tokenAccount.amount) / (10 ** mintInfo.decimals);
+      return balance;
     } catch (error) {
       // Token account doesn't exist = balance is 0
       return 0;
@@ -163,7 +195,7 @@ export class PrivySuperfanPresaleClient {
    */
   async getCampaignStats(campaignId: string) {
     // This doesn't require user authentication
-    const dummyWallet = { publicKey: PublicKey.default };
+    const dummyWallet: WalletAdapter = { publicKey: PublicKey.default };
     const presaleClient = new SuperfanPresaleClient(
       this.connection,
       dummyWallet,
@@ -182,22 +214,71 @@ export class PrivySuperfanPresaleClient {
 export const nextjsApiRouteExample = `
 import { NextRequest, NextResponse } from "next/server";
 import { PrivySuperfanPresaleClient } from "@/solana-adapter/client/privy-integration";
+import { verifyAuthToken } from "@privy-io/server-auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const { privyUserId, campaignId, usdcAmount } = await request.json();
+    // 1. Verify authentication
+    const authToken = request.headers.get("authorization")?.replace("Bearer ", "");
+    if (!authToken) {
+      return NextResponse.json(
+        { error: "Unauthorized: Missing authorization header" },
+        { status: 401 }
+      );
+    }
+
+    let verifiedUser;
+    try {
+      verifiedUser = await verifyAuthToken(
+        authToken,
+        process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
+        process.env.PRIVY_APP_SECRET!
+      );
+    } catch (error) {
+      return NextResponse.json(
+        { error: "Unauthorized: Invalid token" },
+        { status: 401 }
+      );
+    }
+
+    // 2. Parse and validate request body
+    const body = await request.json();
+    const { campaignId, usdcAmount } = body;
+
+    if (!campaignId || typeof campaignId !== "string" || campaignId.trim() === "") {
+      return NextResponse.json(
+        { error: "Invalid campaignId: must be a non-empty string" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof usdcAmount !== "number" || usdcAmount <= 0 || !isFinite(usdcAmount)) {
+      return NextResponse.json(
+        { error: "Invalid usdcAmount: must be a positive number" },
+        { status: 400 }
+      );
+    }
+
+    // 4. Ensure environment variables are present
+    if (!process.env.NEXT_PUBLIC_SOLANA_RPC_URL || !process.env.NEXT_PUBLIC_PRESALE_PROGRAM_ID) {
+      console.error("Missing required environment variables");
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
 
     // Initialize Privy presale client
     const client = new PrivySuperfanPresaleClient({
       privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
       privyAppSecret: process.env.PRIVY_APP_SECRET!,
-      solanaRpcUrl: process.env.NEXT_PUBLIC_SOLANA_RPC_URL!,
-      programId: process.env.NEXT_PUBLIC_PRESALE_PROGRAM_ID!,
+      solanaRpcUrl: process.env.NEXT_PUBLIC_SOLANA_RPC_URL,
+      programId: process.env.NEXT_PUBLIC_PRESALE_PROGRAM_ID,
     });
 
-    // Execute presale purchase
+    // 5. Execute presale purchase with error handling
     const result = await client.buyPresaleForUser(
-      privyUserId,
+      verifiedUser.userId,
       campaignId,
       usdcAmount
     );
@@ -210,8 +291,11 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error("Presale purchase failed:", error);
+    
+    // Return appropriate error response
+    const errorMessage = error instanceof Error ? error.message : "Failed to purchase presale tokens";
     return NextResponse.json(
-      { error: "Failed to purchase presale tokens" },
+      { error: errorMessage },
       { status: 500 }
     );
   }

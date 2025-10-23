@@ -23,6 +23,33 @@ import {
 } from "./types";
 
 /**
+ * Wallet interface for signing transactions
+ */
+export interface WalletAdapter {
+  publicKey: PublicKey;
+  signTransaction?: <T extends Transaction>(transaction: T) => Promise<T>;
+  signAllTransactions?: <T extends Transaction>(transactions: T[]) => Promise<T[]>;
+}
+
+/**
+ * Logger interface for configurable logging
+ */
+export interface Logger {
+  info(message: string, data?: any): void;
+  error(message: string, data?: any): void;
+  debug(message: string, data?: any): void;
+}
+
+/**
+ * No-op logger (default)
+ */
+const noopLogger: Logger = {
+  info: () => {},
+  error: () => {},
+  debug: () => {},
+};
+
+/**
  * Superfan Presale Client
  * 
  * High-level TypeScript client for interacting with the Superfan presale program.
@@ -49,7 +76,8 @@ import {
 export class SuperfanPresaleClient {
   private program: Program<SuperfanPresale>;
   private connection: Connection;
-  private wallet: any; // Privy wallet or Keypair
+  private wallet: WalletAdapter;
+  private logger: Logger;
   
   // DevNet USDC test token mint
   // Get test USDC: https://spl-token-faucet.com/?token-name=USDC
@@ -59,11 +87,13 @@ export class SuperfanPresaleClient {
 
   constructor(
     connection: Connection,
-    wallet: any,
-    programId: PublicKey
+    wallet: WalletAdapter,
+    programId: PublicKey,
+    logger?: Logger
   ) {
     this.connection = connection;
     this.wallet = wallet;
+    this.logger = logger || noopLogger;
     
     const provider = new AnchorProvider(
       connection,
@@ -135,7 +165,7 @@ export class SuperfanPresaleClient {
       .signers([campaignTokenMint])
       .rpc();
 
-    console.log("✅ Campaign created:", {
+    this.logger.info("Campaign created", {
       campaignId,
       signature: tx,
       campaignPda: campaignPda.toBase58(),
@@ -191,10 +221,12 @@ export class SuperfanPresaleClient {
       })
       .rpc();
 
-    // Calculate tokens minted
-    const tokensMinted = usdcLamports / campaign.pricePerTokenUsdc.toNumber();
+    // Calculate tokens minted using BN integer arithmetic
+    const usdcBN = new BN(usdcLamports);
+    const tokensMintedBN = usdcBN.div(campaign.pricePerTokenUsdc);
+    const tokensMinted = tokensMintedBN.toNumber();
 
-    console.log("✅ Presale purchase complete:", {
+    this.logger.info("Presale purchase complete", {
       signature: tx,
       usdcSpent: usdcAmount,
       tokensMinted,
@@ -258,7 +290,7 @@ export class SuperfanPresaleClient {
       })
       .rpc();
 
-    console.log("✅ Funds withdrawn:", {
+    this.logger.info("Funds withdrawn", {
       signature: tx,
       amount,
     });
@@ -280,7 +312,7 @@ export class SuperfanPresaleClient {
       })
       .rpc();
 
-    console.log("🔒 Campaign closed:", tx);
+    this.logger.debug("Campaign closed", { signature: tx });
 
     return tx;
   }

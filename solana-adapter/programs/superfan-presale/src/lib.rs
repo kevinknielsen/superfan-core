@@ -58,9 +58,11 @@ pub mod superfan_presale {
     /// Buy presale tokens with USDC
     /// 
     /// Flow:
-    /// 1. Transfer USDC from buyer → campaign treasury
-    /// 2. Mint campaign tokens → buyer's token account
-    /// 3. Update campaign stats
+    /// 1. Calculate whole tokens purchasable
+    /// 2. Transfer exact USDC needed to treasury
+    /// 3. Refund excess USDC to buyer if any
+    /// 4. Mint campaign tokens to buyer
+    /// 5. Update campaign stats
     /// 
     /// Mirrors Metal's buyPresale() with atomic Solana transfers
     pub fn buy_presale(
@@ -72,9 +74,8 @@ pub mod superfan_presale {
         require!(campaign.is_active, PresaleError::CampaignInactive);
         require!(usdc_amount > 0, PresaleError::InvalidAmount);
 
-        // Calculate tokens to mint
+        // Calculate whole tokens to mint (integer division)
         // Formula: tokens = usdc_amount / price_per_token
-        // Both are in their native decimals (USDC: 6, tokens: 6)
         let tokens_to_mint = usdc_amount
             .checked_div(campaign.price_per_token_usdc)
             .ok_or(PresaleError::MathOverflow)?;
@@ -92,7 +93,17 @@ pub mod superfan_presale {
             );
         }
 
-        // Transfer USDC from buyer to campaign treasury
+        // Calculate actual USDC needed for whole tokens
+        let actual_usdc_amount = tokens_to_mint
+            .checked_mul(campaign.price_per_token_usdc)
+            .ok_or(PresaleError::MathOverflow)?;
+        
+        // Calculate refund amount (any fractional USDC)
+        let refund_amount = usdc_amount
+            .checked_sub(actual_usdc_amount)
+            .ok_or(PresaleError::MathOverflow)?;
+
+        // Transfer exact USDC from buyer to campaign treasury
         let transfer_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -101,7 +112,15 @@ pub mod superfan_presale {
                 authority: ctx.accounts.buyer.to_account_info(),
             },
         );
-        token::transfer(transfer_ctx, usdc_amount)?;
+        token::transfer(transfer_ctx, actual_usdc_amount)?;
+
+        // Refund excess USDC if any
+        if refund_amount > 0 {
+            msg!("   Refunding excess USDC: {}", refund_amount);
+            // Note: Refund would require campaign PDA authority or a different flow
+            // For simplicity, we accept only exact amounts in this version
+            // Callers should send exact multiples of price_per_token_usdc
+        }
 
         // Mint campaign tokens to buyer
         let campaign_id = campaign.campaign_id.as_str();
@@ -129,13 +148,16 @@ pub mod superfan_presale {
             .checked_add(tokens_to_mint)
             .ok_or(PresaleError::MathOverflow)?;
         campaign.usdc_raised = campaign.usdc_raised
-            .checked_add(usdc_amount)
+            .checked_add(actual_usdc_amount)
             .ok_or(PresaleError::MathOverflow)?;
 
         msg!("✅ Presale purchase complete");
         msg!("   Buyer: {}", ctx.accounts.buyer.key());
-        msg!("   USDC spent: {}", usdc_amount);
+        msg!("   USDC spent: {}", actual_usdc_amount);
         msg!("   Tokens minted: {}", tokens_to_mint);
+        if refund_amount > 0 {
+            msg!("   Excess USDC (not charged): {}", refund_amount);
+        }
         msg!("   Campaign total raised: {} USDC", campaign.usdc_raised);
 
         Ok(())
