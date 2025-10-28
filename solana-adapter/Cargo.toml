@@ -1,6 +1,8 @@
 [workspace]
 members = [
-    "programs/*"
+    "programs/superfan-presale",
+    "programs/superfan-dao",
+    "programs/label-subdao"
 ]
 resolver = "2"
 

@@ -1,0 +1,26 @@
+[package]
+name = "superfan-dao"
+version = "0.1.0"
+description = "Superfan DAO - MetaDAO-powered futarchy governance for music labels"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "superfan_dao"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+anchor-spl = "0.31.1"
+
+# MetaDAO programs (as dependencies)
+# Note: In production, these would be actual crate dependencies
+# For now, we'll define the interfaces we need
+
