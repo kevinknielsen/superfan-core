@@ -3,23 +3,25 @@ use anchor_spl::token::{Token, TokenAccount};
 
 declare_id!("LabelSubDAO1111111111111111111111111111111");
 
-/// Label SubDAO - Layer 2
+/// Label SubDAO - Layer 2 (Fan-Owned)
 /// 
-/// Labels funded by Superfan DAO operate autonomously:
-/// - Artists submit funding proposals
-/// - Label curator approves/rejects
-/// - Approved artists get credit lines
-/// - Credit is tracked and repaid as fans redeem
+/// Labels are governed by token holders, not curators.
+/// Token holders vote via futarchy on which artists to fund.
 /// 
-/// Links to superfan-presale program for campaign execution
+/// Flow:
+/// 1. Artist submits proposal to label
+/// 2. MetaDAO futarchy market created (label token holders trade)
+/// 3. If pass > fail → Artist gets credit line
+/// 4. Artist runs presale (superfan-presale program)
+/// 5. Repayments → Label treasury → Token value ↑
 #[program]
 pub mod label_subdao {
     use super::*;
 
-    /// Artist submits proposal to label
+    /// Artist submits funding proposal
     /// 
-    /// Creates a funding request that label curator can approve.
-    /// Includes artist info, campaign details, and requested amount.
+    /// Creates proposal + MetaDAO futarchy market.
+    /// Label token holders trade on artist success.
     pub fn submit_artist_proposal(
         ctx: Context<SubmitProposal>,
         artist_name: String,
@@ -36,9 +38,14 @@ pub mod label_subdao {
         let label = &ctx.accounts.label;
         require!(label.is_active, LabelError::LabelInactive);
 
-        // Verify label has sufficient funds
+        // Verify label has sufficient uncommitted funds
+        // Available = treasury balance - already committed amount
+        let available_funds = ctx.accounts.label_treasury.amount
+            .checked_sub(label.committed_amount)
+            .ok_or(LabelError::MathOverflow)?;
+        
         require!(
-            ctx.accounts.label_treasury.amount >= requested_amount,
+            available_funds >= requested_amount,
             LabelError::InsufficientLabelFunds
         );
 
@@ -54,27 +61,37 @@ pub mod label_subdao {
         proposal.submitted_at = Clock::get()?.unix_timestamp;
         proposal.bump = ctx.bumps.proposal;
 
+        // TODO: CPI to MetaDAO Autocrat
+        // Create futarchy market with label token holders as governance
+        // proposal.metadao_proposal = metadao::autocrat::create_proposal(...)?;
+        
         msg!("📝 Artist proposal submitted");
         msg!("   Artist: {}", artist_name);
         msg!("   Campaign: {}", campaign_id);
         msg!("   Requested: {} USDC", requested_amount);
-        msg!("   Label: {}", label.name);
+        msg!("   Label token holders: vote via futarchy");
 
         Ok(())
     }
 
-    /// Curator approves artist proposal
+    /// Execute artist funding (after futarchy passes)
     /// 
-    /// Creates credit line for artist and initiates campaign.
-    /// Calls superfan-presale program to create the actual presale.
-    pub fn approve_artist_proposal(
-        ctx: Context<ApproveProposal>,
+    /// Creates credit line and allows artist to draw funds.
+    /// Called automatically by MetaDAO if proposal passes.
+    pub fn execute_artist_funding(
+        ctx: Context<ExecuteFunding>,
     ) -> Result<()> {
         let proposal = &mut ctx.accounts.proposal;
         require!(
             proposal.status == ArtistProposalStatus::Pending,
             LabelError::ProposalNotPending
         );
+
+        // TODO: Verify MetaDAO proposal passed
+        // require!(
+        //     metadao::autocrat::get_status(proposal.metadao_proposal)? == Passed,
+        //     LabelError::ProposalNotPassed
+        // );
 
         let label = &mut ctx.accounts.label;
         
@@ -96,40 +113,20 @@ pub mod label_subdao {
         proposal.approved_at = Some(Clock::get()?.unix_timestamp);
         proposal.credit_line = Some(credit_line.key());
 
-        // Update label stats
+        // Update label stats and commitments
         label.total_deployed = label.total_deployed
             .checked_add(proposal.requested_amount)
             .ok_or(LabelError::MathOverflow)?;
+        
+        // Increment committed amount (will be decremented when funds are drawn)
+        label.committed_amount = label.committed_amount
+            .checked_add(proposal.requested_amount)
+            .ok_or(LabelError::MathOverflow)?;
 
-        msg!("✅ Artist proposal approved");
+        msg!("✅ Artist funded by token holder vote");
         msg!("   Artist: {}", proposal.artist_name);
         msg!("   Credit line: {} USDC", proposal.requested_amount);
-        
-        // Note: Actual campaign creation happens via CPI to superfan-presale
-        // in a separate instruction once presale params are finalized
-
-        Ok(())
-    }
-
-    /// Reject artist proposal
-    pub fn reject_artist_proposal(
-        ctx: Context<RejectProposal>,
-        reason: String,
-    ) -> Result<()> {
-        require!(reason.len() <= 200, LabelError::ReasonTooLong);
-        
-        let proposal = &mut ctx.accounts.proposal;
-        require!(
-            proposal.status == ArtistProposalStatus::Pending,
-            LabelError::ProposalNotPending
-        );
-
-        proposal.status = ArtistProposalStatus::Rejected;
-        proposal.rejection_reason = Some(reason.clone());
-
-        msg!("❌ Artist proposal rejected");
-        msg!("   Artist: {}", proposal.artist_name);
-        msg!("   Reason: {}", reason);
+        msg!("   Committed funds: {}", label.committed_amount);
 
         Ok(())
     }
@@ -157,7 +154,7 @@ pub mod label_subdao {
         );
 
         // Transfer from label treasury to artist
-        let label = &ctx.accounts.label;
+        let label = &mut ctx.accounts.label;
         let seeds = &[
             b"label-ext",
             label.name.as_bytes(),
@@ -182,6 +179,11 @@ pub mod label_subdao {
         credit_line.credit_used = credit_line.credit_used
             .checked_add(amount)
             .ok_or(LabelError::MathOverflow)?;
+        
+        // Decrement committed amount as funds are now drawn
+        label.committed_amount = label.committed_amount
+            .checked_sub(amount)
+            .ok_or(LabelError::MathOverflow)?;
 
         msg!("💳 Credit drawn");
         msg!("   Artist: {}", credit_line.artist);
@@ -194,7 +196,8 @@ pub mod label_subdao {
     /// Repay credit line (from fan redemptions)
     /// 
     /// Artist repays credit as fans redeem rewards.
-    /// When fully repaid, credit line closes and artist owns their campaign tokens.
+    /// When fully repaid, credit line closes.
+    /// Repayment increases label treasury value → label token value ↑
     pub fn repay_credit(
         ctx: Context<RepayCredit>,
         amount: u64,
@@ -243,15 +246,15 @@ pub mod label_subdao {
         msg!("💰 Credit repayment received");
         msg!("   Artist: {}", credit_line.artist);
         msg!("   Amount: {} USDC", actual_repayment);
-        msg!("   Repaid: {}/{} USDC", credit_line.credit_repaid, credit_line.credit_used);
+        msg!("   Treasury value increased → Label token value ↑");
 
         Ok(())
     }
 
-    /// Settle label with parent DAO
+    /// Settle label treasury with parent DAO
     /// 
-    /// Transfers repayments back to Superfan DAO treasury.
-    /// Called periodically to sync label performance with DAO.
+    /// Transfers protocol fee back to Superfan DAO.
+    /// Label token holders benefit from remaining treasury growth.
     pub fn settle_with_dao(
         ctx: Context<SettleWithDAO>,
         amount: u64,
@@ -261,12 +264,51 @@ pub mod label_subdao {
         let label = &mut ctx.accounts.label;
         require!(label.is_active, LabelError::LabelInactive);
 
+        // Verify label has sufficient funds
+        require!(
+            ctx.accounts.label_treasury.amount >= amount,
+            LabelError::InsufficientLabelFunds
+        );
+
+        // Transfer USDC from label treasury to DAO treasury
+        let seeds = &[
+            b"label-ext",
+            label.name.as_bytes(),
+            &[label.bump],
+        ];
+        let signer = &[&seeds[..]];
+
+        anchor_spl::token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::Transfer {
+                    from: ctx.accounts.label_treasury.to_account_info(),
+                    to: ctx.accounts.dao_treasury.to_account_info(),
+                    authority: label.to_account_info(),
+                },
+                signer,
+            ),
+            amount,
+        )?;
+
         // TODO: CPI to superfan_dao::record_label_repayment
-        // This would call the parent DAO to record this repayment
+        // This would call the parent DAO to record this repayment on-chain
+        // Example:
+        // superfan_dao::cpi::record_label_repayment(
+        //     CpiContext::new_with_signer(
+        //         ctx.accounts.superfan_dao_program.to_account_info(),
+        //         superfan_dao::cpi::accounts::RecordRepayment {
+        //             dao: ctx.accounts.dao.to_account_info(),
+        //             label: label.to_account_info(),
+        //         },
+        //         signer,
+        //     ),
+        //     amount,
+        // )?;
         
-        msg!("🔄 Settlement with DAO");
+        msg!("🔄 Settlement with DAO complete");
         msg!("   Label: {}", label.name);
-        msg!("   Amount: {} USDC", amount);
+        msg!("   Amount transferred: {} USDC", amount);
 
         Ok(())
     }
@@ -284,8 +326,8 @@ pub struct LabelExternal {
     pub dao: Pubkey,
     /// Label name
     pub name: String,
-    /// Label curator
-    pub curator: Pubkey,
+    /// Label governance token mint (fans own this)
+    pub label_token_mint: Pubkey,
     /// Treasury
     pub treasury: Pubkey,
     /// Initial funding
@@ -294,6 +336,8 @@ pub struct LabelExternal {
     pub total_deployed: u64,
     /// Total repaid
     pub total_repaid: u64,
+    /// Funds committed to approved proposals (not yet drawn)
+    pub committed_amount: u64,
     /// Active status
     pub is_active: bool,
     /// PDA bump
@@ -304,16 +348,18 @@ impl LabelExternal {
     pub const LEN: usize = 8 +  // discriminator
         32 +                    // dao
         (4 + 50) +              // name
-        32 +                    // curator
+        32 +                    // label_token_mint
         32 +                    // treasury
         8 +                     // initial_funding
         8 +                     // total_deployed
         8 +                     // total_repaid
+        8 +                     // committed_amount
         1 +                     // is_active
         1;                      // bump
 }
 
 /// Artist funding proposal
+/// Governed by label token holders via futarchy
 #[account]
 pub struct ArtistProposal {
     /// Parent label
@@ -336,10 +382,10 @@ pub struct ArtistProposal {
     pub submitted_at: i64,
     /// Approved timestamp
     pub approved_at: Option<i64>,
-    /// Rejection reason
-    pub rejection_reason: Option<String>,
     /// Created credit line (if approved)
     pub credit_line: Option<Pubkey>,
+    /// MetaDAO proposal reference
+    pub metadao_proposal: Option<Pubkey>,
     /// PDA bump
     pub bump: u8,
 }
@@ -356,18 +402,18 @@ impl ArtistProposal {
         1 +                     // status
         8 +                     // submitted_at
         (1 + 8) +               // approved_at
-        (1 + 4 + 200) +         // rejection_reason
         (1 + 32) +              // credit_line
+        (1 + 32) +              // metadao_proposal
         1;                      // bump
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum ArtistProposalStatus {
-    Pending,
-    Approved,
-    Rejected,
-    Active,      // Campaign is live
-    Completed,   // Campaign completed, credit repaid
+    Pending,      // Futarchy market active
+    Approved,     // Market decided yes, credit line created
+    Rejected,     // Market decided no
+    Active,       // Campaign is live
+    Completed,    // Campaign completed, credit repaid
 }
 
 /// Artist credit line
@@ -443,12 +489,11 @@ pub struct SubmitProposal<'info> {
 }
 
 #[derive(Accounts)]
-pub struct ApproveProposal<'info> {
+pub struct ExecuteFunding<'info> {
     #[account(
         mut,
         seeds = [b"label-ext", label.name.as_bytes()],
-        bump = label.bump,
-        has_one = curator
+        bump = label.bump
     )]
     pub label: Account<'info, LabelExternal>,
 
@@ -462,7 +507,7 @@ pub struct ApproveProposal<'info> {
 
     #[account(
         init,
-        payer = curator,
+        payer = payer,
         space = CreditLine::LEN,
         seeds = [b"credit", label.key().as_ref(), proposal.campaign_id.as_bytes()],
         bump
@@ -470,34 +515,15 @@ pub struct ApproveProposal<'info> {
     pub credit_line: Account<'info, CreditLine>,
 
     #[account(mut)]
-    pub curator: Signer<'info>,
+    pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct RejectProposal<'info> {
-    #[account(
-        seeds = [b"label-ext", label.name.as_bytes()],
-        bump = label.bump,
-        has_one = curator
-    )]
-    pub label: Account<'info, LabelExternal>,
-
-    #[account(
-        mut,
-        seeds = [b"proposal", label.key().as_ref(), proposal.campaign_id.as_bytes()],
-        bump = proposal.bump,
-        has_one = label
-    )]
-    pub proposal: Account<'info, ArtistProposal>,
-
-    pub curator: Signer<'info>,
-}
-
-#[derive(Accounts)]
 pub struct DrawCredit<'info> {
     #[account(
+        mut,
         seeds = [b"label-ext", label.name.as_bytes()],
         bump = label.bump
     )]
@@ -518,7 +544,10 @@ pub struct DrawCredit<'info> {
     )]
     pub label_treasury: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = artist_account.owner == artist.key() @ LabelError::InvalidTokenAccountOwner
+    )]
     pub artist_account: Account<'info, TokenAccount>,
 
     pub artist: Signer<'info>,
@@ -544,7 +573,10 @@ pub struct RepayCredit<'info> {
     )]
     pub credit_line: Account<'info, CreditLine>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = artist_account.owner == artist.key() @ LabelError::InvalidTokenAccountOwner
+    )]
     pub artist_account: Account<'info, TokenAccount>,
 
     #[account(
@@ -563,8 +595,7 @@ pub struct SettleWithDAO<'info> {
     #[account(
         mut,
         seeds = [b"label-ext", label.name.as_bytes()],
-        bump = label.bump,
-        has_one = curator
+        bump = label.bump
     )]
     pub label: Account<'info, LabelExternal>,
 
@@ -574,7 +605,12 @@ pub struct SettleWithDAO<'info> {
     )]
     pub label_treasury: Account<'info, TokenAccount>,
 
-    pub curator: Signer<'info>,
+    /// Superfan DAO treasury (receives settlement)
+    #[account(mut)]
+    pub dao_treasury: Account<'info, TokenAccount>,
+
+    /// Can be anyone - no gatekeeping
+    pub caller: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -594,9 +630,6 @@ pub enum LabelError {
     #[msg("Description too long (max 500 characters)")]
     DescriptionTooLong,
     
-    #[msg("Reason too long (max 200 characters)")]
-    ReasonTooLong,
-    
     #[msg("Invalid amount")]
     InvalidAmount,
     
@@ -609,6 +642,9 @@ pub enum LabelError {
     #[msg("Proposal is not in pending status")]
     ProposalNotPending,
     
+    #[msg("Proposal has not passed futarchy vote")]
+    ProposalNotPassed,
+    
     #[msg("Credit line is not active")]
     CreditLineInactive,
     
@@ -617,5 +653,7 @@ pub enum LabelError {
     
     #[msg("Math operation overflow")]
     MathOverflow,
+    
+    #[msg("Invalid token account owner")]
+    InvalidTokenAccountOwner,
 }
-

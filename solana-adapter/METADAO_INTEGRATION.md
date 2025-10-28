@@ -8,33 +8,48 @@ Superfan integrates with MetaDAO's futarchy infrastructure to create a three-lay
 
 ---
 
-## 🏗️ Three-Layer Architecture
+## 🏗️ Two-Layer Architecture (Fan-Owned Labels)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 1: Superfan DAO (superfan-dao program)               │
 │  • Holds treasury in USDC                                   │
-│  • Uses MetaDAO futarchy for label funding decisions        │
+│  • Uses MetaDAO futarchy: "Which labels to fund?"           │
+│  • Creates labels + issues label tokens to fans             │
 │  • Pays 5-10% protocol fee to MetaDAO                       │
 └────────────────────┬────────────────────────────────────────┘
                      │ Funds approved labels
+                     │ Mints label governance tokens
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 2: Label SubDAOs (label-subdao program)              │
-│  • Operate autonomously with own treasury                   │
-│  • Artists submit funding proposals                         │
-│  • Curators approve/reject proposals                        │
-│  • Manage credit lines and repayments                       │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Funds approved artists
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: Artist Campaigns (superfan-presale program)       │
-│  • Tokenized presales (USDC → campaign tokens)             │
-│  • Treasury escrow for funds                                │
-│  • Self-repaying credit via fan redemptions                 │
+│  Layer 2: Fan-Owned Labels (label-subdao program)           │
+│  • Fans own label tokens (50% curator, 40% futarchy, 10% DAO)│
+│  • Token holders govern via NESTED futarchy                  │
+│  • Artists submit proposals → Token holders vote            │
+│  • Credit lines created for passing proposals               │
+│  • Repayments → Treasury → Token value ↑                    │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Artist Campaigns (superfan-presale program)        │   │
+│  │  • Tokenized presales (USDC → campaign tokens)     │   │
+│  │  • Self-repaying credit via fan redemptions        │   │
+│  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+## 💡 Why Two Layers Is Better
+
+**OLD (3 layers):** DAO → Label Curator → Artist → Fans  
+❌ Curator is bottleneck  
+❌ Fans only participate at artist level  
+❌ No label ownership for fans
+
+**NEW (2 layers):** DAO → Label Token Holders ← Fans  
+✅ Fans own the label  
+✅ Fans govern which artists get funded  
+✅ Fans benefit from ALL artist success  
+✅ No curator gatekeeping  
+✅ **Double futarchy** (DAO level + Label level)
 
 ---
 
@@ -232,37 +247,45 @@ await metadao.conditionalVault.deposit({
 
 ---
 
-## 💰 Economics: Option A (Treasury Partnership)
+## 💰 Economics: Fan-Owned Label Model
 
-### **Revenue Share Model**
+### **Repayment Flow (Cleaner)**
 
 ```
 Repayment Flow:
 ─────────────────────────────────────────────────────────
 
-Artist repays credit
+Fans redeem rewards → Artist repays
         │
         ▼
-Label Treasury (Layer 2)
+Label Treasury (Owned by token holders)
         │
-        ├─ 80-90% → Label keeps (curator share)
+        ├─ 90-95% → Stays in label treasury
+        │             └─ Label token value ↑
+        │             └─ All token holders benefit
         │
-        └─ 10-20% → Superfan DAO Treasury
-                           │
-                           ├─ 90-95% → Superfan keeps
-                           │
-                           └─ 5-10% → MetaDAO Protocol Fee
+        └─ 5-10% → Superfan DAO Treasury
+                      │
+                      └─ 5-10% of that → MetaDAO Protocol Fee
 ```
 
 ### **Example:**
 
 ```
 Artist repays: $10,000
-└─ Label keeps: $8,000 (80%)
-└─ Superfan receives: $2,000 (20%)
-   └─ Superfan keeps: $1,800 (90%)
-   └─ MetaDAO receives: $200 (10%) ← Protocol fee
+└─ Label treasury: $9,500 (95%)
+   └─ Treasury grows → $DELACOUR token backed by more USDC
+   └─ All $DELACOUR holders benefit (fans who believed)
+   
+└─ Superfan DAO: $500 (5%)
+   └─ Protocol fee to MetaDAO: $50 (10% of $500)
 ```
+
+**Why This Works:**
+- Fans own label tokens → direct benefit from artist success
+- No curator taking 80% cut
+- Treasury growth benefits ALL token holders
+- Simple, transparent, fair
 
 Implemented in `superfan-dao/src/lib.rs`:
 
@@ -322,31 +345,35 @@ Superfan DAO can now fund 10-20 labels @ $50k each
 
 ## 🔧 Implementation Checklist
 
-### **Phase 1: Program Integration** ✅ (Current)
-- [x] `superfan-dao` program with proposal system
-- [x] `label-subdao` program with artist credit lines
+### **Phase 1: Program Architecture** ✅ (Current - SIMPLIFIED)
+- [x] `superfan-dao` program with futarchy for labels
+- [x] `label-subdao` program with futarchy for artists (NO CURATOR GATEKEEPING)
 - [x] `superfan-presale` program for artist campaigns
+- [x] Label token minting (50% curator, 40% futarchy winners, 10% DAO)
+- [x] Removed curator approval bottleneck
 - [ ] **TODO: Add MetaDAO CPIs to propose_label()**
-- [ ] **TODO: Add MetaDAO verification to execute_label_funding()**
+- [ ] **TODO: Add MetaDAO CPIs to submit_artist_proposal()**
+- [ ] **TODO: Add MetaDAO verification to execute_*_funding()**
 
 ### **Phase 2: MetaDAO Dependencies** 🔄 (Next)
 - [ ] Add MetaDAO programs as Anchor dependencies
-- [ ] Implement conditional vault CPIs
+- [ ] Implement conditional vault CPIs (both layers)
 - [ ] Implement AMM read operations (for TWAP)
-- [ ] Implement autocrat proposal lifecycle
+- [ ] Implement autocrat proposal lifecycle (nested futarchy)
 
 ### **Phase 3: Client SDK** 📝 (After Phase 2)
 - [ ] TypeScript client for Superfan DAO
+- [ ] Label token holder dashboard
 - [ ] MetaDAO market integration (read pass/fail prices)
-- [ ] User deposit flow (conditional vaults)
-- [ ] Curator dashboard (proposal status)
+- [ ] User deposit flow (conditional vaults - buy label tokens via futarchy)
 
 ### **Phase 4: Frontend UX** 🎨 (Final)
-- [ ] Proposal creation form
-- [ ] Live market view (pass/fail %)
-- [ ] Trading interface
-- [ ] Label dashboard
-- [ ] Artist proposal flow
+- [ ] Label proposal form (curators)
+- [ ] Label futarchy market view (fans vote)
+- [ ] Artist proposal form (artists)
+- [ ] Artist futarchy market view (label token holders vote)
+- [ ] Label token holder dashboard (portfolio view)
+- [ ] Treasury value tracking
 
 ---
 

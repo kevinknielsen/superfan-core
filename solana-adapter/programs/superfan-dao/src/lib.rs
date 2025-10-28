@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount, Mint};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token::{Token, TokenAccount, Mint, MintTo},
+};
 
 declare_id!("SuperfnDAO11111111111111111111111111111111");
 
@@ -108,9 +111,13 @@ pub mod superfan_dao {
     /// Execute label funding (called after MetaDAO proposal passes)
     /// 
     /// This instruction is what the MetaDAO proposal executes if it passes.
-    /// Creates the Label SubDAO and transfers initial funding.
+    /// Creates the Label SubDAO, transfers funding, and mints label tokens.
+    /// 
+    /// Label tokens represent ownership in the label treasury.
+    /// Token holders govern which artists get funded (via nested futarchy).
     pub fn execute_label_funding(
         ctx: Context<ExecuteLabelFunding>,
+        label_token_supply: u64,
     ) -> Result<()> {
         let proposal = &ctx.accounts.proposal;
         
@@ -125,11 +132,10 @@ pub mod superfan_dao {
         label.dao = ctx.accounts.dao.key();
         label.proposal = proposal.key();
         label.name = proposal.label_name.clone();
-        label.curator = proposal.proposer;
+        label.label_token_mint = ctx.accounts.label_token_mint.key();
         label.treasury = ctx.accounts.label_treasury.key();
         label.initial_funding = proposal.funding_amount;
         label.curator_share_bps = proposal.curator_share_bps;
-        label.repayment_target_bps = proposal.repayment_target_bps;
         label.total_deployed = 0;
         label.total_repaid = 0;
         label.created_at = Clock::get()?.unix_timestamp;
@@ -138,11 +144,11 @@ pub mod superfan_dao {
 
         // Transfer initial funding from DAO treasury to label treasury
         let dao_key = ctx.accounts.dao.key();
-        let seeds = &[
+        let dao_seeds = &[
             b"dao",
             &[ctx.accounts.dao.bump],
         ];
-        let signer = &[&seeds[..]];
+        let dao_signer = &[&dao_seeds[..]];
 
         anchor_spl::token::transfer(
             CpiContext::new_with_signer(
@@ -152,10 +158,66 @@ pub mod superfan_dao {
                     to: ctx.accounts.label_treasury.to_account_info(),
                     authority: ctx.accounts.dao.to_account_info(),
                 },
-                signer,
+                dao_signer,
             ),
             proposal.funding_amount,
         )?;
+
+        // Mint label tokens
+        // Distribution:
+        // - 50% to founding team/curator
+        // - 40% to futarchy pass market winners (handled by MetaDAO)
+        // - 10% to Superfan DAO (protocol participation)
+        let label_name = label.name.as_str();
+        let label_seeds = &[
+            b"label",
+            label_name.as_bytes(),
+            &[label.bump],
+        ];
+        let label_signer = &[&label_seeds[..]];
+
+        // Mint to founding curator (50%)
+        let curator_tokens = label_token_supply
+            .checked_mul(50)
+            .ok_or(SuperfanError::MathOverflow)?
+            .checked_div(100)
+            .ok_or(SuperfanError::MathOverflow)?;
+
+        anchor_spl::token::mint_to(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::MintTo {
+                    mint: ctx.accounts.label_token_mint.to_account_info(),
+                    to: ctx.accounts.curator_token_account.to_account_info(),
+                    authority: label.to_account_info(),
+                },
+                label_signer,
+            ),
+            curator_tokens,
+        )?;
+
+        // Mint to Superfan DAO (10%)
+        let dao_tokens = label_token_supply
+            .checked_mul(10)
+            .ok_or(SuperfanError::MathOverflow)?
+            .checked_div(100)
+            .ok_or(SuperfanError::MathOverflow)?;
+
+        anchor_spl::token::mint_to(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::MintTo {
+                    mint: ctx.accounts.label_token_mint.to_account_info(),
+                    to: ctx.accounts.dao_token_account.to_account_info(),
+                    authority: label.to_account_info(),
+                },
+                label_signer,
+            ),
+            dao_tokens,
+        )?;
+
+        // Note: 40% goes to futarchy pass market winners
+        // This would be distributed by MetaDAO's conditional vault finalization
 
         // Update DAO stats
         let dao = &mut ctx.accounts.dao;
@@ -174,7 +236,8 @@ pub mod superfan_dao {
         msg!("🎉 Label funded and launched!");
         msg!("   Label: {}", label.name);
         msg!("   Initial funding: {} USDC", proposal.funding_amount);
-        msg!("   Curator: {}", label.curator);
+        msg!("   Label tokens minted: {}", label_token_supply);
+        msg!("   Token holders now govern artist funding via futarchy");
 
         Ok(())
     }
@@ -369,6 +432,9 @@ pub enum ProposalStatus {
 }
 
 /// Label SubDAO (Layer 2)
+/// 
+/// Fan-owned label governed by token holders.
+/// No curator gatekeeping - token holders vote via futarchy on artists.
 #[account]
 pub struct LabelSubDAO {
     /// Parent DAO
@@ -377,16 +443,14 @@ pub struct LabelSubDAO {
     pub proposal: Pubkey,
     /// Label name
     pub name: String,
-    /// Curator (label authority)
-    pub curator: Pubkey,
+    /// Label governance token mint
+    pub label_token_mint: Pubkey,
     /// Label treasury (USDC)
     pub treasury: Pubkey,
     /// Initial funding received
     pub initial_funding: u64,
-    /// Curator's share of profits (bps)
+    /// Curator's initial share (bps) - for founding team
     pub curator_share_bps: u16,
-    /// Repayment target (bps)
-    pub repayment_target_bps: u16,
     /// Total deployed to artists
     pub total_deployed: u64,
     /// Total repaid to DAO
@@ -404,11 +468,10 @@ impl LabelSubDAO {
         32 +                    // dao
         32 +                    // proposal
         (4 + 50) +              // name
-        32 +                    // curator
+        32 +                    // label_token_mint
         32 +                    // treasury
         8 +                     // initial_funding
         2 +                     // curator_share_bps
-        2 +                     // repayment_target_bps
         8 +                     // total_deployed
         8 +                     // total_repaid
         8 +                     // created_at
@@ -504,6 +567,14 @@ pub struct ExecuteLabelFunding<'info> {
     pub label: Account<'info, LabelSubDAO>,
 
     #[account(
+        init,
+        payer = payer,
+        mint::decimals = 6,
+        mint::authority = label,
+    )]
+    pub label_token_mint: Account<'info, Mint>,
+
+    #[account(
         mut,
         address = dao.treasury
     )]
@@ -517,12 +588,31 @@ pub struct ExecuteLabelFunding<'info> {
     )]
     pub label_treasury: Account<'info, TokenAccount>,
 
+    /// Curator's token account (receives 50% of tokens)
+    #[account(
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = label_token_mint,
+        associated_token::authority = proposal.proposer,
+    )]
+    pub curator_token_account: Account<'info, TokenAccount>,
+
+    /// DAO's token account (receives 10% of tokens)
+    #[account(
+        init_if_needed,
+        payer = payer,
+        associated_token::mint = label_token_mint,
+        associated_token::authority = dao,
+    )]
+    pub dao_token_account: Account<'info, TokenAccount>,
+
     pub usdc_mint: Account<'info, Mint>,
 
     #[account(mut)]
     pub payer: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }

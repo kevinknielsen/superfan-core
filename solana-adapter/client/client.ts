@@ -221,10 +221,17 @@ export class SuperfanPresaleClient {
       })
       .rpc();
 
-    // Calculate tokens minted using BN integer arithmetic
+    // Calculate tokens minted with fixed-point precision
+    // Use 6 decimals to match USDC precision
+    const SCALE = new BN(1_000_000);
     const usdcBN = new BN(usdcLamports);
-    const tokensMintedBN = usdcBN.div(campaign.pricePerTokenUsdc);
-    const tokensMinted = tokensMintedBN.toNumber();
+    const priceBN = new BN(campaign.pricePerTokenUsdc);
+    
+    // scaled = (usdcLamports * SCALE) / pricePerTokenUsdc
+    const scaledTokens = usdcBN.mul(SCALE).div(priceBN);
+    
+    // Convert to decimal representation: integer part + fractional part
+    const tokensMinted = scaledTokens.toNumber() / SCALE.toNumber();
 
     this.logger.info("Presale purchase complete", {
       signature: tx,

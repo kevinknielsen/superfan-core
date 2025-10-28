@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Ensure environment variables are present
+    // 3. Ensure environment variables are present
     if (!process.env.NEXT_PUBLIC_SOLANA_RPC_URL || !process.env.NEXT_PUBLIC_PRESALE_PROGRAM_ID) {
       console.error("Missing required environment variables");
       return NextResponse.json(
