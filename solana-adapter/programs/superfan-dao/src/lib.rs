@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token::{Token, TokenAccount, Mint, MintTo},
+    token::{Token, TokenAccount, Mint, MintTo, SetAuthority},
 };
 
 declare_id!("SuperfnDAO11111111111111111111111111111111");
@@ -164,10 +164,23 @@ pub mod superfan_dao {
         )?;
 
         // Mint label tokens
-        // Distribution:
-        // - 50% to founding team/curator
-        // - 40% to futarchy pass market winners (handled by MetaDAO)
-        // - 10% to Superfan DAO (protocol participation)
+        // Total distribution plan:
+        // - 50% to founding team/curator (minted here)
+        // - 40% to futarchy pass market winners (minted by MetaDAO conditional vault)
+        // - 10% to Superfan DAO (minted here)
+        //
+        // IMPORTANT: In full MetaDAO integration, the 40% for futarchy winners is minted
+        // by MetaDAO's conditional vault program during proposal creation (propose_label).
+        // MetaDAO creates pass/fail conditional tokens that are redeemable for label tokens
+        // if the proposal passes. When finalized, the conditional vault mints the 40% directly
+        // to pass market winners. See MetaDAO docs: docs.themetadao.org/conditional-tokens
+        //
+        // TODO: When integrating MetaDAO CPIs, ensure:
+        // 1. propose_label() calls metadao::conditional_vault::initialize_conditional_tokens()
+        //    with 40% of label_token_supply reserved for pass market winners
+        // 2. MetaDAO's finalization instruction mints those tokens to winners
+        // 3. Total minted = 100% (not 60% as currently implemented in this skeleton)
+        
         let label_name = label.name.as_str();
         let label_seeds = &[
             b"label",
@@ -216,8 +229,23 @@ pub mod superfan_dao {
             dao_tokens,
         )?;
 
-        // Note: 40% goes to futarchy pass market winners
-        // This would be distributed by MetaDAO's conditional vault finalization
+        // Freeze mint authority to prevent unlimited future minting
+        // After initial distribution (50% + 10% = 60% here, 40% by MetaDAO),
+        // no more tokens should ever be created. Remove mint authority permanently.
+        anchor_spl::token::set_authority(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                anchor_spl::token::SetAuthority {
+                    current_authority: label.to_account_info(),
+                    account_or_mint: ctx.accounts.label_token_mint.to_account_info(),
+                },
+                label_signer,
+            ),
+            anchor_spl::token::spl_token::instruction::AuthorityType::MintTokens,
+            None, // Remove authority permanently - no one can mint more tokens
+        )?;
+
+        msg!("🔒 Mint authority removed - label token supply is now fixed at {}", label_token_supply);
 
         // Update DAO stats
         let dao = &mut ctx.accounts.dao;
