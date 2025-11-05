@@ -23,6 +23,7 @@ import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import type { CampaignData } from "@/types/campaign.types";
 import { getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
+import { TAP_IN_POINT_VALUES } from "@/lib/points";
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
 import { useClub, useUserClubData, useJoinClub, useClubLeaderboard, type LeaderboardMember } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
@@ -148,13 +149,13 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
   });
 
   return (
-    <div className="space-y-4">
-      {/* Sort Selector */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-400">Sort by:</span>
-        <div className="flex items-center gap-2">
-          {sortBy === 'points' && (
-            <TooltipProvider>
+    <TooltipProvider>
+      <div className="space-y-4">
+        {/* Sort Selector */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-400">Sort by:</span>
+          <div className="flex items-center gap-2">
+            {sortBy === 'points' && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -167,41 +168,56 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
                   <p className="text-sm">
-                    Status points are earned through tap-ins and activities:
-                    <br />• Show entry: 100 pts
-                    <br />• Merch purchase: 50 pts
-                    <br />• Presave: 40 pts
-                    <br />• QR code/NFC: 20 pts
-                    <br />• Link share: 10 pts
+                    Points earned per activity:
+                    <br />• Show entry: {TAP_IN_POINT_VALUES.show_entry}
+                    <br />• Merch: {TAP_IN_POINT_VALUES.merch_purchase}
+                    <br />• Presave: {TAP_IN_POINT_VALUES.presave}
+                    <br />• QR/NFC: {TAP_IN_POINT_VALUES.qr_code}
+                    <br />• Link: {TAP_IN_POINT_VALUES.link}
                   </p>
                 </TooltipContent>
               </Tooltip>
-            </TooltipProvider>
-          )}
-          <Select value={sortBy} onValueChange={(value: 'invested' | 'points') => setSortBy(value)}>
-            <SelectTrigger className="w-[180px] bg-gray-900/50 border-gray-700">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="invested">Backing</SelectItem>
-              <SelectItem value="points">Status</SelectItem>
-            </SelectContent>
-          </Select>
+            )}
+            <Select value={sortBy} onValueChange={(value: 'invested' | 'points') => setSortBy(value)}>
+              <SelectTrigger className="w-[180px] bg-gray-900/50 border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="invested">Backing</SelectItem>
+                <SelectItem value="points">Status</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
 
       {/* Leaderboard List */}
       <div className="space-y-3">
         {sortedLeaderboard.map((member, index) => {
+        // Defensive null-safety checks
+        if (!member || !member.user) {
+          return null;
+        }
+
         const rank = index + 1;
         const rankIcon = getRankIcon(rank);
         const isCurrentUser = member.user_id === currentUserId;
-        const StatusIconComponent = STATUS_ICONS[member.current_status as keyof typeof STATUS_ICONS] ?? Users;
-        const statusColor = STATUS_COLORS[member.current_status as ClubStatus] || "text-gray-400";
+        
+        // Safe status checks with defaults
+        const memberStatus = member.current_status || 'cadet';
+        const StatusIconComponent = STATUS_ICONS[memberStatus as keyof typeof STATUS_ICONS] ?? Users;
+        const statusColor = STATUS_COLORS[memberStatus as ClubStatus] || "text-gray-400";
+
+        // Safe user data with defaults
+        const userName = member.user?.name || "Anonymous";
+        const userInitial = userName.charAt(0).toUpperCase() || "?";
+        
+        // Safe numeric values with defaults
+        const totalInvestedCents = member.total_invested_cents ?? 0;
+        const points = member.points ?? 0;
 
         return (
           <motion.div
-            key={member.id}
+            key={member.id || `member-${index}`}
             className={`rounded-xl border ${
               isCurrentUser 
                 ? "border-primary/50 bg-primary/10" 
@@ -225,9 +241,12 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
 
               {/* Avatar */}
               <Avatar className="h-12 w-12 border-2 border-gray-700">
-                <AvatarImage src={`/placeholder-user.jpg`} alt={member.user.name || "User"} />
+                <AvatarImage 
+                  src="/placeholder-user.jpg" 
+                  alt={userName || "User"} 
+                />
                 <AvatarFallback className="bg-primary/20 text-primary">
-                  {member.user.name?.charAt(0).toUpperCase() || "?"}
+                  {userInitial}
                 </AvatarFallback>
               </Avatar>
 
@@ -235,7 +254,7 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <h4 className={`font-semibold truncate ${isCurrentUser ? "text-primary" : "text-white"}`}>
-                    {member.user.name || "Anonymous"}
+                    {userName}
                   </h4>
                   {isCurrentUser && (
                     <Badge variant="outline" className="text-xs border-primary/50 text-primary">
@@ -246,7 +265,7 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
                 <div className="flex items-center gap-2">
                   <StatusIconComponent className={`h-4 w-4 ${statusColor}`} />
                   <span className={`text-sm ${statusColor} capitalize`}>
-                    {member.current_status}
+                    {memberStatus}
                   </span>
                 </div>
               </div>
@@ -256,14 +275,14 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
                 {sortBy === 'invested' ? (
                   <>
                     <div className="text-lg font-bold text-white">
-                      ${((member.total_invested_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${(totalInvestedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
-                    <div className="text-xs text-gray-400">invested</div>
+                    <div className="text-xs text-gray-400">Committed</div>
                   </>
                 ) : (
                   <>
                     <div className="text-lg font-bold text-white">
-                      {member.points.toLocaleString()}
+                      {points.toLocaleString()}
                     </div>
                     <div className="text-xs text-gray-400">points</div>
                   </>
@@ -274,7 +293,8 @@ function LeaderboardContent({ clubId, currentUserId }: { clubId: string; current
         );
       })}
       </div>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -1509,7 +1529,7 @@ export default function ClubDetailsModal({
                         <Lock className="h-12 w-12 mx-auto mb-4 text-gray-500" />
                         <h4 className="font-semibold text-white mb-2">Members Only</h4>
                         <p className="text-gray-400 mb-4">
-                          Join this club to access the chat
+                          Only members have access to chat
                         </p>
                         <button
                           onClick={handleJoinClub}

@@ -24,12 +24,12 @@ export async function GET(
     // Join with users table to get user names
     
     // First, get all memberships
-    // Status points come from point_wallets.earned_pts, not club_memberships.points
     const { data: allMemberships, error: membershipsError } = await supabase
       .from('club_memberships')
       .select(`
         id,
         user_id,
+        points,
         current_status,
         last_activity_at,
         join_date,
@@ -58,25 +58,30 @@ export async function GET(
     // Get all user IDs who have made purchases (from credit_purchases or reward_claims)
     const userIds = allMemberships.map(m => m.user_id);
     
-    // Get status points from point_wallets for these users
-    // Status points = earned_pts from point_wallets (not club_memberships.points)
+    // Get actual status points from point_wallets (earned_pts) for all members
     const { data: wallets, error: walletsError } = await supabase
-      .from('point_wallets')
-      .select('user_id, earned_pts')
+      .from('v_point_wallets')
+      .select('user_id, club_id, earned_pts, status_pts')
       .eq('club_id', clubId)
       .in('user_id', userIds);
     
+    // Collect errors to return with warnings
+    const errors: string[] = [];
+    
     if (walletsError) {
-      console.error('[Leaderboard] Error fetching point wallets:', walletsError);
+      console.error('[Leaderboard] Error fetching wallets:', walletsError);
+      errors.push('Failed to fetch status points');
     }
     
-    // Create a map of user_id -> earned_pts (status points)
+    // Create a map of user_id -> status points for quick lookup
     const statusPointsByUser = new Map<string, number>();
-    wallets?.forEach(w => {
-      statusPointsByUser.set(w.user_id, w.earned_pts || 0);
+    wallets?.forEach(wallet => {
+      // Use status_pts from view (which equals earned_pts) - this is the source of truth
+      const statusPoints = wallet.status_pts ?? wallet.earned_pts ?? 0;
+      statusPointsByUser.set(wallet.user_id, statusPoints);
     });
     
-    // Get credit_purchases with amounts
+    // Get credit_purchases with amounts (only completed purchases)
     const { data: creditPurchases, error: creditError } = await supabase
       .from('credit_purchases')
       .select('user_id, price_paid_cents')
@@ -86,17 +91,22 @@ export async function GET(
 
     if (creditError) {
       console.error('[Leaderboard] Error fetching credit purchases:', creditError);
+      errors.push('Failed to fetch credit purchases');
     }
 
     // Get reward_claims (purchased items) with amounts
+    // Filter by refund_status = 'none' to exclude refunded items, and paid_price_cents > 0 for actual purchases
     const { data: rewardClaims, error: rewardError } = await supabase
       .from('reward_claims')
       .select('user_id, paid_price_cents')
       .eq('club_id', clubId)
+      .eq('refund_status', 'none') // Only non-refunded claims
+      .gt('paid_price_cents', 0) // Only actual purchases (not tier-qualified free claims)
       .in('user_id', userIds);
 
     if (rewardError) {
       console.error('[Leaderboard] Error fetching reward claims:', rewardError);
+      errors.push('Failed to fetch reward purchases');
     }
 
     // Calculate total invested per user (in cents)
@@ -128,22 +138,36 @@ export async function GET(
       .slice(0, 100);
 
     // Transform the data to flatten user info
-    // Use earned_pts from point_wallets as status points (not club_memberships.points)
-    const leaderboard = sortedMemberships.map((membership: any) => ({
-      id: membership.id,
-      user_id: membership.user_id,
-      points: statusPointsByUser.get(membership.user_id) || 0, // Status points from point_wallets
-      total_invested_cents: membership.total_invested_cents || 0,
-      current_status: membership.current_status || 'cadet',
-      last_activity_at: membership.last_activity_at,
-      join_date: membership.join_date,
-      created_at: membership.created_at,
-      user: {
-        id: membership.user?.id,
-        name: membership.user?.name || (membership.user?.email ? membership.user.email.split('@')[0] : 'Anonymous'),
-        email: membership.user?.email,
-      }
-    })) || [];
+    // Use actual status points from point_wallets (earned_pts) instead of club_memberships.points
+    const leaderboard = sortedMemberships.map((membership: any) => {
+      // Get actual status points from point_wallets (earned_pts) - this is the source of truth
+      // Fallback to club_memberships.points if wallet doesn't exist yet
+      const statusPoints = statusPointsByUser.get(membership.user_id) ?? membership.points ?? 0;
+      
+      return {
+        id: membership.id,
+        user_id: membership.user_id,
+        points: statusPoints, // Use actual status points from point_wallets
+        total_invested_cents: membership.total_invested_cents || 0,
+        current_status: membership.current_status || 'cadet',
+        last_activity_at: membership.last_activity_at,
+        join_date: membership.join_date,
+        created_at: membership.created_at,
+        user: {
+          id: membership.user?.id,
+          name: membership.user?.name || 'Anonymous', // Don't use email prefix - PII protection
+          email: membership.user?.email,
+        }
+      };
+    }) || [];
+
+    // Return leaderboard with warnings if any errors occurred
+    if (errors.length > 0) {
+      return NextResponse.json({ 
+        leaderboard, 
+        warnings: errors 
+      }, { status: 200 });
+    }
 
     return NextResponse.json({ leaderboard });
   } catch (error) {
