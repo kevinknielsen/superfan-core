@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 
 import { verifyUnifiedAuth } from "../auth";
 import { type } from "arktype";
+import { TAP_IN_POINT_VALUES } from "@/lib/points";
 
 interface TapInMetadata {
   qr_id?: string;
@@ -20,16 +21,8 @@ const tapInSchema = type({
   idempotency_key: "string?" // Optional client-provided idempotency key
 });
 
-// Point values for different tap-in sources (from memo)
-const POINT_VALUES = {
-  qr_code: 20,
-  nfc: 20,
-  link: 10,
-  show_entry: 100,
-  merch_purchase: 50,
-  presave: 40,
-  default: 10
-};
+// Use shared point values from lib/points.ts (single source of truth)
+const POINT_VALUES = TAP_IN_POINT_VALUES;
 
 export async function POST(request: NextRequest) {
   const auth = await verifyUnifiedAuth(request);

@@ -13,6 +13,8 @@ import {
   Share2,
   MapPin,
   ChevronLeft,
+  Lock,
+  Info,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUnifiedAuth } from "@/lib/unified-auth-context";
@@ -21,8 +23,9 @@ import type { Club, ClubMembership, ClubStatus } from "@/types/club.types";
 import type { CampaignData } from "@/types/campaign.types";
 import { getNextStatus, getPointsToNext, STATUS_COLORS } from "@/types/club.types";
 import { STATUS_THRESHOLDS } from "@/lib/status";
+import { TAP_IN_POINT_VALUES } from "@/lib/points";
 import { useUnifiedPoints } from "@/hooks/unified-economy/use-unified-points";
-import { useClub, useUserClubData, useJoinClub } from "@/hooks/use-clubs";
+import { useClub, useUserClubData, useJoinClub, useClubLeaderboard, type LeaderboardMember } from "@/hooks/use-clubs";
 import { ClubMediaDisplay } from "@/components/club-media-display";
 import UnifiedPointsWallet from "./unified-economy/unified-points-wallet";
 import UnlockRedemption from "./unlock-redemption";
@@ -31,6 +34,12 @@ import PerkDetailsModal from "./perk-details-modal";
 import Spinner from "./ui/spinner";
 import { formatDate } from "@/lib/utils";
 import { CampaignProgressCard } from "./campaign-progress-card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useFarcaster } from "@/lib/farcaster-context";
 import { navigateToCheckout } from "@/lib/navigation-utils";
 import { useSendUSDC } from "@/hooks/use-usdc-payment";
@@ -74,6 +83,220 @@ const STATUS_ICONS = {
   headliner: Trophy,
   superfan: Crown,
 };
+
+// Leaderboard Content Component
+function LeaderboardContent({ clubId, currentUserId }: { clubId: string; currentUserId?: string }) {
+  const { data: leaderboard, isLoading, error } = useClubLeaderboard(clubId);
+  const [sortBy, setSortBy] = useState<'invested' | 'points'>('invested');
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="rounded-xl border border-gray-800 bg-gray-900/30 p-4">
+            <div className="flex items-center gap-4">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-6 w-16" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+        <Trophy className="h-12 w-12 mx-auto mb-4 text-primary/50" />
+        <h4 className="font-semibold text-white mb-2">Error Loading Leaderboard</h4>
+        <p className="text-gray-400">
+          Please try again later
+        </p>
+      </div>
+    );
+  }
+
+  if (!leaderboard || leaderboard.length === 0) {
+    return (
+      <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+        <Trophy className="h-12 w-12 mx-auto mb-4 text-primary/50" />
+        <h4 className="font-semibold text-white mb-2">No Members Yet</h4>
+        <p className="text-gray-400">
+          Be the first to invest and join the leaderboard!
+        </p>
+      </div>
+    );
+  }
+
+  const getRankIcon = (rank: number) => {
+    if (rank === 1) return "🥇";
+    if (rank === 2) return "🥈";
+    if (rank === 3) return "🥉";
+    return null;
+  };
+
+  // Sort leaderboard based on selected option
+  const sortedLeaderboard = [...leaderboard].sort((a, b) => {
+    if (sortBy === 'invested') {
+      return (b.total_invested_cents || 0) - (a.total_invested_cents || 0);
+    } else {
+      return (b.points || 0) - (a.points || 0);
+    }
+  });
+
+  return (
+    <TooltipProvider>
+      <div className="space-y-4">
+        {/* Sort Selector */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-400">Sort by:</span>
+          <div className="flex items-center gap-2">
+            {sortBy === 'points' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-gray-400 hover:text-gray-300 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-sm">
+                    Points earned per activity:
+                    <br />• Show entry: {TAP_IN_POINT_VALUES.show_entry}
+                    <br />• Merch: {TAP_IN_POINT_VALUES.merch_purchase}
+                    <br />• Presave: {TAP_IN_POINT_VALUES.presave}
+                    <br />• QR/NFC: {TAP_IN_POINT_VALUES.qr_code}
+                    <br />• Link: {TAP_IN_POINT_VALUES.link}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <Select value={sortBy} onValueChange={(value: 'invested' | 'points') => setSortBy(value)}>
+              <SelectTrigger className="w-[180px] bg-gray-900/50 border-gray-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="invested">Backing</SelectItem>
+                <SelectItem value="points">Status</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+      {/* Leaderboard List */}
+      <div className="space-y-3">
+        {sortedLeaderboard.map((member, index) => {
+        // Defensive null-safety checks
+        if (!member || !member.user) {
+          return null;
+        }
+
+        const rank = index + 1;
+        const rankIcon = getRankIcon(rank);
+        const isCurrentUser = member.user_id === currentUserId;
+        
+        // Safe status checks with defaults
+        const memberStatus = member.current_status || 'cadet';
+        const StatusIconComponent = STATUS_ICONS[memberStatus as keyof typeof STATUS_ICONS] ?? Users;
+        const statusColor = STATUS_COLORS[memberStatus as ClubStatus] || "text-gray-400";
+
+        // Safe user data with defaults
+        const userName = member.user?.name || "Anonymous";
+        const userInitial = userName.charAt(0).toUpperCase() || "?";
+        
+        // Safe numeric values with defaults
+        const totalInvestedCents = member.total_invested_cents ?? 0;
+        const points = member.points ?? 0;
+
+        return (
+          <motion.div
+            key={member.id || `member-${index}`}
+            className={`rounded-xl border ${
+              isCurrentUser 
+                ? "border-primary/50 bg-primary/10" 
+                : "border-gray-800 bg-gray-900/30"
+            } p-4 transition-all hover:bg-gray-900/50`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05, duration: 0.3 }}
+          >
+            <div className="flex items-center gap-4">
+              {/* Rank */}
+              <div className="flex-shrink-0 w-10 text-center">
+                {rankIcon ? (
+                  <span className="text-2xl">{rankIcon}</span>
+                ) : (
+                  <span className={`text-lg font-bold ${isCurrentUser ? "text-primary" : "text-gray-400"}`}>
+                    #{rank}
+                  </span>
+                )}
+              </div>
+
+              {/* Avatar */}
+              <Avatar className="h-12 w-12 border-2 border-gray-700">
+                <AvatarImage 
+                  src="/placeholder-user.jpg" 
+                  alt={userName || "User"} 
+                />
+                <AvatarFallback className="bg-primary/20 text-primary">
+                  {userInitial}
+                </AvatarFallback>
+              </Avatar>
+
+              {/* User Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className={`font-semibold truncate ${isCurrentUser ? "text-primary" : "text-white"}`}>
+                    {userName}
+                  </h4>
+                  {isCurrentUser && (
+                    <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                      You
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusIconComponent className={`h-4 w-4 ${statusColor}`} />
+                  <span className={`text-sm ${statusColor} capitalize`}>
+                    {memberStatus}
+                  </span>
+                </div>
+              </div>
+
+              {/* Amount/Points Display */}
+              <div className="flex-shrink-0 text-right">
+                {sortBy === 'invested' ? (
+                  <>
+                    <div className="text-lg font-bold text-white">
+                      ${(totalInvestedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-gray-400">Committed</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-lg font-bold text-white">
+                      {points.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-400">points</div>
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        );
+      })}
+      </div>
+      </div>
+    </TooltipProvider>
+  );
+}
 
 
 
@@ -1004,8 +1227,25 @@ export default function ClubDetailsModal({
             </div>
           </div>
 
+          {/* Tabs Navigation */}
+          <div className="pt-4 pb-0 border-b border-gray-800">
+            <Tabs defaultValue="overview" className="w-full">
+              <div className="px-6">
+                <TabsList className="grid w-full grid-cols-3 bg-gray-900/50">
+                <TabsTrigger value="overview" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger value="leaderboard" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+                  Leaderboard
+                </TabsTrigger>
+                <TabsTrigger value="chat" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+                  Chat
+                </TabsTrigger>
+              </TabsList>
+              </div>
 
-          {/* Club details */}
+              {/* Overview Tab - All existing content */}
+              <TabsContent value="overview" className="mt-0">
           <div className="px-6 py-6">
             {/* Description */}
             <div className="mb-8">
@@ -1254,6 +1494,56 @@ export default function ClubDetailsModal({
 
             {/* Bottom spacing for anchored button */}
             <div className="h-20" />
+          </div>
+              </TabsContent>
+
+              {/* Leaderboard Tab */}
+              <TabsContent value="leaderboard" className="mt-0">
+                <div className="px-6 py-6">
+                  <div className="mb-8">
+                    <h3 className="mb-4 text-xl font-semibold">Leaderboard</h3>
+                    <p className="text-sm text-gray-400 mb-6">
+                      Members of this club ranked by spend and status
+                    </p>
+                    
+                    <LeaderboardContent clubId={club.id} currentUserId={user?.id} />
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Chat Tab */}
+              <TabsContent value="chat" className="mt-0">
+                <div className="px-6 py-6">
+                  <div className="mb-8">
+                    <h3 className="mb-4 text-xl font-semibold">Chat</h3>
+                    {membership ? (
+                      <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+                        <Users className="h-12 w-12 mx-auto mb-4 text-primary/50" />
+                        <h4 className="font-semibold text-white mb-2">Coming Soon</h4>
+                        <p className="text-gray-400">
+                          Connect with other club members
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-gray-800 bg-gray-900/30 p-6 text-center">
+                        <Lock className="h-12 w-12 mx-auto mb-4 text-gray-500" />
+                        <h4 className="font-semibold text-white mb-2">Members Only</h4>
+                        <p className="text-gray-400 mb-4">
+                          Only members have access to chat
+                        </p>
+                        <button
+                          onClick={handleJoinClub}
+                          disabled={joinClubMutation.isPending}
+                          className="rounded-lg bg-primary px-4 py-2 font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {joinClubMutation.isPending ? "Joining..." : "Join Club"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
           </div>
 
