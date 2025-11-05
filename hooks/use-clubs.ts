@@ -276,3 +276,40 @@ export function useCanAccessUnlock(userId: string | null, clubId: string | null,
 
   return userStatusIndex >= requiredStatusIndex;
 }
+
+// Leaderboard member type
+export interface LeaderboardMember {
+  id: string;
+  user_id: string;
+  points: number;
+  total_invested_cents: number;
+  current_status: ClubStatus;
+  last_activity_at: string;
+  join_date: string;
+  created_at: string;
+  user: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  };
+}
+
+// Get club leaderboard
+export function useClubLeaderboard(clubId: string | null) {
+  return useQuery({
+    queryKey: ['club-leaderboard', clubId],
+    queryFn: async (): Promise<LeaderboardMember[]> => {
+      if (!clubId) return [];
+
+      const response = await fetch(`/api/clubs/${clubId}/leaderboard`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch leaderboard');
+      }
+
+      const data = await response.json() as { leaderboard: LeaderboardMember[] };
+      return data.leaderboard || [];
+    },
+    enabled: !!clubId,
+  });
+}
